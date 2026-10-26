@@ -1,0 +1,56 @@
+.designPanel { min-width:0; }
+.group + .group { border-top:1px solid #e9e2e4; padding-top:22px; margin-top:24px; }
+.group > h3 { margin:0 0 10px; color:#512e37; font-size:14px!important; }
+.hint { font-size:11px; color:#746a6d; line-height:1.65; margin:8px 0 16px; }
+.colors { display:grid; gap:7px; }
+.colorRow { display:flex; align-items:center; gap:12px; justify-content:space-between; padding:8px 0; border-bottom:1px solid #f0ebed; }
+.colorRow > label { display:flex; align-items:center; min-width:0; gap:11px; cursor:pointer; }
+.colorRow input[type="color"] { width:40px; height:40px; padding:3px; border:1px solid #d8cdd1; border-radius:6px; background:white; cursor:pointer; flex-shrink:0; }
+.colorRow strong { display:block; font-weight:400; font-size:12px; color:#41393c; }
+.colorRow small { display:block; font-size:10px; color:#86767d; margin-top:3px; }
+.reset { padding:6px 3px; border:0; background:transparent; color:#800014; font-size:10px!important; text-decoration:underline; text-underline-offset:3px; }
+.templateList { display:grid; gap:22px; }
+.templateField { border-bottom:1px solid #eee6e9; padding-bottom:18px; }
+.templateField > h3 { font-size:13px!important; color:#512e37; margin:0 0 15px; }
+.templateField:last-child { border:0; }
+.templateField [class*="field"]:last-child { margin-bottom:0; }
+.fieldHeading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:12px; }
+.fieldHeading h3 { font-size:13px!important; color:#512e37; margin:0; }
+.search { display:block; margin-bottom:20px; }
+.search > span { display:block; color:#57434a; font-size:11px; margin-bottom:7px; }
+.search input { width:100%; border:1px solid #ddd4d8; background:#fff; border-radius:5px; padding:10px 12px; font-size:12px; color:#41393c; box-sizing:border-box; }
+.search input:focus { outline:2px solid #800014; outline-offset:2px; }
+.catalogSummary { display:flex; gap:10px; align-items:center; justify-content:space-between; margin:0 0 18px; color:#7b6870; font-size:10px; }
+.empty { font-size:12px; color:#746a6d; padding:20px 0; line-height:1.7; }
+.appearance { border:1px solid #e5dce0; border-radius:6px; margin:13px 0 19px; background:#fff; }
+.appearance > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 12px; color:#6d3647; font-size:11px; cursor:pointer; list-style:none; }
+.appearance > summary::-webkit-details-marker { display:none; }
+.appearance > summary::before { content:"+"; font-size:16px; color:#800014; }
+.appearance[open] > summary::before { content:"−"; }
+.appearance > summary > span { font-size:9px; color:#927a83; margin-left:auto; }
+.appearance[open] > summary { border-bottom:1px solid #e9e1e5; }
+.appearanceBody { padding:14px; }
+.appearanceBody > .colors { margin-bottom:18px; }
+.appearanceBody > .hint:first-child { margin-top:0; }
+.range { display:block; margin:18px 0; color:#57434a; font-size:11px; }
+.range > span { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.range output { color:#800014; }
+.range input { width:100%; accent-color:#800014; margin:6px 0; }
+.range small { font-size:10px; color:#8a727b; }
+.colorRow { flex-wrap:wrap; }
+.colorRow > label { flex:1 1 140px; }
+.hexField { width:106px; flex:0 0 106px; }
+.hexField > label { display:block; font-size:9px; color:#746a6d; margin-bottom:4px; }
+.hexField input { width:100%; box-sizing:border-box; border:1px solid #d8cdd1; border-radius:5px; background:#fff; color:#302c2c; padding:8px; font:12px ui-monospace,monospace; }
+.hexField small { color:#800014; line-height:1.4; }
+.numberField { min-width:0; margin:14px 0 19px; }
+.numberField > label { display:block; color:#57434a; font-size:11px; margin-bottom:7px; }
+.numberEntry { display:flex; align-items:center; width:100%; border:1px solid #d8cdd1; border-radius:5px; background:#fff; overflow:hidden; }
+.numberEntry input { width:100%; min-width:0; border:0; margin:0; border-radius:0; padding:10px 12px; background:#fff; color:#302c2c; font-size:12px; box-sizing:border-box; }
+.numberEntry > span { color:#800014; font-size:11px; padding:0 12px 0 3px; }
+.numberField small { display:block; color:#746a6d; font-size:10px; line-height:1.6; margin-top:6px; }
+.numberEntry:focus-within,.hexField input:focus-visible { outline:2px solid #800014; outline-offset:2px; }
+.numberEntry input:focus { outline:0; }
+.numberEntry:has(input[aria-invalid="true"]),.hexField input[aria-invalid="true"] { border-color:#800014; }
+.range > label > span { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.range .numberField { margin:8px 0; }

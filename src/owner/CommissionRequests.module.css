@@ -1,0 +1,6 @@
+.actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
+.history { display:block!important; border-top:1px solid var(--owner-line,#e9e5e5); margin-top:18px; padding-top:16px; }
+.history > strong { font-size:12px; }
+.history ol { margin:12px 0; padding-left:20px; }
+.history li { padding:7px 0; font-size:12px; }
+.history li strong,.history li small { display:block; }

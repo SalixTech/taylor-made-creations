@@ -1,0 +1,81 @@
+{
+  "sections": [
+    {
+      "heading": "General Care",
+      "paragraphs": [
+        "Brush your suit! Keeping the suit brushed will keep your suit soft and fluffy and looking pretty for longer. Suits come with a slicker brush and metal comb.",
+        "Always brush with the fur direction.",
+        "High friction areas will have matting and need a little extra brushing. The metal comb is fantastic for this.",
+        "Start at the tips of the fur and go farther as you untangle the fibers.",
+        "Use fursuit spray. Either buy or make it with 70% isopropyl alcohol and water. To make it 50/50 with an optional few drops of a scent oil. To dry, keep suit parts open for about 10 minutes.",
+        "Use suit spray after each use. Wash your suit before and after cons or after a few smaller events. No one wants to hug a stinky suit.",
+        "Do not leave your suit in a hot car. It can cause severe damage to your suit. Especially the head. The heat of a car can cause glue to loosen and can in many cases melt or distort 3D printed parts such as the eyes.",
+        "Do not let your head get crushed, this can cause permanent damage.",
+        "Heads are lined for comfort; however, it is recommended to wear a balaclava in your suit head. This will keep your heads lasting longer and help keep them clean."
+      ]
+    },
+    {
+      "heading": "Prepping for Wash",
+      "paragraphs": [
+        "Turn bodysuits inside out.",
+        "Put hand paws in a white zip-up pillowcase; this will keep claws from catching things they shouldn’t. Important for 3D printed claws.",
+        "Most tails that are larger than a nub tail will have a zipper somewhere on the underside to remove and adjust the stuffing. You don’t have to remove the stuffing but it will dry faster.",
+        "Feet paws and heads I do not recommend putting into the washing machine as they are bulky. Tub wash these or use a spot cleaner such as the Bissell Little Green."
+      ]
+    },
+    {
+      "heading": "Washing",
+      "paragraphs": [
+        "Both front and top load washers will work. Machines with no center agitator are best. No, you don’t have to get a new machine; you just have to be more careful.",
+        "If you do have the center agitator, keep loads very light.",
+        "Use the delicate setting with cold water ONLY!!",
+        "Do NOT use hot water; this will cause irreparable damage to the fur fibers of your suit.",
+        "Especially if you are using a spot cleaner or tub washing, remember to rinse!",
+        "Use a delicate detergent, I recommend Woolite or Amway liquid SA8 (the SA8 is very concentrated, a little will go a long way).",
+        "I personally use Woolite for the general cleaning and the SA8 for heavy cleaning."
+      ]
+    },
+    {
+      "heading": "Washing the head",
+      "paragraphs": [
+        "Tub wash or use the Bissell Little Green.",
+        "Our eyes are a painted vinyl mesh with a layer of sealer. They can survive being wet; however, still be gentle so you don’t end up scraping the paint off. Don’t waterboard your poor suit.",
+        "For extra protection for the eyes, you can stuff the eyes with paper towels."
+      ]
+    },
+    {
+      "heading": "Drying",
+      "paragraphs": [
+        "Don’t put any part of your suit into the dryer, EVER, for any reason. Just no.",
+        "Spin cycle on the washer will get most of the water out.",
+        "Another option to help get water out will be to wrap items in a towel (do not do this with the head) and gently press the water out. Be sure not to break claws.",
+        "Hang dry is best. Brush gently while the suit is damp to keep the suit fluffy. Brush every so often while it is drying.",
+        "Fans will help immensely when drying your suit.",
+        "I recommend getting a wetsuit dryer for body suits. It's basically a big hanger with a fan in it. I also recommend getting a glove and boot dryer from Dry Guy. It is a dryer with 4 stacks that is perfect for drying heads and paws.",
+        "Any questions, don’t hesitate to contact me."
+      ]
+    }
+  ],
+  "recommendedItems": [
+    {
+      "name": "Bissell Little Green",
+      "href": "https://www.amazon.com/gp/product/B0016HF5GK/"
+    },
+    {
+      "name": "Bodysuit dryer",
+      "href": "https://www.amazon.com/gp/product/B0011G1F8S/"
+    },
+    {
+      "name": "Head and paw dryer base",
+      "href": "https://www.amazon.com/gp/product/B010A5J5FU/"
+    },
+    {
+      "name": "Dryer head piece",
+      "href": "https://www.amazon.com/gp/product/B010A5J4UG/"
+    },
+    {
+      "name": "SA8 detergent",
+      "href": "https://www.amway.com/en_US/Amway-Home%E2%84%A2-SA8%E2%84%A2-Liquid-Laundry-Detergent-p-110478"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "sections": [
+    {
+      "id": "general",
+      "heading": "General",
+      "items": [
+        "The customer must be 18 or older to commission.",
+        "By commissioning you agree to this TOS",
+        "Please have a reference sheet for quotes with a minimum of front and back view. Reference sheet must be easy to understand and markings must be clearly visible and consistent.",
+        "The start/finish date for any commission is NOT guaranteed, it is an estimate subject to change.",
+        "It is the customer's responsibility to notify me of any changes they would like to make during production."
+      ]
+    },
+    {
+      "id": "dtd",
+      "heading": "Duct Tape Dummy Requirements (DTD)",
+      "items": [
+        "The DTD is REQUIRED to go down over the heels around the bottom of the foot. This is to get exact leg length.",
+        "DTD must be taped back together neatly. DTD is not to have excessive wrinkles, folds, or gaps between pieces of tape."
+      ]
+    },
+    {
+      "id": "payments",
+      "heading": "Payments",
+      "items": [
+        "All prices are in USD",
+        "40% NON-Refundable down payment is required to confirm your slot.",
+        "Payment plans can be discussed, The customer is responsible to keep to the agreed payment plan. If the customer can't make a payment please communicate this ASAP. Failure to make multiple payments risks being dropped from the queue and added to a blacklist.",
+        "Drops due to non-payment may not be eligible for refunds.",
+        "Suits will not be started until the commission price has been paid in full.",
+        "Shipping costs are not included in commission prices and are charged separately after completion.",
+        "Suits will not be shipped until all invoices are fully paid",
+        "For commissions shipped outside the US, the customer is responsible for any fees or taxes they may incur. It is the customer's responsibility to know their customs regulations on imports before purchasing."
+      ]
+    },
+    {
+      "id": "refunds",
+      "heading": "Refunds",
+      "items": [
+        "Refunds not eligible after materials are ordered and work has started.",
+        "If a commission is cancelled by the customer, the customer will receive a refund up to 50% of the commission's total price and will not receive the commissioned item(s). Refunds are not available for commissions already started and/or shipped.",
+        "If a commission being paid on a payment plan is canceled before the commission is fully paid, the customer will be refunded payments after the first 50% of the total commission price. If the customer has not paid more than the first 50% before canceling, they will not be eligible to receive a refund."
+      ]
+    },
+    {
+      "id": "refusal-of-service",
+      "heading": "Refusal of Service",
+      "items": [
+        "I reserve the right to deny service for any reason. This includes but not limited to the customer being rude, threatening, or unreasonable."
+      ]
+    }
+  ],
+  "agreement": "By commissioning you agree to my terms of service"
+}

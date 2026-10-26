@@ -1,0 +1,13 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.env*
+.DS_Store
+
+# Private development uploads; never commit image bytes.
+.tmc-media/
+
+# Local Vercel project linkage and development logs.
+.vercel/
+*.log

@@ -1,0 +1,42 @@
+.card { min-width: 0; padding: 27px; background: #fff; border: 1px solid var(--owner-line, #e9e5e5); border-radius: 11px; color: var(--owner-ink, #302b2c); }
+.heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 23px; }
+.heading h2 { margin: 0; font-size: 17px; letter-spacing: -.3px; }
+.heading p, .service p { color: #766f70; font-size: 12px; line-height: 1.7; margin: 7px 0 0; }
+.secondary, .helpButton { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 42px; padding: 10px 16px; border: 1px solid #ded7d9; border-radius: 7px; background: #fff; color: #57494e; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.secondary:hover { background: #f7f5f5; border-color: #bcb0b4; }
+.secondary:disabled, .helpButton:disabled { cursor: wait; opacity: .6; }
+.help { position: relative; max-width: 340px; }
+.helpButton { background: #54a6eb; color: #102a40; border-color: #54a6eb; width: 100%; font-weight: 700; }
+.helpButton:hover { background: #54a6eb; box-shadow: inset 0 0 0 1px #102a40; }
+.helpButton > span { display: inline-grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; }
+.helpButton:focus-visible, .secondary:focus-visible { outline: 3px solid #bd7887; outline-offset: 3px; }
+.notice, .error { font-size: 11px; line-height: 1.6; margin: 8px 0 0; padding: 10px 12px; border-radius: 6px; background: #f0f5f0; color: #36513b; }
+.error { background: #fcf0f1; color: #8e2637; }
+.compactGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; }
+.serviceList { display: grid; gap: 0; }
+.service { padding: 17px; background: #faf9f8; border: 1px solid #eee9e9; border-radius: 8px; }
+.serviceList .service { padding: 19px 0; border: 0; border-bottom: 1px solid #eee9e9; background: none; border-radius: 0; }
+.serviceList .service:first-child { padding-top: 0; }
+.service > div, .request > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.service h3, .request h3 { font-size: 12px; letter-spacing: 0; margin: 0; }
+.badge { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 7px; border-radius: 5px; font-size: 10px; line-height: 1.4; font-weight: 500; }
+.badge::before { content: ''; width: 5px; height: 5px; flex: 0 0 5px; background: currentColor; border-radius: 50%; }
+.good { background: #ecf3ec; color: #3d6544; }
+.waiting { background: #f5efe4; color: #86642c; }
+.unknown { background: #eeeaf0; color: #736279; }
+.footnote { color: #82797c; font-size: 10px; line-height: 1.7; margin: 18px 0 0; }
+.inboxNotice { padding: 13px 16px; border: 1px solid #eadfd7; background: #faf7f3; border-radius: 7px; font-size: 12px; line-height: 1.7; color: #7d6b59; }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 250px; padding: 35px 20px; color: #786c71; }
+.empty strong { color: #53464c; font-size: 16px; font-weight: 500; }
+.empty p { max-width: 540px; font-size: 12px; line-height: 1.7; margin: 12px 0 0; }
+.empty small { font-size: 10px; margin-top: 12px; }
+.inboxIcon { display: grid; place-items: center; width: 45px; height: 45px; border: 1px solid #e7dddd; border-radius: 50%; font-size: 22px; color: #917880; margin-bottom: 17px; }
+.requests { display: grid; gap: 14px; margin-top: 20px; }
+.request { padding: 20px; border: 1px solid #e9e5e5; border-radius: 8px; overflow-wrap: anywhere; }
+.request h3 { font-size: 14px; }
+.request p { font-size: 12px; line-height: 1.7; }
+.email { color: #800014; }
+.description { white-space: pre-wrap; }
+.request small { font-size: 10px; color: #82797c; }
+.visuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 700px) { .card { padding: 20px; } .compactGrid { grid-template-columns: 1fr; } .heading { flex-wrap: wrap; } .service > div { align-items: flex-start; } .help { max-width: 100%; } .helpButton { padding: 10px 12px; } }

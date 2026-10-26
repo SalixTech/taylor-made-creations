@@ -1,0 +1,67 @@
+/* Personal display preferences only. These rules never modify the owner's
+   saved palette, and Taylor's design canvases are explicitly excluded. */
+.color-mode-toggle { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:40px; padding:8px 12px; border:1px solid currentColor; border-radius:7px; background:transparent; color:inherit; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap; }
+.color-mode-toggle:focus-visible { outline:3px solid #d35f76; outline-offset:3px; }
+.color-mode-toggle > span:first-child { font-size:18px; line-height:1; }
+
+[data-owner-portal][data-color-mode="dark"] { --owner-wine:#f3a8b6; --owner-ink:#f5eff1; --owner-muted:#c6b8be; --owner-line:#55434c; --owner-surface:#241f24; --owner-card:var(--owner-surface); --owner-raised:#30272e; color-scheme:dark; color:var(--owner-ink); background:#18151a; }
+[data-owner-portal][data-color-mode="light"] { color-scheme:light; }
+body:has([data-owner-portal][data-color-mode="dark"]) { background:#18151a; }
+/* The data-site-render-mode boundary includes every live design preview. */
+[data-owner-portal][data-color-mode="dark"] :is(h1,h2,h3,h4,p,small,label,strong,span,em,summary,li,a,legend):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:var(--owner-ink)!important; }
+[data-owner-portal][data-color-mode="dark"] :is(p,small,[class*="help"],[class*="Meta"],[class*="eyebrow"],[class*="bottomNote"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:var(--owner-muted)!important; }
+[data-owner-portal][data-color-mode="dark"] :is(section,dialog,[role="listbox"],[class*="sidebar"],[class*="topbar"],[class*="card"],[class*="Card"],[class*="builder"],[class*="panel"],[class*="Panel"],[class*="toolbar"],[class*="contextbar"],[class*="dialogActions"],[class*="softNote"],[class*="draftCreate"],[class*="blockPalette"],[class*="artWindow"],[class*="previewHeader"],[class*="request"],[class*="inboxNotice"],[class*="service"],[class*="priceRow"],[class*="stage"],[class*="palette"],[class*="Palette"],[class*="headerEditor"],[class*="navRow"],[class*="navLabel"],[class*="numberEntry"],[class*="hexField"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { background-color:var(--owner-surface)!important; border-color:var(--owner-line)!important; color:var(--owner-ink)!important; }
+[data-owner-portal][data-color-mode="dark"] :is(button,input,textarea,select,[role="combobox"],[role="option"],[class*="segmented"],[class*="Switch"],[class*="badge"],[class*="Badge"]):not(:where([data-site-render-mode],[data-site-render-mode] *)):not([style*="background"]) { color:var(--owner-ink)!important; background-color:var(--owner-raised)!important; border-color:var(--owner-line)!important; }
+[data-owner-portal][data-color-mode="dark"] input[type="color"]:not(:where([data-site-render-mode] *)) { padding:3px!important; }
+[data-owner-portal][data-color-mode="dark"] :is(input,textarea)::placeholder { color:#b4a3ac; opacity:1; }
+[data-owner-portal][data-color-mode="dark"] :is(button:hover,button[aria-current="page"],[role="option"][aria-selected="true"]):not(:disabled):not(:where([data-site-render-mode],[data-site-render-mode] *)) { background-color:#48313e!important; border-color:#d7879b!important; }
+[data-owner-portal][data-color-mode="dark"] :is([class*="primary"],[class*="danger"],[class*="applyShop"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { background-color:#970d2a!important; color:#fff!important; border-color:#db6c84!important; }
+[data-owner-portal][data-color-mode="dark"] :is(a,[class*="textButton"],[class*="dangerLink"],[class*="required"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:#ffc0cc!important; }
+[data-owner-portal][data-color-mode="dark"] :is(button,input,textarea,select,a,summary,[tabindex]):focus-visible:not(:where([data-site-render-mode],[data-site-render-mode] *)) { outline:3px solid #ffb8ca!important; outline-offset:3px; }
+[data-owner-portal][data-color-mode="dark"] :is([class*="error"],[class*="Error"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:#ffd3dc!important; background-color:#49222d!important; border-color:#a85b6d!important; }
+[data-owner-portal][data-color-mode="dark"] :is([class*="successNotice"],[class*="notice"],[class*="good"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:#cdf0d5!important; background-color:#203b2b!important; border-color:#537c61!important; }
+[data-owner-portal][data-color-mode="dark"] [class*="switch"]:not(:where([data-site-render-mode] *)) { background-color:#685963!important; }
+[data-owner-portal][data-color-mode="dark"] input:checked + [class*="switch"]:not(:where([data-site-render-mode] *)) { background-color:#c8516c!important; }
+[data-owner-portal][data-color-mode="dark"] [data-site-render-mode] { color-scheme:light; }
+
+/* Public dark mode is opt-in; default/light mode leaves creative colors intact.
+   An explicit per-element appearance is kept, rather than overwriting its palette. */
+[data-theme-scope="public"][data-color-mode="dark"] { color-scheme:dark; --ink:#f4edf0; --muted:#c5b7be; --paper:#18151a; --line:#55434c; --wine:#f4b1c1; --site-background:#18151a; --site-text:#f4edf0; --site-accent:#f4b1c1; background:#18151a!important; color:#f4edf0; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(.site-header,footer,.preview-banner,[class*="cartPanel"],[role="listbox"]):not(:where([data-owner-portal],[data-owner-portal] *)) { background:#241f24!important; color:#f4edf0!important; border-color:#55434c!important; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(input,textarea,select,[role="combobox"],[role="option"]):not(:where([data-owner-portal],[data-owner-portal] *)) { background:#30272e!important; color:#f4edf0!important; border-color:#806773!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .color-mode-toggle { background:#30272e; color:#fff; }
+
+/* Browser/platform support controls overlay behavior. A transparent thumb
+   never removes the scroll range; keyboard focus and interaction reveal it. */
+html,body,[data-owner-portal] *,[data-theme-scope="public"] * { scrollbar-width:thin; scrollbar-color:transparent transparent; }
+html[data-scroll-active="true"],html[data-scroll-active="true"] body,html[data-scroll-active="true"] :is([data-owner-portal] *,[data-theme-scope="public"] *),:is([data-owner-portal],[data-theme-scope="public"]) :focus-within { scrollbar-color:#b22845 transparent; }
+::-webkit-scrollbar { width:12px; height:12px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:transparent; border:3px solid transparent; background-clip:padding-box; border-radius:20px; }
+html[data-scroll-active="true"] ::-webkit-scrollbar-thumb,:focus-within::-webkit-scrollbar-thumb { background-color:#b22845; }
+::-webkit-scrollbar-thumb:hover { background-color:#d74c69; }
+@media (prefers-reduced-motion:reduce),(forced-colors:active) { html,body,[data-owner-portal] *,[data-theme-scope="public"] * { scrollbar-color:auto; scrollbar-width:auto; } ::-webkit-scrollbar-thumb { background-color:#b22845; } }
+@media (forced-colors:active) { [data-owner-portal][data-color-mode="dark"] * { forced-color-adjust:auto; } }
+/* Override only display tokens in the opted-in frame. Inline saved design
+   tokens remain in the DOM and return unchanged when light mode is selected. */
+[data-theme-scope="public"][data-color-mode="dark"],
+[data-theme-scope="public"][data-color-mode="dark"] [data-site-render-mode="public"] { --cream:#241f24!important; --site-background:#18151a!important; --site-surface:#241f24!important; --site-text:#f4edf0!important; --site-muted:#c5b7be!important; --site-accent:#f4b1c1!important; --site-border:#55434c!important; --site-header-background:#241f24!important; --site-header-text:#f4edf0!important; --site-footer-background:#241f24!important; --site-footer-text:#c5b7be!important; --site-button-text:#fff!important; --white:#18151a!important; --blush:#241f24!important; --ink:#f4edf0!important; --muted:#c5b7be!important; --line:#55434c!important; --wine:#f4b1c1!important; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(.price-card,.form-preview,.status-panel,.empty-state,.notice,.page-shell):not(:where([data-element-background],[data-element-background] *)) { background-color:#241f24!important; border-color:#55434c!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .page-shell:not(:where([data-element-background],[data-element-background] *)) { background-color:#18151a!important; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(.home-intro h1,.status-panel h2):not(:where([data-element-text-color],[data-element-text-color] *)) { color:#f4edf0!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .button:not(.outline):not(:disabled):not(:where([data-element-background],[data-element-background] *)) { background:#970d2a!important; border-color:#db6c84!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .button:not(.outline):not(:disabled):not(:where([data-element-text-color],[data-element-text-color] *)) { color:#fff!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .button.outline:not(:where([data-element-text-color],[data-element-text-color] *)) { color:#f4b1c1!important; }
+[data-theme-scope="public"][data-color-mode="dark"] :focus-visible { outline-color:#ffb8ca; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(dialog,form,[class*="product"],dialog [class*="actions"],dialog [class*="cancel"]):not(:where([data-element-background],[data-element-background] *)) { background-color:#241f24!important; color:#f4edf0; border-color:#55434c!important; }
+[data-theme-scope="public"][data-color-mode="dark"] [class*="error"] { color:#ffd3dc!important; background-color:#49222d!important; }
+[data-theme-scope="public"][data-color-mode="dark"] [class*="error"] a { color:#ffd3dc!important; }
+[data-theme-scope="public"][data-color-mode="dark"] [class*="count"] { color:#241f24; }
+[data-owner-portal][data-color-mode="dark"] [role="option"][data-active="true"],
+[data-theme-scope="public"][data-color-mode="dark"] [role="option"][data-active="true"] { background-color:#714252!important; color:#fff!important; outline:1px solid #e8a7bb; outline-offset:-1px; }
+
+/* Help retains its established blue in both personal modes, including hover.
+   The complete enabled/disabled states add specificity above the generic
+   owner button/hover rules (which also cover selected dropdown options). */
+[data-owner-portal][data-color-mode] button[class*="helpButton"][aria-describedby="taylor-help-description"]:is(:enabled,:disabled) { background-color:#54a6eb!important; border-color:#54a6eb!important; color:#102a40!important; }
+[data-owner-portal][data-color-mode] button[class*="helpButton"][aria-describedby="taylor-help-description"]:is(:enabled,:disabled) > span { color:#102a40!important; border-color:#102a40!important; }

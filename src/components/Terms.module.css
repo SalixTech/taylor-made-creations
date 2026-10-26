@@ -1,0 +1,36 @@
+.terms {
+  background: var(--site-background, #fff);
+  font-weight: 400;
+}
+
+.section {
+  margin-bottom: 40px;
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+}
+
+.section h2 {
+  font-size: clamp(24px, 4vw, 30px);
+}
+
+.section ul {
+  margin: 0;
+  padding-left: 24px;
+}
+
+.section li {
+  margin-bottom: 18px;
+  padding-left: 6px;
+  line-height: 1.8;
+}
+
+.section li::marker {
+  color: var(--wine);
+}
+
+.agreement {
+  margin: 0;
+  padding-top: 28px;
+  border-top: 2px solid var(--wine);
+  color: var(--wine);
+}

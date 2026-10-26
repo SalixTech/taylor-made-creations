@@ -1,0 +1,28 @@
+:global(body):has(.gate) { background: #f7f7f6; }
+:global(body):has(.gate) :global(.site-header),
+:global(body):has(.gate) :global(.preview-banner),
+:global(body):has(.gate) :global(.selected-design > footer),
+:global(body):has(.gate) :global(.selected-design > [class*="cartTrigger"]) { display: none; }
+.gate { min-height: 100vh; display: grid; align-items: center; justify-items: center; padding: 48px 20px; color: #342a2d; font: 14px/1.7 'MS Reference Sans Serif', Arial, Helvetica, sans-serif; }
+.gate * { box-sizing: border-box; }
+.card { background: #fff; border: 1px solid #e9e5e5; border-radius: 16px; padding: clamp(28px, 6vw, 48px); width: 100%; max-width: 530px; box-shadow: 0 12px 50px #302b2c05; }
+.brand { display: block; width: 280px; max-width: 100%; text-decoration: none; margin-bottom: 36px; border-radius: 8px; }
+.eyebrow { color: #766f70; font-size: 9px; font-weight: 600; letter-spacing: 1.8px; margin: 0 0 12px; }
+.card h1 { font: 600 clamp(26px, 5vw, 32px)/1.25 'MS Reference Sans Serif', Arial, sans-serif; letter-spacing: -.8px; margin: 0 0 17px; }
+.card p { margin: 0 0 24px; color: #675e61; }
+.field { display: block; margin: 0 0 19px; font-size: 12px; font-weight: 600; color: #393536; }
+.field input { display: block; width: 100%; min-height: 46px; padding: 11px 12px; margin-top: 7px; border: 1px solid #dedada; border-radius: 7px; font: inherit; font-size: 14px; line-height: 1.5; background: #fff; color: #342a2d; }
+.field input:focus-visible, .primary:focus-visible, .brand:focus-visible, .footer a:focus-visible, .details summary:focus-visible { outline: 3px solid #800014; outline-offset: 3px; }
+.primary { display: block; width: 100%; min-height: 46px; padding: 12px 18px; border: 1px solid #800014; border-radius: 7px; background: #800014; color: #fff; font: 600 12px/1.5 'MS Reference Sans Serif', Arial, sans-serif; cursor: pointer; }
+.primary:hover { background: #670010; }
+.primary:disabled { opacity: .6; cursor: wait; }
+.card .hint { font-size: 11px; line-height: 1.7; margin: 19px 0 0; }
+.card .alert { padding: 13px 15px; border: 1px solid #eac9cf; border-radius: 7px; background: #fff4f5; color: #7d2434; font-size: 12px; }
+.details { border: 1px solid #e9e5e5; background: #faf9f8; border-radius: 7px; padding: 14px; font-size: 11px; overflow-wrap: anywhere; }
+.details summary { cursor: pointer; font-weight: 600; }
+.details p { margin: 15px 0 0; }
+.details ul { padding-left: 18px; }
+.footer { border-top: 1px solid #e9e5e5; margin-top: 30px; padding-top: 21px; display: flex; flex-direction: column; gap: 12px; font-size: 10px; color: #766f70; }
+.footer a { color: #800014; text-decoration: none; font-size: 12px; width: fit-content; }
+@media (max-width: 500px) { .gate { padding: 20px 12px; align-items: start; } .card { padding: 28px 24px; } }
+.gateMode { position:absolute; right:20px; top:16px; z-index:5; }

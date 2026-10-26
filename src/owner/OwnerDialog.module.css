@@ -1,0 +1,10 @@
+.dialog { max-width:calc(100vw - 24px); max-height:calc(100dvh - 32px); overflow-x:hidden; overscroll-behavior:contain; }
+.dialog[open] { display:flex; flex-direction:column; }
+.dialog > div { min-width:0; max-width:100%; }
+.dialog > div:first-child { flex:0 0 auto; align-items:flex-start; }
+.dialog > div:first-child h2 { min-width:0; flex:1; overflow-wrap:anywhere; word-break:normal; }
+.dialog > div:first-child button { flex:0 0 auto; }
+.dialog > div:nth-child(2) { flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; overflow-wrap:anywhere; }
+.dialog > div:last-child { flex:0 0 auto; }
+.dialog p,.dialog li,.dialog strong { overflow-wrap:anywhere; }
+@media(max-width:600px) { .dialog > div:first-child h2 { font-size:19px; } }

@@ -1,0 +1,179 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner() {
+      // UI environment variables do NOT authorize access. This exact UID does.
+      return request.auth != null
+        && request.auth.uid == 'a4ARjp0z8ZOByKlC2AfGzmMRj843';
+    }
+    function validWorkspace(data) {
+      // Rules validate the bounded wrapper; strict application validators check
+      // parsed JSON, money, links, image sources and the public allowlist.
+      return data.keys().hasAll(['schemaVersion', 'revision', 'payload'])
+        && data.keys().hasOnly(['schemaVersion', 'revision', 'payload'])
+        && data.schemaVersion is int && data.schemaVersion == 1
+        && data.revision is int && data.revision >= 1
+        && data.revision <= 9007199254740991
+        && data.payload is string && data.payload.size() > 0
+        && data.payload.toUtf8().size() <= 700000;
+    }
+    function publishingWithDraft(revision) {
+      // Publication must atomically advance the owner workspace. A standalone
+      // public write cannot reuse a previously saved workspace revision.
+      let workspace = /databases/$(database)/documents/ownerWorkspace/current;
+      return validWorkspace(getAfter(workspace).data)
+        && getAfter(workspace).data.revision == revision
+        && ((!exists(workspace) && revision == 1)
+          || (exists(workspace) && revision == get(workspace).data.revision + 1));
+    }
+    match /ownerWorkspace/current {
+      allow get: if isOwner();
+      allow create: if isOwner() && validWorkspace(request.resource.data)
+        && request.resource.data.revision == 1;
+      allow update: if isOwner() && validWorkspace(resource.data)
+        && validWorkspace(request.resource.data)
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow list, delete: if false;
+    }
+    match /site/published {
+      allow get: if true;
+      allow create: if isOwner() && validWorkspace(request.resource.data)
+        && publishingWithDraft(request.resource.data.revision);
+      allow update: if isOwner() && validWorkspace(resource.data)
+        && validWorkspace(request.resource.data)
+        && request.resource.data.revision > resource.data.revision
+        && publishingWithDraft(request.resource.data.revision);
+      allow list, delete: if false;
+    }
+    function validDraftId(id) {
+      return id is string && id.matches('^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$');
+    }
+    function validDraftIndex(data) {
+      return data.keys().hasAll(['schemaVersion', 'revision', 'drafts', 'changedDraftId'])
+        && data.keys().hasOnly(['schemaVersion', 'revision', 'drafts', 'changedDraftId'])
+        && data.schemaVersion == 1 && data.schemaVersion is int
+        && data.revision is int && data.revision >= 1 && data.revision <= 9007199254740991
+        && data.drafts is map && data.drafts.size() <= 10
+        && validDraftId(data.changedDraftId);
+    }
+    function advancingDraftIndex(id) {
+      let path = /databases/$(database)/documents/ownerDraftIndex/current;
+      return validDraftIndex(getAfter(path).data)
+        && getAfter(path).data.changedDraftId == id
+        && ((!exists(path) && getAfter(path).data.revision == 1)
+          || (exists(path) && getAfter(path).data.revision == get(path).data.revision + 1));
+    }
+    function indexedDraftAfter(id, revision) {
+      let index = getAfter(/databases/$(database)/documents/ownerDraftIndex/current).data;
+      return advancingDraftIndex(id) && id in index.drafts && index.drafts[id] == revision;
+    }
+    function validRegistryChange(data, before) {
+      let id = data.changedDraftId;
+      let active = /databases/$(database)/documents/ownerDrafts/$(id);
+      let archive = /databases/$(database)/documents/ownerDraftTrash/$(id);
+      return data.drafts.diff(before).affectedKeys().hasOnly([id])
+        && data.drafts.diff(before).affectedKeys().size() == 1
+        && ((id in data.drafts
+          && existsAfter(active) && validWorkspace(getAfter(active).data)
+          && data.drafts[id] == getAfter(active).data.revision
+          && ((!(id in before) && !exists(active) && !exists(archive) && data.drafts[id] == 1)
+            || (id in before && exists(active) && get(active).data.revision == before[id]
+              && data.drafts[id] == before[id] + 1)))
+          || (!(id in data.drafts) && id in before && exists(active)
+            && get(active).data.revision == before[id] && !existsAfter(active)
+            && existsAfter(archive) && getAfter(archive).data == get(active).data));
+    }
+    match /ownerDraftIndex/current {
+      allow get: if isOwner();
+      allow create: if isOwner() && validDraftIndex(request.resource.data)
+        && request.resource.data.revision == 1 && validRegistryChange(request.resource.data, {});
+      allow update: if isOwner() && validDraftIndex(resource.data) && validDraftIndex(request.resource.data)
+        && request.resource.data.revision == resource.data.revision + 1
+        && validRegistryChange(request.resource.data, resource.data.drafts);
+      allow list, delete: if false;
+    }
+    match /ownerDrafts/{draftId} {
+      allow get: if isOwner();
+      allow create: if isOwner() && validDraftId(draftId) && validWorkspace(request.resource.data)
+        && request.resource.data.revision == 1
+        && !exists(/databases/$(database)/documents/ownerDraftTrash/$(draftId))
+        && indexedDraftAfter(draftId, 1);
+      allow update: if isOwner() && validWorkspace(resource.data) && validWorkspace(request.resource.data)
+        && request.resource.data.revision == resource.data.revision + 1
+        && indexedDraftAfter(draftId, request.resource.data.revision);
+      // Removal is an atomic archive, never permanent destruction of content.
+      allow delete: if isOwner() && advancingDraftIndex(draftId)
+        && !(draftId in getAfter(/databases/$(database)/documents/ownerDraftIndex/current).data.drafts)
+        && getAfter(/databases/$(database)/documents/ownerDraftTrash/$(draftId)).data == resource.data;
+      allow list: if false;
+    }
+    match /ownerDraftTrash/{draftId} {
+      allow get, list: if isOwner();
+      allow create: if isOwner() && validDraftId(draftId) && validWorkspace(request.resource.data)
+        && advancingDraftIndex(draftId)
+        && !(draftId in getAfter(/databases/$(database)/documents/ownerDraftIndex/current).data.drafts)
+        && exists(/databases/$(database)/documents/ownerDrafts/$(draftId))
+        && !existsAfter(/databases/$(database)/documents/ownerDrafts/$(draftId))
+        && request.resource.data == get(/databases/$(database)/documents/ownerDrafts/$(draftId)).data;
+      // Restoration copies into a NEW active draft under the normal ten-slot limit.
+      // The archived original remains recoverable; no purge endpoint is enabled.
+      allow update, delete: if false;
+    }
+    function commissionStatus(data) {
+      return data.get('status', 'received');
+    }
+    function commissionVersion(data) {
+      return data.get('version', 0);
+    }
+    function validCommissionBefore(data) {
+      return commissionStatus(data) in ['received', 'approved', 'denied', 'waitlisted']
+        && commissionVersion(data) is int && commissionVersion(data) >= 0
+        && commissionVersion(data) < 9007199254740991;
+    }
+    function validCommissionDecision(before, after) {
+      return validCommissionBefore(before)
+        && after.diff(before).affectedKeys().hasOnly(['status', 'version', 'updatedAt', 'updatedBy'])
+        && after.keys().hasAll(['status', 'version', 'updatedAt', 'updatedBy'])
+        && after.status in ['approved', 'denied', 'waitlisted']
+        && after.status != commissionStatus(before)
+        && after.version is int && after.version == commissionVersion(before) + 1
+        && after.updatedBy == request.auth.uid
+        && after.updatedAt == request.time;
+    }
+    function validCommissionHistory(before, after, audit) {
+      return audit.keys().hasAll(['fromStatus', 'toStatus', 'version', 'actorUid', 'createdAt'])
+        && audit.keys().hasOnly(['fromStatus', 'toStatus', 'version', 'actorUid', 'createdAt'])
+        && audit.fromStatus == commissionStatus(before) && audit.toStatus == after.status
+        && audit.version == after.version && audit.version is int
+        && audit.actorUid == request.auth.uid && audit.createdAt == request.time;
+    }
+    match /commissionRequests/{requestId} {
+      // Existing private requests may be reviewed, never submitted, deleted,
+      // emailed or charged by this owner-only decision path.
+      allow get, list: if isOwner();
+      allow update: if isOwner() && validCommissionDecision(resource.data, request.resource.data)
+        && !exists(/databases/$(database)/documents/commissionRequests/$(requestId)/history/$(string(request.resource.data.version)))
+        && validCommissionHistory(resource.data, request.resource.data,
+          getAfter(/databases/$(database)/documents/commissionRequests/$(requestId)/history/$(string(request.resource.data.version))).data);
+      allow create, delete: if false;
+      match /history/{historyId} {
+        allow get, list: if isOwner();
+        allow create: if isOwner()
+          && exists(/databases/$(database)/documents/commissionRequests/$(requestId))
+          && historyId == string(request.resource.data.version)
+          && validCommissionDecision(
+            get(/databases/$(database)/documents/commissionRequests/$(requestId)).data,
+            getAfter(/databases/$(database)/documents/commissionRequests/$(requestId)).data)
+          && validCommissionHistory(
+            get(/databases/$(database)/documents/commissionRequests/$(requestId)).data,
+            getAfter(/databases/$(database)/documents/commissionRequests/$(requestId)).data,
+            request.resource.data);
+        allow update, delete: if false;
+      }
+    }
+    // No access to other documents, collection listing or public owner data.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
