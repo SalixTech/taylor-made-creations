@@ -1,11 +1,8 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+export const metadata = { title: "Taylor’s private site preview", robots: { index: false, follow: false } };
 
-export const metadata: Metadata = { title: "Taylor’s Space", robots: { index: false, follow: false } };
-
-export default async function TaylorPage() {
-  // Production remains closed until the complete owner workflow is verified.
-  if (process.env.NODE_ENV !== "development") notFound();
-  const { default: OwnerWorkspaceEntry } = await import("@/owner/OwnerWorkspaceEntry");
-  return <OwnerWorkspaceEntry />;
+export default async function TaylorPreviewPage({ params }: { params: Promise<{ slug?: string[] }> }) {
+  // Direct preview links stay behind the same owner gate as the workspace.
+  const { default: OwnerPreviewEntry } = await import("@/owner/OwnerPreviewEntry");
+  const { slug } = await params;
+  return <OwnerPreviewEntry slug={slug ?? []} />;
 }

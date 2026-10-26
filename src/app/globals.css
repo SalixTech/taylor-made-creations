@@ -190,7 +190,8 @@
 .selected-design .storefront-notice{padding:16px;border:1px solid var(--line);background:var(--cream);font-size:14px;line-height:1.6}
 .selected-design .premade-purchase{margin-top:24px}
 .selected-design .premade-purchase h2{font-size:23px}
-.selected-design .public-not-found{min-height:55vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+/* Keep the 404 card itself centered; .empty-state otherwise removes auto margins. */
+.selected-design .page-shell.public-not-found{width:calc(100% - 44px);margin:24px auto;padding-block:calc(clamp(35px,6vw,60px) * var(--site-spacing,1));min-height:55vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 .selected-design .public-not-found .page-intro{text-align:center;margin:0 auto}
 .selected-design .public-not-found .actions{justify-content:center}
 @media(max-width:700px){.selected-design .premade-product{grid-template-columns:1fr}.selected-design .nav-more-menu{left:auto;right:0}}

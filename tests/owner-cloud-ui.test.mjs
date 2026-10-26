@@ -166,12 +166,23 @@ test('preview hides old session immediately, unsubscribes its store, and ignores
   assert.equal(t.h.hooks.some(slot => slot?.content?.home?.title === 'LATE SESSION SECRET'), false);
 });
 
-test('both routes stay 404 in production before importing owner components', async () => {
-  for (const file of ['src/app/owner/page.tsx', 'src/app/owner/preview/[[...slug]]/page.tsx']) {
-    const h = harness(); h.process.env.NODE_ENV = 'production';
-    const Page = h.load(file).default;
-    await assert.rejects(Promise.resolve().then(() => Page({ params: Promise.resolve({ slug: ['prices'] }) })), /MOCK_NOT_FOUND_404/);
-    assert.equal([...h.cache.keys()].some(file => /OwnerWorkspaceEntry|OwnerPreviewEntry|FirebaseOwnerGate/.test(file)), false);
+test('hosted canonical routes render only their protected entrypoints, never a private workspace directly', async () => {
+  for (const environment of ['production', 'development']) {
+    for (const [file, entry, slug] of [
+      ['src/app/taylor/page.tsx', 'OwnerWorkspaceEntry', undefined],
+      ['src/app/taylor/preview/[[...slug]]/page.tsx', 'OwnerPreviewEntry', ['prices']],
+      ['src/app/taylor/preview/[[...slug]]/page.tsx', 'OwnerPreviewEntry', undefined],
+    ]) {
+      const h = harness(); h.process.env.NODE_ENV = environment;
+      function ProtectedEntry() { return null; }
+      h.overrides[`@/owner/${entry}`] = { __esModule: true, default: ProtectedEntry };
+      const Page = h.load(file).default;
+      const tree = await Page({ params: Promise.resolve({ slug }) });
+      assert.equal(tree.type, ProtectedEntry);
+      if (entry === 'OwnerPreviewEntry') assert.deepEqual(tree.props.slug, slug ?? []);
+      assert.equal([...h.cache.keys()].some(file => /OwnerPortal|OwnerSitePreview|firebase-store/.test(file)), false);
+      assert.equal(h.hooks.length, 0, 'route does not run private effects');
+    }
   }
 });
 

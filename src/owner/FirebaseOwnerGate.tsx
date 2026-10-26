@@ -122,7 +122,7 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
       {state.status === "checking" || state.status === "signing-out" ? <p role="status" aria-live="polite">{state.status === "signing-out" ? "Signing out and locking your workspace…" : "Checking your owner sign-in…"}</p>
         : state.status === "setup" ? <>
           <p>Owner sign-in is not connected in this build yet. Your existing browser drafts are untouched; no local or cloud workspace has been opened.</p>
-          <details className={styles.details}><summary>Setup details for your site developer</summary><p>{state.config.status === "missing" ? "Missing settings:" : "Settings needing correction:"}</p><ul>{state.config.fields.map(field => <li key={field}><code>{field}</code></li>)}</ul><p>Add the Firebase web-app settings and owner UID to the local environment, deploy the reviewed owner-only rules, then restart or rebuild the app. Never put a password or service-account key in these settings.</p></details>
+          <details className={styles.details}><summary>Setup details for your site developer</summary><p>{state.config.status === "missing" ? "Missing settings:" : "Settings needing correction:"}</p><ul>{state.config.fields.map(field => <li key={field}><code>{field}</code></li>)}</ul><p>Add the Firebase web-app settings and owner UID to this deployment’s environment (or .env.local for local development), deploy the reviewed owner-only rules, then rebuild the app. Never put a password or service-account key in these settings.</p></details>
         </>
           : state.status === "denied" || state.status === "session-error" ? <>
             <p className={styles.alert} role="alert">{state.message}</p>
