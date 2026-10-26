@@ -36,7 +36,22 @@ export type PriceLine = { id: string; name: string; price: number };
 export type GalleryItem = { id: string; name: string; src: string; alt: string; width: number; height: number; visible: boolean; /** Blank or absent preserves automatic numbering. */ displayNumber?: string };
 export type OwnerPremadePhoto = { id: string; src: string; alt: string };
 export type PremadeSoldChannel = "tmc" | "third-party" | "con";
-export type OwnerPremade = { soldChannel?: PremadeSoldChannel; externalUrl?: string; venue?: string; badge?: string; id: string; name: string; image: string; alt: string; description: string; price: number | null; visible: boolean; photos?: OwnerPremadePhoto[]; coverPhotoId?: string; imageFit?: "cover" | "contain"; imagePositionX?: number; imagePositionY?: number };
+export type OwnerPremade = { soldChannel?: PremadeSoldChannel; externalUrl?: string; venue?: string; badge?: string; tags?: string[]; /** Private saved listing; excluded even by whole-site publication. */ isDraft?: boolean; id: string; name: string; image: string; alt: string; description: string; price: number | null; visible: boolean; photos?: OwnerPremadePhoto[]; coverPhotoId?: string; imageFit?: "cover" | "contain"; imagePositionX?: number; imagePositionY?: number };
+export const MAX_PREMADE_TAGS = 10;
+export const MAX_PREMADE_TAG_LENGTH = 80;
+/** Commas delimit tags. Preserve the first spelling; never silently truncate. */
+export function parsePremadeTags(value: string): string[] {
+  const seen = new Set<string>();
+  return value.split(",").map(tag => tag.trim()).filter(tag => {
+    const key = tag.toLocaleLowerCase("en-US");
+    if (!tag || seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+}
+/** An unchanged legacy badge remains one badge, including any literal comma. */
+export function getPremadeTags(item: Pick<OwnerPremade, "badge" | "tags">): string[] {
+  return item.tags !== undefined ? [...item.tags] : item.badge?.trim() ? [item.badge.trim()] : [];
+}
 export type OwnerFont = { id: string; name: string; src: string; format: "woff2" | "woff" | "ttf" | "otf" };
 export type OwnerContent = {
   schemaVersion: typeof OWNER_SCHEMA_VERSION;
@@ -256,17 +271,31 @@ function validateContent(value: unknown, published = false): ValidationResult {
     for (const dimension of ["width", "height"]) { number(item[dimension], `${p}.${dimension}`, 20000, true); if (item[dimension] === 0) issue(`${p}.${dimension}`, "Image dimensions must be greater than zero."); }
   });
   list(root.premades, "premades", 100).forEach((v, i) => {
-    const p = `premades[${i}]`; const item = object(v, p); exact(item, ["id", "name", "image", "alt", "description", "price", "visible", "photos", "coverPhotoId", "imageFit", "imagePositionX", "imagePositionY", "soldChannel", "externalUrl", "venue", "badge"], p);
+    const p = `premades[${i}]`; const item = object(v, p); exact(item, ["id", "name", "image", "alt", "description", "price", "visible", "photos", "coverPhotoId", "imageFit", "imagePositionX", "imagePositionY", "soldChannel", "externalUrl", "venue", "badge", "tags", "isDraft"], p);
     id(item.id, `${p}.id`, "premades"); text(item.name, `${p}.name`, 150); image(item.image, `${p}.image`); text(item.alt, `${p}.alt`, 500); text(item.description, `${p}.description`, 5000, false); bool(item.visible, `${p}.visible`);
     if (item.price !== null) money(item.price, `${p}.price`);
-    if (item.soldChannel !== undefined && !["tmc", "third-party", "con"].includes(item.soldChannel as string)) issue(`${p}.soldChannel`, "Choose TMC, third party or convention.");
+    if (item.soldChannel !== undefined && !["tmc", "third-party", "con"].includes(item.soldChannel as string)) issue(`${p}.soldChannel`, "Choose Sold Here, third party or convention.");
     if (item.externalUrl !== undefined) {
       text(item.externalUrl, `${p}.externalUrl`, 2048, false);
       if (item.externalUrl && (typeof item.externalUrl !== "string" || !/^https:\/\//i.test(item.externalUrl) || !isSafeLink(item.externalUrl))) issue(`${p}.externalUrl`, "Use a secure HTTPS listing address without credentials.");
     }
-    if (item.soldChannel === "third-party" && !item.externalUrl) issue(`${p}.externalUrl`, "Add the HTTPS third-party listing address.");
+    if (item.soldChannel === "third-party" && !item.isDraft && !item.externalUrl) issue(`${p}.externalUrl`, "Add the HTTPS third-party listing address.");
     if (item.venue !== undefined) text(item.venue, `${p}.venue`, 200, false);
     if (item.badge !== undefined) text(item.badge, `${p}.badge`, 80, false);
+    if (item.isDraft !== undefined) bool(item.isDraft, `${p}.isDraft`);
+    if (item.tags !== undefined) {
+      const seen = new Set<string>();
+      list(item.tags, `${p}.tags`, MAX_PREMADE_TAGS).forEach((tag, index) => {
+        const path = `${p}.tags[${index}]`;
+        text(tag, path, MAX_PREMADE_TAG_LENGTH);
+        if (typeof tag === "string") {
+          if (tag !== tag.trim() || tag.includes(",")) issue(path, "Use trimmed individual tags without commas.");
+          const key = tag.toLocaleLowerCase("en-US");
+          if (seen.has(key)) issue(path, "Each listing tag must be unique.");
+          seen.add(key);
+        }
+      });
+    }
     if (item.photos !== undefined) {
       // The serialized byte budget bounds the collection, not an arbitrary photo count.
       list(item.photos, `${p}.photos`, MAX_CONTENT_BYTES).forEach((value, index) => {
@@ -457,7 +486,7 @@ export function pageHref(page: OwnerPage): string { return page.slug ? `/${page.
 export type PublicOwnerContent = Omit<OwnerContent, "pages" | "gallery" | "premades"> & {
   pages: Omit<OwnerPage, "trashedAt">[];
   gallery: Omit<GalleryItem, "visible">[];
-  premades: Omit<OwnerPremade, "visible">[];
+  premades: Omit<OwnerPremade, "visible" | "isDraft">[];
 };
 
 /**
@@ -486,7 +515,7 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
       extras: prices.extras.map(item => ({ id: item.id, name: item.name, price: item.price })),
     },
     gallery: content.gallery.filter(item => item.visible).map(item => ({ id: item.id, name: item.name, src: publicImage(item.src, `gallery.${item.id}.src`), alt: item.alt, width: item.width, height: item.height, ...(item.displayNumber !== undefined ? { displayNumber: item.displayNumber } : {}) })),
-    premades: content.premades.filter(item => item.visible && site.showPremades).map(item => ({ id: item.id, name: item.name, image: publicImage(item.image, `premades.${item.id}.image`), alt: item.alt, description: item.description, price: item.price, ...(item.photos !== undefined ? { photos: item.photos.map(photo => ({ id: photo.id, src: publicImage(photo.src, `premades.${item.id}.photos.${photo.id}.src`), alt: photo.alt })) } : {}), ...(item.coverPhotoId !== undefined ? { coverPhotoId: item.coverPhotoId } : {}), ...(item.imageFit !== undefined ? { imageFit: item.imageFit } : {}), ...(item.imagePositionX !== undefined ? { imagePositionX: item.imagePositionX } : {}), ...(item.imagePositionY !== undefined ? { imagePositionY: item.imagePositionY } : {}), ...(item.soldChannel !== undefined ? { soldChannel: item.soldChannel } : {}), ...(item.externalUrl !== undefined ? { externalUrl: item.externalUrl } : {}), ...(item.venue !== undefined ? { venue: item.venue } : {}), ...(item.badge !== undefined ? { badge: item.badge } : {}) })),
+    premades: content.premades.filter(item => item.visible && !item.isDraft && site.showPremades).map(item => ({ id: item.id, name: item.name, image: publicImage(item.image, `premades.${item.id}.image`), alt: item.alt, description: item.description, price: item.price, ...(item.photos !== undefined ? { photos: item.photos.map(photo => ({ id: photo.id, src: publicImage(photo.src, `premades.${item.id}.photos.${photo.id}.src`), alt: photo.alt })) } : {}), ...(item.coverPhotoId !== undefined ? { coverPhotoId: item.coverPhotoId } : {}), ...(item.imageFit !== undefined ? { imageFit: item.imageFit } : {}), ...(item.imagePositionX !== undefined ? { imagePositionX: item.imagePositionX } : {}), ...(item.imagePositionY !== undefined ? { imagePositionY: item.imagePositionY } : {}), ...(item.soldChannel !== undefined ? { soldChannel: item.soldChannel } : {}), ...(item.externalUrl !== undefined ? { externalUrl: item.externalUrl } : {}), ...(item.venue !== undefined ? { venue: item.venue } : {}), ...(item.badge !== undefined ? { badge: item.badge } : {}), ...(item.tags !== undefined ? { tags: [...item.tags] } : {}) })),
     pages: content.pages.filter(page => !page.trashedAt && page.availability !== "hidden").map(page => ({
       id: page.id, kind: page.kind, ...(page.builtinKey ? { builtinKey: page.builtinKey } : {}),
       slug: page.slug, title: page.title, navLabel: page.navLabel, showInNav: page.showInNav, order: page.order, ...(page.navPlacement !== undefined ? { navPlacement: page.navPlacement } : {}), ...(page.availability !== undefined ? { availability: page.availability } : {}), ...(page.titleAppearance !== undefined ? { titleAppearance: publicAppearance(page.titleAppearance) } : {}),
@@ -541,6 +570,7 @@ function plainPublicObject(value: unknown, path: string): Record<string, unknown
 function expandPublicContent(value: Record<string, unknown>): unknown {
   const expand = (items: unknown, path: string, privateKey: string, defaultValue: null | true) => Array.isArray(items) ? Array.from(items, (item, index) => {
     const entry = plainPublicObject(item, `${path}[${index}]`);
+    if (path === "premades" && Object.hasOwn(entry, "isDraft")) throw new OwnerValidationError([{ path: `${path}[${index}].isDraft`, message: "Private listing draft state must not be present in a published snapshot." }]);
     if (Object.hasOwn(entry, privateKey)) throw new OwnerValidationError([{ path: `${path}[${index}].${privateKey}`, message: "Private visibility and trash fields must not be present in a published snapshot." }]);
     return { ...entry, [privateKey]: defaultValue };
   }) : items;
@@ -582,8 +612,9 @@ export function createPublishedOwnerSnapshot(content: OwnerContent, revision: nu
 /** Replace one listing only; unrelated private edits never enter this public snapshot. */
 export function createPublishedPremadeSnapshot(published: PublishedOwnerSnapshot, item: OwnerPremade, revision: number, publishedAt = new Date().toISOString()): PublishedOwnerSnapshot {
   assertPublishedOwnerSnapshot(published);
+  if (item.isDraft) throw new OwnerValidationError([{ path: "premade.isDraft", message: "Choose Publish to store explicitly before publishing a saved listing draft." }]);
   if (item.visible !== true) throw new OwnerValidationError([{ path: "premade.visible", message: "Make this premade visible before publishing it to the store." }]);
-  const selected: Omit<OwnerPremade, "visible"> = {
+  const selected: Omit<OwnerPremade, "visible" | "isDraft"> = {
     id: item.id, name: item.name, image: item.image, alt: item.alt, description: item.description, price: item.price,
     ...(item.photos !== undefined ? { photos: item.photos.map(photo => ({ id: photo.id, src: photo.src, alt: photo.alt })) } : {}),
     ...(item.coverPhotoId !== undefined ? { coverPhotoId: item.coverPhotoId } : {}),
@@ -593,7 +624,7 @@ export function createPublishedPremadeSnapshot(published: PublishedOwnerSnapshot
     ...(item.soldChannel !== undefined ? { soldChannel: item.soldChannel } : {}),
     ...(item.externalUrl !== undefined ? { externalUrl: item.externalUrl } : {}),
     ...(item.venue !== undefined ? { venue: item.venue } : {}),
-    ...(item.badge !== undefined ? { badge: item.badge } : {}),
+    ...(item.badge !== undefined ? { badge: item.badge } : {}), ...(item.tags !== undefined ? { tags: [...item.tags] } : {}),
   };
   const premades = published.content.premades.some(entry => entry.id === item.id)
     ? published.content.premades.map(entry => entry.id === item.id ? selected : entry)

@@ -32,15 +32,16 @@ type Props = {
   canUpdateLiveShop: boolean;
   onUpdateLiveShop: () => void;
   uploadBusy?: boolean;
+  browsing: boolean;
+  onBrowsingChange: (browsing: boolean) => void;
 };
 const blockLabels: Record<PageBlock["type"], string> = { text: "Text", image: "Photo", link: "Button", heading: "Heading", list: "List", divider: "Divider", spacer: "Space", faq: "Questions & answers", feature: "Photo + text" };
 const selectionLabels: Record<string, string> = { site: "Header & footer", design: "Website design", "page-content": "Page content", "home-copy": "Welcome text", "home-image": "Main photo", status: "Commission availability", contact: "Contact details", page: "Page settings", sections: "Add a section", shop: "Premade shop" };
 function move<T extends { id: string }>(items: T[], id: string, direction: -1 | 1) { const from = items.findIndex(item => item.id === id); const to = from + direction; if (from >= 0 && to >= 0 && to < items.length) [items[from], items[to]] = [items[to], items[from]]; }
 
 /** The public renderer IS the canvas. Only the selected piece gets editing controls. */
-export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onManagePages, onAddPage, onPrices, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false }: Props) {
+export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onManagePages, onAddPage, onPrices, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange }: Props) {
   const [selected, setSelected] = useState<string | null>(null);
-  const [browsing, setBrowsing] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const draggingNav = useRef<string | null>(null);
@@ -71,14 +72,19 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   }, [selected]);
 
   function closePanel() { if (uploadBusy) return; setSelected(null); lastTarget.current?.focus({ preventScroll: true }); }
-  function openPageManager() { if (!uploadBusy) onManagePages(); }
-  function openNewPage() { if (!uploadBusy) onAddPage(); }
-  function choose(target: string, element?: HTMLElement) {
+  function changeMode(nextBrowsing: boolean) {
     if (uploadBusy) return;
+    setSelected(null); setNavigationOpen(false); lastTarget.current = null;
+    endBlockDrag(); onBrowsingChange(nextBrowsing);
+  }
+  function openPageManager() { if (!uploadBusy && !browsing) onManagePages(); }
+  function openNewPage() { if (!uploadBusy && !browsing) onAddPage(); }
+  function choose(target: string, element?: HTMLElement) {
+    if (uploadBusy || browsing) return;
     if (target.startsWith("nav:")) { setNavigationOpen(true); setSelected(null); window.setTimeout(() => document.getElementById(`owner-nav-${target.slice(4)}`)?.focus(), 0); return; }
     if (target === "prices") { onPrices(); return; }
     lastTarget.current = element ?? null;
-    setBrowsing(false); setSelected(target);
+    setSelected(target);
   }
   function capture(event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) {
     if (browsing || !(event.target instanceof HTMLElement)) return;
@@ -99,13 +105,13 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   function dropBlock(event: DragEvent<HTMLDivElement>) { if (!browsing && !uploadBusy && draggingNav.current) { const nav = canvasNav(event); const sourceId = draggingNav.current; if (nav?.dataset.ownerNavPage) { event.preventDefault(); event.stopPropagation(); const targetId = nav.dataset.ownerNavPage; const rect = nav.getBoundingClientRect(); const after = event.clientX > rect.left + rect.width / 2; onEdit(draft => { const active = draft.pages.filter(item => !item.trashedAt).sort((a, b) => a.order - b.order); if (reorderById(active, sourceId, targetId, after)) active.forEach((item, index) => { item.order = index; }); }); setAnnouncement("Navigation order updated in your draft."); } endBlockDrag(); return; } const source = draggingBlock.current; const node = canvasBlock(event); if (browsing || uploadBusy || source?.pageId !== page.id || !node) { endBlockDrag(); return; } event.preventDefault(); event.stopPropagation(); const targetId = node.dataset.ownerEdit!.slice(6); const rect = node.getBoundingClientRect(); const after = event.clientY > rect.top + rect.height / 2; editPage(target => { reorderById(target.blocks, source.id, targetId, after); }); endBlockDrag(); setSelected(`block:${source.id}`); setAnnouncement("Section order updated in your draft."); }
   function editPage(change: (target: OwnerPage) => void) { onEdit(draft => { const target = draft.pages.find(item => item.id === page.id); if (target) change(target); }); }
   function addPhoto() {
-    if (uploadBusy) return;
+    if (uploadBusy || browsing) return;
     const id = newOwnerId("photo");
     onEdit(draft => { draft.gallery.unshift({ id, name: "New photo", src: "/images/home-collage.webp", alt: "Taylor Made Creations fursuit work", width: 1996, height: 960, visible: true }); });
     choose(`gallery:${id}`); canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function addPremade() {
-    if (uploadBusy) return;
+    if (uploadBusy || browsing) return;
     const id = newOwnerId("premade");
     onEdit(draft => { draft.premades.unshift({ id, name: "New premade", image: "/images/home-collage.webp", alt: "Premade fursuit", description: "", price: null, visible: false }); });
     choose(`premade:${id}`); canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -192,16 +198,16 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   if (block) controls = <OwnerBlocksEditor fonts={content.fonts} page={page} focusedBlockId={block.id} hideAddPalette onEdit={editPage} onRemove={(_block, remove) => removeSelected("Remove this section?", "This removes the section from your draft. The live website is not changed until you publish.", remove)} />;
   if (selected === "sections") controls = <><p className={ui.help}>Choose what to add. It appears below your page content, ready for you to make it yours.</p><div className={styles.palette}>{(Object.entries(blockLabels) as [PageBlock["type"], string][]).map(([type, label]) => <button type="button" key={type} disabled={uploadBusy || page.blocks.length >= 100} onClick={() => { if (uploadBusy || page.blocks.length >= 100) return; const next = createBlock(type); editPage(target => { target.blocks.push(next); }); choose(`block:${next.id}`); }}><span aria-hidden="true">＋</span>{label}</button>)}</div></>;
 
-  return <section className={styles.builder} aria-label="Visual website builder">
+  return <section className={styles.builder} aria-label="Visual website builder" data-builder-mode={browsing ? "view" : "edit"}>
     <div className={styles.toolbar}>
-      <div className={styles.pagePicker}><OwnerSelect label="Editing page" value={page.id} options={activePages.map(item => ({ value: item.id, label: item.title }))} onChange={id => { const target = activePages.find(item => item.id === id); if (target && !uploadBusy) { closePanel(); onPageChange(target); } }} /></div>
-      <div className={styles.viewTools}><div className={styles.modeSwitch} aria-label="Builder mode"><button type="button" aria-pressed={!browsing} disabled={uploadBusy} onClick={() => { if (!uploadBusy) setBrowsing(false); }}>✎ Edit on page</button><button type="button" aria-pressed={browsing} disabled={uploadBusy} onClick={() => { if (uploadBusy) return; closePanel(); setBrowsing(true); }}>Preview</button></div><div className={styles.deviceSwitch} aria-label="Preview width"><button type="button" aria-label="Desktop view" title="Desktop view" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")}>▱</button><button type="button" aria-label="Mobile view" title="Mobile view" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")}>▯</button></div></div>
+      <div className={styles.pagePicker}><OwnerSelect label={browsing ? "Viewing page" : "Editing page"} value={page.id} options={activePages.map(item => ({ value: item.id, label: item.title }))} onChange={id => { const target = activePages.find(item => item.id === id); if (target && !uploadBusy) { closePanel(); onPageChange(target); } }} /></div>
+      <div className={styles.viewTools}><div className={styles.modeSwitch} aria-label="Builder mode"><button type="button" aria-pressed={!browsing} disabled={uploadBusy} onClick={() => changeMode(false)}>Edit website</button><button type="button" aria-pressed={browsing} disabled={uploadBusy} onClick={() => changeMode(true)}>{browsing ? "View website" : "Exit edit mode"}</button></div><div className={styles.deviceSwitch} aria-label="Preview width"><button type="button" aria-label="Desktop view" title="Desktop view" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")}>▱</button><button type="button" aria-label="Mobile view" title="Mobile view" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")}>▯</button></div></div>
     </div>
     <div className={styles.actionbar}>
-      <p>{uploadBusy ? "Uploading your photo… finish or cancel it before changing sections." : browsing ? "Try your draft as a visitor. Nothing is published." : "Click to edit. Drag sections or top bar items to reorder; arrow buttons are available in their editors."}</p>
-      <div><button type="button" className={styles.designAction} aria-pressed={selected === "design"} disabled={uploadBusy} onClick={() => choose("design")}>Design</button><button type="button" aria-pressed={selected === "site"} disabled={uploadBusy} onClick={() => choose("site")}>Header & footer</button><button type="button" disabled={uploadBusy} onClick={() => choose("page")}>Page settings</button><button type="button" disabled={uploadBusy} onClick={openPageManager}>Manage pages</button><button type="button" disabled={uploadBusy} onClick={openNewPage}>＋ New page</button></div>
+      <p>{uploadBusy ? "Uploading your photo… finish or cancel it before changing sections." : browsing ? "Viewing your private draft, including unsaved changes. Choose Edit website to make changes. Nothing is saved or published by switching modes." : "Click to edit. Drag sections or top bar items to reorder; arrow buttons are available in their editors."}</p>
+      {!browsing && <div><button type="button" className={styles.designAction} aria-pressed={selected === "design"} disabled={uploadBusy} onClick={() => choose("design")}>Design</button><button type="button" aria-pressed={selected === "site"} disabled={uploadBusy} onClick={() => choose("site")}>Header & footer</button><button type="button" disabled={uploadBusy} onClick={() => choose("page")}>Page settings</button><button type="button" disabled={uploadBusy} onClick={openPageManager}>Manage pages</button><button type="button" disabled={uploadBusy} onClick={openNewPage}>＋ New page</button></div>}
     </div>
-    <div className={styles.contextbar}>
+    {!browsing && <div className={styles.contextbar}>
       <button type="button" aria-pressed={selected === "page-content"} disabled={uploadBusy} onClick={() => choose("page-content")}>Page content</button>
       {page.builtinKey === "home" && <><button type="button" onClick={() => choose("home-copy")}>Welcome text</button><button type="button" onClick={() => choose("home-image")}>Main photo</button></>}
       {page.builtinKey === "gallery" && <><span>{content.gallery.length} photos · newest first</span><button type="button" onClick={addPhoto}>＋ Add a photo</button></>}
@@ -210,20 +216,20 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
       {page.builtinKey === "commissions" && <button type="button" onClick={() => choose("status")}>Commission status</button>}
       {page.builtinKey === "prices" && <button type="button" disabled={uploadBusy} onClick={() => { if (!uploadBusy) onPrices(); }}>Edit prices & options →</button>}
       <button type="button" className={styles.addSection} onClick={() => choose("sections")}>＋ Add a section</button>
-    </div>
+    </div>}
     {!browsing && <OwnerHeaderEditor content={content} onEdit={onEdit} open={navigationOpen} onOpenChange={setNavigationOpen} disabled={uploadBusy} />}
     <div className={styles.stage} data-device={device}>
       <div ref={canvasRef} className={`${styles.canvas} ${!browsing ? styles.editing : ""}`} onClickCapture={capture} onKeyDownCapture={capture} onDragStartCapture={beginBlockDrag} onDragOver={overBlock} onDrop={dropBlock} onDragEnd={endBlockDrag}>
         <SiteContentFrame content={content} page={page} mode="editor" editable={!browsing} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
         {!browsing && block && <OwnerCanvasSectionTools key={block.id} canvasRef={canvasRef} page={page} block={block} disabled={uploadBusy} onEdit={editPage} onAnnouncement={setAnnouncement} />}
       </div>
-      {selected && controls && <aside ref={panelRef} className={styles.panel} aria-label={selectedTitle} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); closePanel(); } }}>
+      {!browsing && selected && controls && <aside ref={panelRef} className={styles.panel} aria-label={selectedTitle} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); closePanel(); } }}>
         <div className={styles.panelHeader}><div><span>{selected === "design" ? "APPLIES ACROSS YOUR WEBSITE" : selected === "site" ? "HEADER, FOOTER & BRANDING" : "EDITING YOUR DRAFT"}</span><h2>{selectedTitle}</h2></div><button type="button" aria-label="Close section editor" disabled={uploadBusy} onClick={closePanel}>×</button></div>
         <div className={styles.panelNav}><button type="button" aria-pressed={selected === "page-content"} disabled={uploadBusy} onClick={() => choose("page-content")}>Page content</button><button type="button" aria-pressed={selected === "design"} disabled={uploadBusy} onClick={() => choose("design")}>Design</button><button type="button" aria-pressed={selected === "site"} disabled={uploadBusy} onClick={() => choose("site")}>Header & footer</button></div><div className={styles.panelContent} data-owner-fields>{controls}</div>
         <div className={styles.panelFooter}><span>{uploadBusy ? "Finish or cancel your upload before closing." : "Changes appear on your page as you type."}</span><button type="button" className={ui.primary} disabled={uploadBusy} onClick={closePanel}>Done</button></div>
       </aside>}
     </div>
     <p className={styles.srOnly} role="status" aria-live="polite">{announcement}</p>
-    <div className={styles.canvasFooter}><span>Only you can see this draft.</span><button type="button" onClick={() => choose("sections")}>＋ Add a section to {page.title}</button></div>
+    <div className={styles.canvasFooter}><span>Only you can see this draft.</span>{!browsing && <button type="button" onClick={() => choose("sections")}>＋ Add a section to {page.title}</button>}</div>
   </section>;
 }

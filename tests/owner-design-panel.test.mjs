@@ -277,7 +277,7 @@ test('restoring design removes appearance only after confirmation and preserves 
   value.pages[0].titleAppearance = { align: 'right' };
   value.pages[0].blocks.push({ id: 'styled-paragraph', type: 'text', heading: 'Keep my heading', body: 'Keep my paragraph', appearance: { font: 'mono' } });
   let confirm;
-  const props = { content: value, page: value.pages[0], onEdit(change) { value = structuredClone(value); change(value); props.content = value; props.page = value.pages[0]; }, onPageChange() {}, onManagePages() {}, onAddPage() {}, onPrices() {}, onRemove(_title, _description, action) { confirm = action; }, liveShopVisibility: false, canUpdateLiveShop: false, onUpdateLiveShop() {} };
+  const props = { browsing: false, onBrowsingChange(value) { props.browsing = value; }, content: value, page: value.pages[0], onEdit(change) { value = structuredClone(value); change(value); props.content = value; props.page = value.pages[0]; }, onPageChange() {}, onManagePages() {}, onAddPage() {}, onPrices() {}, onRemove(_title, _description, action) { confirm = action; }, liveShopVisibility: false, canUpdateLiveShop: false, onUpdateLiveShop() {} };
   h.render(Builder, props);
   h.find(n => n.type === 'button' && visibleText(n) === 'Design').props.onClick(); h.render(Builder, props);
   h.find(n => n.type?.name === 'OwnerDesignPanel').props.onReset();

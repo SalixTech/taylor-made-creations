@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { model as m, defaults as d, preview as p } from './owner-test-modules.mjs';
+// Existing launch behavior is exercised explicitly; construction is locked by default.
+process.env.TMC_PUBLIC_SITE_ACCESS = 'open';
+
 
 const source = readFileSync(new URL('../src/server/published-site.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;

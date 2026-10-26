@@ -1,13 +1,13 @@
 "use client";
 import Link from "next/link";
 import type { OwnerContent, OwnerPage, OwnerPremade } from "@/owner/model";
-import { pageHref } from "@/owner/model";
+import { getPremadeTags, pageHref } from "@/owner/model";
 import { useCart } from "./Cart";
 import { PremadeGallery } from "./PremadeGallery";
 import { canAddPublishedPremade, premadeChannelLabel, premadeHref, thirdPartyListingUrl } from "./storefront-model";
 
 export function PremadeTags({ item }: { item: OwnerPremade }) {
-  return <div className="premade-tags"><span>{premadeChannelLabel(item)}</span>{item.badge?.trim() && <span>{item.badge}</span>}</div>;
+  return <div className="premade-tags"><span>{premadeChannelLabel(item)}</span>{getPremadeTags(item).map(tag => <span key={tag}>{tag}</span>)}</div>;
 }
 export function PremadePurchaseInfo({ content, item, preview = false }: { content: OwnerContent; item: OwnerPremade; preview?: boolean }) {
   const channel = item.soldChannel ?? "tmc";

@@ -21,15 +21,15 @@ function setupPortal() {
     async publishLocal(...args) { previews++; if (failPreview) throw new Error('Private snapshot could not be saved.'); return base.publishLocal(...args); },
   };
   const Portal = h.load('src/owner/OwnerPortal.tsx').default;
-  const props = { store, mode: 'cloud', userEmail: 'owner@example.test', onSignOut: async () => { signsOut++; if (signOutGate) await signOutGate.promise; } };
+  const props = { store, initialSection: 'pages', mode: 'cloud', userEmail: 'owner@example.test', onSignOut: async () => { signsOut++; if (signOutGate) await signOutGate.promise; } };
   const render = () => h.render(Portal, props);
-  const button = label => h.find(node => node.type === 'button' && (content(node).trim() === label || (label === 'Save' && /^Save\s/.test(content(node).trim()))));
+  const button = label => h.find(node => (node.type === 'button' || node.type === 'a') && (content(node).trim() === label || (label === 'Save' && /^Save\s/.test(content(node).trim()))));
   const builder = () => h.find(node => typeof node.type === 'function' && node.type.name === 'OwnerVisualBuilder');
   // Parent regression follows either the standalone builder or the simple Home manager.
   const editableContent = () => builder()?.props.content ?? h.find(node => typeof node.type === 'function' && node.type.name === 'HomePageManager')?.props.content;
   const field = label => label === 'Main heading' && editableContent() ? { props: { value: editableContent().home.title } } : h.find(node => typeof node.type === 'function' && node.type.name === 'Field' && node.props.label === label);
   const dialog = () => h.find(node => typeof node.type === 'function' && node.type.name === 'Dialog');
-  const dialogButton = label => nodes(dialog()?.props.actions).find(node => node.type === 'button' && content(node) === label);
+  const dialogButton = label => nodes(dialog()?.props.actions).find(node => (node.type === 'button' || node.type === 'a') && content(node) === label);
   const editTitle = title => { builder().props.onEdit(draft => { draft.home.title = title; }); render(); };
   return { h, defaults, store, render, button, field, dialog, dialogButton, editTitle, get raw() { return raw; }, set raw(value) { raw = value; }, get saves() { return saves; }, get previews() { return previews; }, get signsOut() { return signsOut; }, set failSave(value) { failSave = value; }, set failPreview(value) { failPreview = value; }, set saveGate(value) { saveGate = value; }, set signOutGate(value) { signOutGate = value; } };
 }
@@ -80,7 +80,7 @@ test('instant preview shows unsaved edits without draft, snapshot or public writ
   const frame = nodes(t.dialog()).find(node => typeof node.type === 'function' && node.type.name === 'SiteContentFrame');
   assert.equal(frame.props.content.home.title, 'UNSAVED PRIVATE PREVIEW');
   assert.equal(frame.props.mode, 'editor');
-  t.dialogButton('Back to editing').props.onClick(); t.render();
+  t.dialogButton('Back to workspace').props.onClick(); t.render();
   assert.equal(t.dialog(), undefined); assert.equal(t.field('Main heading').props.value, 'UNSAVED PRIVATE PREVIEW');
   assert.equal(t.saves, 0); assert.equal(t.previews, 0); t.h.unmount();
 });
@@ -233,11 +233,11 @@ test('stale saved revision exposes actionable conflict, keeps edits, and require
 });
 
 test('dirty browser unload/back is guarded and cancellation restores saved history location without writing', async () => {
-  const t = setupPortal(); t.h.window.location.href = '/taylor'; t.render(); await flush(); t.render(); t.editTitle('DIRTY HISTORY');
+  const t = setupPortal(); t.h.window.location.href = '/taylor/pages'; t.render(); await flush(); t.render(); t.editTitle('DIRTY HISTORY');
   const unload = new Event('beforeunload', { cancelable: true }); Object.defineProperty(unload, 'returnValue', { value: null, writable: true });
   t.h.window.dispatchEvent(unload); assert.equal(unload.defaultPrevented, true); assert.equal(unload.returnValue, '');
   let prompts = 0; t.h.window.confirm = () => { prompts++; return false; }; t.h.window.location.href = '/previous';
-  t.h.window.dispatchEvent(new Event('popstate')); assert.equal(prompts, 1); assert.equal(t.h.window.location.href, '/taylor'); assert.equal(t.raw, null); assert.equal(t.saves, 0);
+  t.h.window.dispatchEvent(new Event('popstate')); assert.equal(prompts, 1); assert.equal(t.h.window.location.href, '/taylor/pages'); assert.equal(t.raw, null); assert.equal(t.saves, 0);
   t.h.unmount(); const after = new Event('beforeunload', { cancelable: true }); t.h.window.dispatchEvent(after); assert.equal(after.defaultPrevented, false);
 });
 
@@ -245,7 +245,7 @@ test('upload busy locks save, navigation and signout before handlers can change 
   const t = await openPortal(); t.editTitle('UPLOADING WORK');
   const provider = t.h.find(node => typeof node.type === 'function' && node.type.name === 'OwnerUploadProvider');
   provider.props.onBusyChange(true); t.render();
-  for (const label of ['Save', 'Preview', 'Sign out', 'Prices & options']) assert.equal(t.button(label).props.disabled, true, label);
+  for (const label of ['Save', 'Preview', 'Sign out', 'Prices & options']) assert.equal((t.button(label).props.disabled ?? t.button(label).props['aria-disabled']), true, label);
   t.button('Prices & options').props.onClick(); t.render(); assert.equal(t.dialog(), undefined); assert.equal(t.field('Main heading').props.value, 'UPLOADING WORK'); assert.equal(t.saves, 0); assert.equal(t.signsOut, 0);
   provider.props.onBusyChange(false); t.render(); assert.equal(t.button('Save').props.disabled, false); t.h.unmount();
 });

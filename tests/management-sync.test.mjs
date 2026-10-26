@@ -23,12 +23,12 @@ function setup() {
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   };
   const Portal = h.load('src/owner/OwnerPortal.tsx').default;
-  const props = { store, mode: 'cloud', userEmail: 'qa@example.test', onSignOut: async () => {} };
+  const props = { store, initialSection: 'pages', mode: 'cloud', userEmail: 'qa@example.test', onSignOut: async () => {} };
   const render = () => h.render(Portal, props);
-  const button = label => h.find(n => n.type === 'button' && (content(n).trim() === label || n.props['aria-label'] === label || label === 'Save' && /^Save\s/.test(content(n))));
+  const button = label => h.find(n => (n.type === 'button' || n.type === 'a') && (content(n).trim() === label || n.props['aria-label'] === label || label === 'Save' && /^Save\s/.test(content(n))));
   const builder = () => h.find(n => typeof n.type === 'function' && n.type.name === 'OwnerVisualBuilder');
   const dialog = () => h.find(n => typeof n.type === 'function' && n.type.name === 'Dialog');
-  const action = label => nodes(dialog()?.props.actions).find(n => n.type === 'button' && content(n) === label);
+  const action = label => nodes(dialog()?.props.actions).find(n => (n.type === 'button' || n.type === 'a') && content(n) === label);
   const edit = title => { builder().props.onEdit(d => { d.home.title = title; }); render(); };
   const upload = busy => { h.find(n => typeof n.type === 'function' && n.type.name === 'OwnerUploadProvider').props.onBusyChange(busy); render(); };
   return { h, timers, defaults, props, render, button, builder, dialog, action, edit, upload, listeners,
@@ -141,7 +141,7 @@ test('Dialog outside-click dismissal requires both pointer-down and click outsid
   gesture(event(50, 50, {}), event(50, 50)); assert.equal(dismissed, 1);
   props.dismissDisabled = true; render(); gesture(event(50, 50), event(50, 50)); assert.equal(dismissed, 1); let prevented = false;
   h.tree.props.onCancel({ preventDefault() { prevented = true; } }); assert.equal(prevented, true); assert.equal(dismissed, 1);
-  assert.equal(h.find(n => n.type === 'button' && n.props['aria-label'] === 'Close dialog').props.disabled, true);
+  assert.equal(h.find(n => (n.type === 'button' || n.type === 'a') && n.props['aria-label'] === 'Close dialog').props.disabled, true);
   props.dismissDisabled = false; render(); h.tree.props.onCancel({ preventDefault() {} }); assert.equal(dismissed, 2); h.unmount();
 });
 

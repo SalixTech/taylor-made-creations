@@ -1,5 +1,5 @@
 import { apiErrorResponse, privateJson, TaylorApiError, verifyTaylorOwner } from "@/server/taylor-auth";
-import { developmentMediaEnabled, listDevelopmentMedia, uploadedAssetName, MAX_MEDIA_BYTES, readMediaBody, requireDevelopmentMedia, storeDevelopmentMedia } from "@/server/dev-media";
+import { developmentMediaEnabled, listDevelopmentMedia, uploadedAssetName, MAX_MEDIA_BYTES, readMediaBody, readMediaTrashRequest, requireDevelopmentMedia, setDevelopmentMediaTrash, storeDevelopmentMedia } from "@/server/dev-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,8 +8,20 @@ let activeUploads = 0;
 export async function GET(request: Request) {
   try {
     await verifyTaylorOwner(request);
+    const query = new URL(request.url).searchParams;
+    if ([...query.keys()].some(key => key !== "trash") || query.getAll("trash").length > 1 || (query.has("trash") && query.get("trash") !== "1")) throw new TaylorApiError(400, "Use the temporary library or Trash view.");
     const available = developmentMediaEnabled();
-    return privateJson({ ok: true, photos: available ? await listDevelopmentMedia() : [], available, storage: available ? "development-disk" : null, maxBytes: MAX_MEDIA_BYTES, message: available ? "Photos are stored on this development server’s disk, not the home drive or Google Drive. Back up this folder before moving the project. Uploaded photos remain private until referenced in a published version." : "Uploads are not connected on this server. Production storage has not been configured." });
+    return privateJson({ ok: true, photos: available ? await listDevelopmentMedia(query.get("trash") === "1") : [], available, storage: available ? "development-disk" : null, maxBytes: MAX_MEDIA_BYTES, message: available ? "Photos are temporarily stored on this development server only; no cloud storage is connected. Trash hides photos from the chooser, retains their bytes and existing draft or published references, and allows Restore." : "Uploads are not connected on this server. Production storage has not been configured." });
+  } catch (error) { return apiErrorResponse(error); }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    await verifyTaylorOwner(request);
+    requireDevelopmentMedia();
+    const { id, action } = await readMediaTrashRequest(request);
+    const media = await setDevelopmentMediaTrash(id, action);
+    return privateJson({ ok: true, media });
   } catch (error) { return apiErrorResponse(error); }
 }
 

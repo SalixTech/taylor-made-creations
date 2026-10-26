@@ -2,6 +2,7 @@ import { cache } from "react";
 import { assertPublishedOwnerSnapshot, type PublishedOwnerSnapshot } from "../owner/model";
 
 export type PublicSiteState =
+  | { status: "locked" }
   | { status: "baseline"; reason: "unconfigured" | "not-published" }
   | { status: "published"; snapshot: PublishedOwnerSnapshot }
   | { status: "error"; message: string };
@@ -29,6 +30,11 @@ export function decodePublishedRestDocument(value: unknown): PublishedOwnerSnaps
 
 /** Public Firestore REST GET: no Admin SDK, credentials, cookies, or owner token. Rules remain authoritative. */
 export async function readPublishedSite({ projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, fetcher = fetch }: { projectId?: string; fetcher?: typeof fetch } = {}): Promise<PublicSiteState> {
+  // Temporary construction lock, including the root layout's serialized RSC props,
+  // direct page routes, public JSON, media and fonts. Only an explicit SERVER setting
+  // opens it; query strings, browser storage and client Firebase state cannot.
+  // Firestore /site/published rules must also be owner-only while this is locked.
+  if (process.env.TMC_PUBLIC_SITE_ACCESS !== "open") return { status: "locked" };
   if (!projectId) return { status: "baseline", reason: "unconfigured" };
   if (!/^[a-z][a-z0-9-]{4,29}$/.test(projectId)) return unavailable();
   try {

@@ -29,8 +29,9 @@ export function PublicSiteProvider({ initialState, children }: { initialState: P
     setState(previous => reconcile(previous, incoming, knownRevision));
   }, []);
   const pathname = usePathname();
+  const locked = state.status === "locked";
   useEffect(() => {
-    if (/^\/(?:taylor|owner)(?:\/|$)/.test(pathname)) return;
+    if (locked || /^\/(?:taylor|owner)(?:\/|$)/.test(pathname)) return;
     let alive = true;
     let sequence = 0;
     let controller: AbortController | undefined;
@@ -40,8 +41,13 @@ export function PublicSiteProvider({ initialState, children }: { initialState: P
       controller = new AbortController();
       try {
         const response = await fetch("/api/site-published", { cache: "no-store", credentials: "omit", signal: controller.signal });
-        if (!response.ok) throw new Error("Publication unavailable");
         const next: PublicSiteState = await response.json();
+        // A deployment can close the site while an already-open tab is focused.
+        if (next.status === "locked") {
+          if (alive && request === sequence) acceptServerState({ status: "locked" });
+          return;
+        }
+        if (!response.ok) throw new Error("Publication unavailable");
         if (next.status === "published") assertPublishedOwnerSnapshot(next.snapshot);
         else if (next.status !== "baseline" || !["unconfigured", "not-published"].includes(next.reason)) throw new Error("Invalid publication");
         if (!alive || request !== sequence) return;
@@ -58,13 +64,14 @@ export function PublicSiteProvider({ initialState, children }: { initialState: P
     document.addEventListener("visibilitychange", onFocus);
     void refresh();
     return () => { alive = false; sequence++; controller?.abort(); channel?.close(); window.removeEventListener("focus", onFocus); window.removeEventListener(publicationEvent, onFocus); document.removeEventListener("visibilitychange", onFocus); };
-  }, [pathname, acceptServerState]);
+  }, [pathname, acceptServerState, locked]);
   return <PublicSiteContext value={{ state, acceptServerState }}>{children}</PublicSiteContext>;
 }
 export function usePublicSiteState() { return useContext(PublicSiteContext).state; }
 export function usePublicServerState(serverState: PublicSiteState) {
   const { state, acceptServerState } = useContext(PublicSiteContext);
   useEffect(() => { acceptServerState(serverState); }, [acceptServerState, serverState]);
+  if (serverState.status === "locked" || state.status === "locked") return { status: "locked" } as const;
   // Fresh RSC navigation updates both this page and the persistent shared chrome.
   if (serverState.status === "published" && state.status !== "error" && (state.status !== "published" || serverState.snapshot.revision > state.snapshot.revision)) return serverState;
   return state;

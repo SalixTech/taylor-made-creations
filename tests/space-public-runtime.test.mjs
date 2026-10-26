@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sourceLoader } from './scout-source-loader.mjs';
+// Existing launch behavior is exercised explicitly; construction is locked by default.
+process.env.TMC_PUBLIC_SITE_ACCESS = 'open';
+
 const load=sourceLoader(),server=load('src/server/published-site.ts'),model=load('src/owner/model.ts'),defaults=load('src/owner/defaults.ts');
 const projectId='demo-tmc-space-qa';
 const published=()=>model.createPublishedOwnerSnapshot(defaults.createDefaultOwnerContent(),4,'2026-10-25T18:00:00.000Z');

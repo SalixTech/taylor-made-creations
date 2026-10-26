@@ -6,8 +6,9 @@
 .toolbar { padding:19px max(22px,calc((100% - 1084px)/2)); background:#f8f7f5; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:16px 28px; }
 .toolbar p { margin:4px 0 0; font-size:12px; max-width:750px; }
 .toolbar strong { display:block; font-size:17px; color:var(--wine); }
+.toolbarActions { display:flex; flex-wrap:wrap; gap:10px; flex-shrink:0; }
 .kicker { display:block; font-size:10px; letter-spacing:1.6px; font-weight:700; text-transform:uppercase; color:var(--muted); }
-.back { flex-shrink:0; text-decoration:none; color:var(--wine); font-size:13px; border:1px solid var(--wine); border-radius:3px; padding:10px 15px; background:#fff; }
+.back { flex-shrink:0; text-decoration:none; color:var(--wine); font-size:13px; border:1px solid var(--wine); border-radius:3px; padding:10px 15px; background:#fff; cursor:pointer; }
 .siteHeader :global(.brand)>span,.siteFooter :global(.brand)>span { max-width:300px; overflow-wrap:anywhere; }
 .menu { min-width:0; }
 .menu nav a { overflow-wrap:anywhere; }

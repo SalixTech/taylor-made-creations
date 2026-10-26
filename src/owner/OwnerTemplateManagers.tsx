@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { COMMISSION_STATUSES, newOwnerId, type GalleryItem, type OwnerContent, type OwnerPremade } from "./model";
+import { COMMISSION_STATUSES, getPremadeTags, parsePremadeTags, MAX_PREMADE_TAGS, MAX_PREMADE_TAG_LENGTH, newOwnerId, type GalleryItem, type OwnerContent, type OwnerPremade } from "./model";
 import { Card, Field, Icon, ImagePicker, MoveButtons, OwnerImage, OwnerSelect, Toggle } from "./OwnerFields";
 import { PhotoUpload } from "./PhotoUpload";
 import { PremadePhotoEditor } from "./PremadePhotoEditor";
@@ -21,6 +21,8 @@ export type PremadesManagerProps = ManagerProps & {
   onRetryLiveShop: () => void;
   canUpdateLiveShop: boolean;
   onUpdateLiveShop: () => void;
+  canSavePremadeDraft?: boolean;
+  onSavePremadeDraft?: (item: OwnerPremade) => Promise<boolean>;
   canPublishPremade?: boolean;
   onPublishPremade?: (item: OwnerPremade) => void;
 };
@@ -64,7 +66,7 @@ export function PhotoGalleryManager({ content, onEdit, onRemove, onSavePhotos }:
           <Field label="Photo name" value={photo.name} onChange={value => editPhoto(photo.id, { name: value })} />
           <Field label="Gallery number (optional)" value={photo.displayNumber ?? ""} onChange={value => editPhoto(photo.id, { displayNumber: value })} hint="Leave blank to number photos automatically. This changes the displayed number, not the photo’s order." />
           <ImagePicker key={photo.id} src={photo.src} alt={photo.alt} onSource={value => editPhoto(photo.id, { src: value })} onAlt={value => editPhoto(photo.id, { alt: value })} />
-          {onSavePhotos && <button type="button" className={ui.primary} onClick={onSavePhotos}>Save photos</button>}
+          {onSavePhotos && <button type="button" className={ui.primary} onClick={onSavePhotos}>Save Photo</button>}
           <Toggle label="Show this photo in the gallery" checked={photo.visible} onChange={value => editPhoto(photo.id, { visible: value })} hint="Hidden photos stay here for you to edit. Publish when your gallery is ready for visitors." />
         </div>}
       </Card>)}
@@ -74,16 +76,70 @@ export function PhotoGalleryManager({ content, onEdit, onRemove, onSavePhotos }:
 }
 
 /** Listings stay editable while the shop is hidden. Only the explicit shop action changes live visibility. */
-export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility, liveShopKnown, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, canPublishPremade = false, onPublishPremade }: PremadesManagerProps) {
+export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility, liveShopKnown, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, canPublishPremade = false, onPublishPremade, canSavePremadeDraft = false, onSavePremadeDraft }: PremadesManagerProps) {
   const [editing, setEditing] = useState<string | null>(null);
-  const list = useRef<HTMLDivElement>(null);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [tagInputs, setTagInputs] = useState<Record<string, string>>({});
+  const savingListing = useRef(false);
+  const draftSection = useRef<HTMLDetailsElement>(null);
   function editListing(id: string, patch: Partial<OwnerPremade>) {
     onEdit(draft => { const item = draft.premades.find(listing => listing.id === id); if (item) Object.assign(item, patch); });
   }
   function addListing() {
     const id = newOwnerId("premade");
-    onEdit(draft => { draft.premades.unshift({ id, name: "New premade", image: "/images/home-collage.webp", alt: "Premade fursuit", description: "", price: null, visible: false, soldChannel: "tmc" }); });
-    setEditing(id); list.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    onEdit(draft => { draft.premades.unshift({ id, name: "New premade", image: "/images/home-collage.webp", alt: "Premade fursuit", description: "", price: null, visible: false, isDraft: true, soldChannel: "tmc" }); });
+    setEditing(id); setDraftsOpen(true); draftSection.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  async function saveListing(item: OwnerPremade) {
+    if (!canSavePremadeDraft || !onSavePremadeDraft || savingListing.current) return;
+    savingListing.current = true;
+    try {
+      if (await onSavePremadeDraft(item)) {
+        setEditing(null); setDraftsOpen(false);
+        setTagInputs(current => { const next = { ...current }; delete next[item.id]; return next; });
+      }
+    } finally { savingListing.current = false; }
+  }
+  const activeListings = content.premades.filter(item => !item.isDraft);
+  const draftListings = content.premades.filter(item => item.isDraft);
+  function renderListing(item: OwnerPremade, index: number, group: OwnerPremade[]) {
+    const cover = getPremadeCoverPhoto(item), photos = getPremadePhotos(item);
+    const tags = getPremadeTags(item);
+    const tagsInvalid = tags.length > MAX_PREMADE_TAGS || tags.some(tag => tag.length > MAX_PREMADE_TAG_LENGTH);
+    return <div key={item.id} className={editing === item.id ? styles.expandedListing : undefined}><Card title={item.name || "Untitled premade"} action={<div className={ui.inlineActions}>
+      <span className={ui.badge}>{item.soldChannel === "third-party" ? "Sold on third party" : item.soldChannel === "con" ? "Sold at con" : "Sold Here"}</span>{tags.map(tag => <span className={`${ui.badge} ${styles.listingTag}`} key={tag}>{tag}</span>)}<span className={`${ui.badge} ${item.visible && !item.isDraft ? ui.badgeVisible : ""}`}>{item.isDraft ? "Private listing draft" : item.visible ? "Shown in draft" : "Hidden in draft"}</span>
+      {!item.isDraft && <MoveButtons label={item.name || "listing"} index={index} length={group.length} onMove={direction => onEdit(draft => {
+        const other = group[index + direction];
+        if (!other) return;
+        const from = draft.premades.findIndex(entry => entry.id === item.id), to = draft.premades.findIndex(entry => entry.id === other.id);
+        if (from >= 0 && to >= 0) [draft.premades[from], draft.premades[to]] = [draft.premades[to], draft.premades[from]];
+      })} />}
+      <button type="button" className={ui.secondary} aria-expanded={editing === item.id} onClick={() => setEditing(editing === item.id ? null : item.id)}>{editing === item.id ? "Close details" : "Edit listing"}</button>
+    </div>}>
+      {editing === item.id ? <>
+        <div className={ui.twoCol}><Field label="Listing name" value={item.name} onChange={value => editListing(item.id, { name: value })} /><Field label="Price (USD, optional)" type="number" value={item.price ?? ""} onChange={value => editListing(item.id, { price: value === "" ? null : Number(value) })} hint="Leave blank if you’re not ready to set a price." /></div>
+        <Field label="Description" multiline value={item.description} onChange={value => editListing(item.id, { description: value })} />
+        <OwnerSelect label="Where is this sold?" value={item.soldChannel ?? "tmc"} onChange={value => editListing(item.id, { soldChannel: value as OwnerPremade["soldChannel"] })} options={[{ value: "tmc", label: "Sold Here" }, { value: "third-party", label: "Sold on third party" }, { value: "con", label: "Sold at con" }]} hint="The sales channel is shown as a visible tag on the public listing." />
+        {item.soldChannel === "third-party" && <Field label="Third-party listing address" value={item.externalUrl ?? ""} onChange={value => editListing(item.id, { externalUrl: value })} type="url" hint="A full https:// address. Visitors will leave this site to view the listing." />}
+        {item.soldChannel === "con" && <Field label="Convention / venue" value={item.venue ?? ""} onChange={value => editListing(item.id, { venue: value })} hint="Convention listings are a catalog; displayed items do not guarantee current availability." />}
+        {(item.soldChannel ?? "tmc") === "tmc" && <p className={ui.help}>The Sold Here channel uses the on-site cart when catalog mode is off. Checkout and payments are not connected; no purchase is completed here.</p>}
+        <Field label="Extra listing badges (optional)" value={tagInputs[item.id] ?? tags.join(", ")} onChange={value => {
+          setTagInputs(current => ({ ...current, [item.id]: value }));
+          onEdit(draft => { const target = draft.premades.find(entry => entry.id === item.id); if (target) { target.tags = parsePremadeTags(value); delete target.badge; } });
+        }} hint="Separate tags with commas. Up to 10 unique tags, 80 characters each; repeated tags are combined." />
+        {tagsInvalid && <p className={ui.error} role="alert">Use no more than 10 tags, with up to 80 characters in each tag. No tags have been discarded.</p>}
+        <PremadePhotoEditor key={item.id} item={item} onChange={patch => editListing(item.id, patch)} />
+        {item.isDraft ? <p className={ui.help}>This listing draft stays private, even when you publish the whole website. Choose Publish to store when it is ready.</p> : <Toggle label="Show this listing" checked={item.visible} onChange={value => editListing(item.id, { visible: value })} hint="The shop switch also needs to be on for visitors to see this listing. Preview to review your draft privately." />}
+        <div className={styles.publishListing}><button type="button" className={ui.secondary} disabled={!canSavePremadeDraft || !onSavePremadeDraft || tagsInvalid} onClick={() => void saveListing(item)}>Save as Draft</button><button type="button" className={ui.primary} disabled={!canPublishPremade || !onPublishPremade || tagsInvalid} onClick={() => onPublishPremade?.(item)}>Publish to store</button><p className={ui.help}>Save as Draft saves only this card privately, without changing an already-live listing. {canPublishPremade ? "Publish to store publishes only this listing; other draft edits and the shop switch are unchanged." : "Publish the website once and confirm its live shop state before publishing individual listings."}</p></div>
+        <button type="button" className={ui.dangerLink} onClick={() => onRemove(`Remove “${item.name}”?`, "This removes the listing from your draft. Its photos are not deleted, and the live website stays unchanged until you publish.", () => { onEdit(draft => { draft.premades = draft.premades.filter(listing => listing.id !== item.id); }); setEditing(null); })}>Remove listing</button>
+      </> : <>
+        <div className={styles.listingSummary}>
+          <div className={styles.listingThumbnail}><OwnerImage src={cover.src} alt={cover.alt} style={{ objectFit: item.imageFit ?? "contain", objectPosition: `${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%` }} /></div>
+          <div><p className={styles.listingPrice}>{item.price === null ? "No price set" : `$${item.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</p><p className={ui.help}>{item.description || "Add a description and photos to introduce this character."}</p><p className={styles.itemMeta}>{photos.length} {photos.length === 1 ? "photo" : "photos"} · Cover shown</p></div>
+        </div>
+        {!item.isDraft && <button type="button" className={ui.secondary} disabled={!canSavePremadeDraft || !onSavePremadeDraft || tagsInvalid} onClick={() => void saveListing(item)}>Save as Draft</button>}
+      </>}
+    </Card></div>;
   }
   return <div className={styles.manager} data-template-manager="premades">
     <Card title="Premade shop visibility" description="Keep your listings ready here, even when the shop is hidden.">
@@ -97,33 +153,14 @@ export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility,
       </div>}
     </Card>
     <Card title="Catalog mode"><Toggle label="Use the storefront as a catalog" checked={content.site.catalogMode ?? false} onChange={value => onEdit(draft => { draft.site.catalogMode = value; })} hint="Hides the cart and shows where each item can be purchased. Save draft keeps this private; Publish live applies this setting. On-site checkout and payments are not connected." /></Card>
-    <div ref={list} className={ui.sectionActions}><h2 className={ui.smallTitle}>Your listings</h2><button type="button" className={ui.primary} onClick={addListing}>＋ Add a premade</button></div>
+    <div className={ui.sectionActions}><h2 className={ui.smallTitle}>Your listings</h2><button type="button" className={ui.primary} onClick={addListing}>＋ Add a premade</button></div>
     {!content.premades.length && <Card><div className={ui.empty}><span className={ui.emptyIcon}><Icon name="premades" /></span><h3>A new character starts here.</h3><p>Add a premade when you’re ready. Keep it hidden while you get the details just right.</p></div></Card>}
-    {content.premades.map((item, index) => {
-      const cover = getPremadeCoverPhoto(item), photos = getPremadePhotos(item);
-      return <Card key={item.id} title={item.name || "Untitled premade"} action={<div className={ui.inlineActions}>
-        <span className={ui.badge}>{item.soldChannel === "third-party" ? "Sold on third party" : item.soldChannel === "con" ? "Sold at con" : "Sold on TMC"}</span>{item.badge && <span className={ui.badge}>{item.badge}</span>}<span className={`${ui.badge} ${item.visible ? ui.badgeVisible : ""}`}>{item.visible ? "Shown in draft" : "Hidden in draft"}</span>
-        <MoveButtons label={item.name || "listing"} index={index} length={content.premades.length} onMove={direction => onEdit(draft => move(draft.premades, item.id, direction))} />
-        <button type="button" className={ui.secondary} aria-expanded={editing === item.id} onClick={() => setEditing(editing === item.id ? null : item.id)}>{editing === item.id ? "Close details" : "Edit listing"}</button>
-      </div>}>
-        {editing === item.id ? <>
-          <div className={ui.twoCol}><Field label="Listing name" value={item.name} onChange={value => editListing(item.id, { name: value })} /><Field label="Price (USD, optional)" type="number" value={item.price ?? ""} onChange={value => editListing(item.id, { price: value === "" ? null : Number(value) })} hint="Leave blank if you’re not ready to set a price." /></div>
-          <Field label="Description" multiline value={item.description} onChange={value => editListing(item.id, { description: value })} />
-          <OwnerSelect label="Where is this sold?" value={item.soldChannel ?? "tmc"} onChange={value => editListing(item.id, { soldChannel: value as OwnerPremade["soldChannel"] })} options={[{ value: "tmc", label: "Sold on TMC" }, { value: "third-party", label: "Sold on third party" }, { value: "con", label: "Sold at con" }]} hint="The sales channel is shown as a visible tag on the public listing." />
-          {item.soldChannel === "third-party" && <Field label="Third-party listing address" value={item.externalUrl ?? ""} onChange={value => editListing(item.id, { externalUrl: value })} type="url" hint="A full https:// address. Visitors will leave this site to view the listing." />}
-          {item.soldChannel === "con" && <Field label="Convention / venue" value={item.venue ?? ""} onChange={value => editListing(item.id, { venue: value })} hint="Convention listings are a catalog; displayed items do not guarantee current availability." />}
-          {(item.soldChannel ?? "tmc") === "tmc" && <p className={ui.help}>The TMC channel uses the on-site cart when catalog mode is off. Checkout and payments are not connected; no purchase is completed here.</p>}
-          <Field label="Extra listing badge (optional)" value={item.badge ?? ""} onChange={value => editListing(item.id, { badge: value })} hint="A short visible tag, such as Ready to ship. Up to 80 characters." />
-          <PremadePhotoEditor key={item.id} item={item} onChange={patch => editListing(item.id, patch)} />
-          <Toggle label="Show this listing" checked={item.visible} onChange={value => editListing(item.id, { visible: value })} hint="The shop switch also needs to be on for visitors to see this listing. Preview to review your draft privately." />
-          <div className={styles.publishListing}><button type="button" className={ui.primary} disabled={!canPublishPremade || !onPublishPremade} onClick={() => onPublishPremade?.(item)}>Publish to store</button><p className={ui.help}>{canPublishPremade ? "Publishes only this listing. Other draft edits stay private; the shop switch is unchanged." : "Publish the website once and confirm its live shop state before publishing individual listings."}</p></div>
-          <button type="button" className={ui.dangerLink} onClick={() => onRemove(`Remove “${item.name}”?`, "This removes the listing from your draft. Its photos are not deleted, and the live website stays unchanged until you publish.", () => { onEdit(draft => { draft.premades = draft.premades.filter(listing => listing.id !== item.id); }); setEditing(null); })}>Remove listing</button>
-        </> : <div className={styles.listingSummary}>
-          <div className={styles.listingThumbnail}><OwnerImage src={cover.src} alt={cover.alt} style={{ objectFit: item.imageFit ?? "contain", objectPosition: `${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%` }} /></div>
-          <div><p className={styles.listingPrice}>{item.price === null ? "No price set" : `$${item.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</p><p className={ui.help}>{item.description || "Add a description and photos to introduce this character."}</p><p className={styles.itemMeta}>{photos.length} {photos.length === 1 ? "photo" : "photos"} · Cover shown</p></div>
-        </div>}
-      </Card>;
-    })}
+    {activeListings.map((item, index) => renderListing(item, index, activeListings))}
+    <details ref={draftSection} className={styles.draftListings} open={draftsOpen} onToggle={event => setDraftsOpen(event.currentTarget.open)}>
+      <summary>Draft listings <span>{draftListings.length}</span><small>Private cards · open to continue editing</small></summary>
+      <p className={ui.help}>These listings are excluded from whole-site publication. Save as Draft confirms a cloud save; editing or adding a card alone does not save it. An older live version stays unchanged until you publish.</p>
+      {draftListings.length ? <div className={styles.draftGrid}>{draftListings.map((item, index) => renderListing(item, index, draftListings))}</div> : <p className={ui.help}>No listing drafts yet. Add a premade or save a listing as a draft to keep it here.</p>}
+    </details>
   </div>;
 }
 

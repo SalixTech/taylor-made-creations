@@ -182,7 +182,7 @@
 .selected-design .brand-mark{display:flex;justify-content:center;margin:0 auto 24px}
 .selected-design .brand-mark .logo{width:82px;height:82px;flex:none;position:relative;object-fit:contain;background:transparent;border:0}
 .selected-design .premade-tags{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
-.selected-design .premade-tags>span{display:inline-block;padding:6px 10px;border:1px solid var(--wine);border-radius:3px;color:var(--wine);font-size:12px;font-weight:600}
+.selected-design .premade-tags>span{display:inline-block;max-width:100%;overflow-wrap:anywhere;padding:6px 10px;border:1px solid var(--wine);border-radius:3px;color:var(--wine);font-size:12px;font-weight:600}
 .selected-design .premade-product{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:clamp(24px,5vw,64px);align-items:start;margin:30px 0}
 .selected-design .premade-product h1{font-size:clamp(32px,4vw,54px);overflow-wrap:anywhere}
 .selected-design .premade-description{white-space:pre-wrap;overflow-wrap:anywhere}

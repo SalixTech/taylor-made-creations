@@ -10,7 +10,7 @@ function setup(key = 'home') {
   const Builder = h.load('src/owner/OwnerVisualBuilder.tsx').OwnerVisualBuilder;
   const edits = [], removes = [];
   let updates = 0, navigation = null;
-  const props = { content: value, page: value.pages.find(p => p.builtinKey === key), onEdit(change) { const next = structuredClone(value); change(next); value = next; props.content = value; props.page = value.pages.find(p => p.id === props.page.id); edits.push(value); }, onPageChange(page) { navigation = page; }, onManagePages() {}, onAddPage() {}, onPrices() {}, onRemove(...args) { removes.push(args); }, liveShopVisibility: false, canUpdateLiveShop: true, onUpdateLiveShop() { updates++; } };
+  const props = { browsing: false, onBrowsingChange(value) { props.browsing = value; }, content: value, page: value.pages.find(p => p.builtinKey === key), onEdit(change) { const next = structuredClone(value); change(next); value = next; props.content = value; props.page = value.pages.find(p => p.id === props.page.id); edits.push(value); }, onPageChange(page) { navigation = page; }, onManagePages() {}, onAddPage() {}, onPrices() {}, onRemove(...args) { removes.push(args); }, liveShopVisibility: false, canUpdateLiveShop: true, onUpdateLiveShop() { updates++; } };
   function render() { const result = h.render(Builder, props); for (const dom of h.refs.values()) dom.scrollIntoView = () => {}; return result; }
   const button = label => h.find(n => n.type === 'button' && content(n).trim() === label);
   const field = label => h.find(n => typeof n.type === 'function' && n.type.name === 'Field' && n.props.label === label);
@@ -30,7 +30,7 @@ test('the actual site is the builder and click-to-edit changes its supplied cont
   assert.equal(frame.props.content.home.title, 'A NEW WELCOME');
   t.button('Done').props.onClick(); t.render();
   assert.equal(t.field('Main heading'), undefined);
-  t.button('Preview').props.onClick(); t.render();
+  t.button('Exit edit mode').props.onClick(); t.render();
   frame = t.h.find(n => typeof n.type === 'function' && n.type.name === 'SiteContentFrame');
   assert.equal(frame.props.editable, false, 'Visitor preview suppresses editor-only hidden content and hooks');
 });
@@ -101,11 +101,11 @@ test('an unknown live shop is not presented as an unpublished site or an actiona
   t.button('Check again').props.onClick(); assert.equal(retries, 1);
 });
 
-test('pending upload keeps editor mounted through Done, close, Escape, Preview and page navigation', () => {
+test('pending upload keeps editor mounted through Done, close, Escape, exit edit mode and page navigation', () => {
   const t = setup('gallery'), id = t.value.gallery[0].id; t.select(`gallery:${id}`); assert.ok(t.field('Photo name'));
   t.props.uploadBusy = true; t.render();
   const close = () => t.h.find(n => n.type === 'button' && n.props['aria-label'] === 'Close section editor');
-  assert.equal(t.button('Done').props.disabled, true); assert.equal(close().props.disabled, true); assert.equal(t.button('Preview').props.disabled, true);
-  for (const action of [() => t.button('Done').props.onClick(), () => close().props.onClick(), () => t.h.find(n => n.type === 'aside').props.onKeyDown({ key: 'Escape', preventDefault() {} }), () => t.button('Preview').props.onClick(), () => t.h.find(n => typeof n.type === 'function' && n.type.name === 'SiteContentFrame').props.onNavigate(t.value.pages.find(p => p.builtinKey === 'home'))]) { action(); t.render(); assert.ok(t.field('Photo name')); assert.equal(t.navigation, null); const frame = t.h.find(n => typeof n.type === 'function' && n.type.name === 'SiteContentFrame'); assert.equal(frame.props.editable, true); }
+  assert.equal(t.button('Done').props.disabled, true); assert.equal(close().props.disabled, true); assert.equal(t.button('Exit edit mode').props.disabled, true);
+  for (const action of [() => t.button('Done').props.onClick(), () => close().props.onClick(), () => t.h.find(n => n.type === 'aside').props.onKeyDown({ key: 'Escape', preventDefault() {} }), () => t.button('Exit edit mode').props.onClick(), () => t.h.find(n => typeof n.type === 'function' && n.type.name === 'SiteContentFrame').props.onNavigate(t.value.pages.find(p => p.builtinKey === 'home'))]) { action(); t.render(); assert.ok(t.field('Photo name')); assert.equal(t.navigation, null); const frame = t.h.find(n => typeof n.type === 'function' && n.type.name === 'SiteContentFrame'); assert.equal(frame.props.editable, true); }
   t.props.uploadBusy = false; t.render(); t.button('Done').props.onClick(); t.render(); assert.equal(t.field('Photo name'), undefined); t.h.unmount();
 });

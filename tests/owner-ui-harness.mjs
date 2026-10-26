@@ -10,7 +10,16 @@ function content(n) { if (n == null || typeof n === 'boolean') return ''; if (Ar
 class FakeHTMLElement {}
 function harness() {
   const h = {hooks: [], cursor: 0, pending: [], pathname: '/premades', tree: null, refs: new Map(), byId: new Map(), cache: new Map(), overrides: {}, globals: {}, focusLog: [], currentContext: null, process: { env: { ...process.env } }};
-  h.window = Object.assign(new EventTarget(), {scrollY:20,scrollTo(){},setTimeout,history:{state:{},pushState(state,title,url){this.state=state;h.window.location.href=url;}}, location:{href:'',assign(url){this.href=url;}},confirm(){return true;},open(){}});
+  const entries = [{ state: {}, url: '' }]; let historyIndex = 0;
+  const history = {
+    get state() { return entries[historyIndex].state; },
+    get length() { return entries.length; },
+    replaceState(state, title, url) { entries[historyIndex] = { state, url: String(url ?? h.window.location.href) }; h.window.location.href = entries[historyIndex].url; },
+    pushState(state, title, url) { entries.splice(historyIndex + 1); entries.push({ state, url: String(url) }); historyIndex++; h.window.location.href = String(url); },
+    go(delta) { Promise.resolve().then(() => { const target = historyIndex + delta; if (target < 0 || target >= entries.length || !delta) return; historyIndex = target; h.window.location.href = entries[target].url; const event = new Event('popstate'); Object.defineProperty(event, 'state', { value: entries[target].state }); h.window.dispatchEvent(event); }); },
+    back() { this.go(-1); }, forward() { this.go(1); },
+  };
+  h.window = Object.assign(new EventTarget(), {scrollY:20,scrollTo(){},setTimeout,history,location:{href:'',assign(url){this.href=url;}},confirm(){return true;},open(){}});
   h.document = {body: {style: {overflow: 'auto', position: '', top: '', width: ''}}, activeElement: null, getElementById: id => h.byId.get(id), addEventListener(){}, removeEventListener(){}};
   function node(n) {return Object.assign(new FakeHTMLElement(), {__node:n, open:false, value:'', scrollTop:0, isConnected:true, contains(x){return this === x;}, focus(){h.document.activeElement=this;h.focusLog.push(this.__node.props.id || this.__node.props['aria-label'] || content(this.__node));},showModal(){if(this.open)throw Error('duplicate showModal');this.open=true;},close(){if(!this.open)return;this.open=false;this.__node.props.onClose?.({target:this,currentTarget:this});},querySelectorAll(){return []},querySelector(){return null}});}
   const react = {

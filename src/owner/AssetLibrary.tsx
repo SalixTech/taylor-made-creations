@@ -2,17 +2,14 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { PHOTO_UPLOAD_MAX_BYTES, OWNER_MEDIA_SOURCE_PATTERN, useOwnerMediaSource, type UploadedPhoto } from "./media-client";
+import { useOwnerMediaSource } from "./media-client";
 import { usePrivateAssetLibrary } from "./asset-library-client";
 import { PhotoUpload } from "./PhotoUpload";
+import { Dialog } from "./OwnerDialog";
+import { TemporaryPhotoView } from "./TemporaryPhotoView";
+import { changeTemporaryPhotoTrash, isStagedPhoto, type StagedPhoto } from "./temporary-photo-client";
 import styles from "./AssetLibrary.module.css";
 
-type StagedPhoto = UploadedPhoto & { name: string; createdAt: string };
-function isStagedPhoto(value: unknown): value is StagedPhoto {
-  if (!value || typeof value !== "object") return false;
-  const photo = value as Partial<StagedPhoto>;
-  return typeof photo.id === "string" && photo.src === `/api/media/${photo.id}` && OWNER_MEDIA_SOURCE_PATTERN.test(photo.src) && typeof photo.name === "string" && photo.name.length <= 150 && typeof photo.createdAt === "string" && Number.isFinite(Date.parse(photo.createdAt)) && photo.storage === "development-disk" && photo.contentType === "image/webp" && Number.isInteger(photo.width) && Number.isInteger(photo.height) && !!photo.width && !!photo.height && typeof photo.bytes === "number" && photo.bytes > 0 && photo.bytes <= PHOTO_UPLOAD_MAX_BYTES;
-}
 function StagedThumbnail({ photo }: { photo: StagedPhoto }) {
   const { src, error } = useOwnerMediaSource(photo.src);
   if (!src || error) return <span className={styles.status}>{error || "Loading private photo…"}</span>;
@@ -30,15 +27,54 @@ function LazyStagedThumbnail({ photo }: { photo: StagedPhoto }) {
   }, []);
   return <div className={styles.preview} ref={target}>{nearby ? <StagedThumbnail photo={photo} /> : <span className={styles.status}>Photo preview</span>}</div>;
 }
-export function AssetLibrary({ selected, onSelect }: { selected: string; onSelect: (src: string) => void }) {
-  const library = usePrivateAssetLibrary("/api/taylor/media", "photos", isStagedPhoto);
-  return <section className={styles.library} aria-label="Temporary photo library">
-    <div className={styles.heading}><h3>Temporary photo library</h3><button type="button" className={styles.button} disabled={library.loading} onClick={library.refresh}>Refresh library</button></div>
-    <p className={styles.description}>Upload first, then choose <strong>Use photo</strong>. Uploading does not replace the current image or publish it. These reusable photos stay on this development server until you remove them outside the app; they are not copied to cloud storage.</p>
-    <PhotoUpload multiple staged label="Upload to temporary library" onUploaded={photos => { for (const photo of photos) library.add({ ...photo.media, name: photo.name, createdAt: new Date().toISOString() }); }} />
+export function AssetLibrary({ selected = "", onSelect, manager = false }: { selected?: string; onSelect?: (src: string) => void; manager?: boolean }) {
+  const library = usePrivateAssetLibrary("/api/taylor/media?trash=1", "photos", isStagedPhoto);
+  const [trash, setTrash] = useState(false);
+  const [layout, setLayout] = useState<"grid" | "list">("grid");
+  const [viewing, setViewing] = useState<StagedPhoto | null>(null);
+  const [deleting, setDeleting] = useState<StagedPhoto | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const active = useRef<AbortController | null>(null);
+  const alive = useRef(true);
+  const sectionButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; active.current?.abort(); }; }, []);
+  useEffect(() => { if (message) sectionButton.current?.focus(); }, [message]);
+  const visible = library.assets.filter(photo => Boolean(photo.trashedAt) === trash);
+  async function change(photo: StagedPhoto, action: "trash" | "restore") {
+    if (active.current) return;
+    const controller = new AbortController(); active.current = controller;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const saved = await changeTemporaryPhotoTrash(photo.id, action, controller.signal);
+      if (!alive.current || controller.signal.aborted) return;
+      library.add(saved);
+      setDeleting(null);
+      setMessage(action === "trash" ? `“${photo.name}” moved to Trash. Existing page photos are unchanged. You can restore it in Trash.` : `“${photo.name}” restored to the temporary photo library.`);
+    } catch (failure) {
+      if (alive.current && !controller.signal.aborted) setError(failure instanceof Error ? failure.message : "The library change was not confirmed. Refresh to check its status.");
+    } finally { active.current = null; if (alive.current) setBusy(false); }
+  }
+  return <section className={`${styles.library} ${manager ? styles.manager : ""}`} aria-label="Temporary photo library">
+    <div className={styles.heading}><h3>Temporary photo library</h3><button type="button" className={styles.button} disabled={library.loading || busy} onClick={library.refresh}>Refresh library</button></div>
+    <p className={styles.description}>{onSelect ? <>Upload first, then choose <strong>Use photo</strong>. Uploading does not replace the current image or publish it. </> : <>Manage reusable temporary photos without changing your pages. </>}Delete moves a library item to recoverable Trash; the image file and any existing page references are kept. This temporary library is on the development server, not connected cloud storage.</p>
+    <div className={styles.libraryTools}><div className={styles.tabs} aria-label="Photo library section"><button ref={!trash ? sectionButton : undefined} type="button" className={styles.button} aria-pressed={!trash} onClick={() => { setTrash(false); setError(""); }}>Photos ({library.assets.filter(photo => !photo.trashedAt).length})</button><button ref={trash ? sectionButton : undefined} type="button" className={styles.button} aria-pressed={trash} onClick={() => { setTrash(true); setError(""); }}>Trash ({library.assets.filter(photo => photo.trashedAt).length})</button></div>{manager && <div className={styles.tabs} aria-label="Photo layout"><button type="button" className={styles.button} aria-pressed={layout === "grid"} onClick={() => setLayout("grid")}>Grid</button><button type="button" className={styles.button} aria-pressed={layout === "list"} onClick={() => setLayout("list")}>List</button></div>}</div>
+    {!trash && library.available !== false && <PhotoUpload multiple staged libraryOnly={manager} label="Upload to temporary library" onUploaded={photos => { for (const photo of photos) library.add({ ...photo.media, name: photo.name, createdAt: new Date().toISOString(), trashedAt: null }); }} />}
+    {trash && <p className={styles.description}>Trash hides photos from the chooser, not from pages already using them. Restore brings them back to Photos. Permanent deletion is not available.</p>}
     {library.loading && <p className={styles.status} role="status">Loading your private photo library…</p>}
     {library.error && <p className={styles.error} role="alert">{library.error}</p>}
-    {!library.loading && !library.error && !library.assets.length && <p className={styles.status}>No uploaded photos yet. Your current image stays selected.</p>}
-    {library.assets.length > 0 && <ul className={styles.list}>{library.assets.map(photo => <li className={styles.item} key={photo.id} data-selected={selected === photo.src}><LazyStagedThumbnail photo={photo} /><p className={styles.name}>{photo.name}</p><button type="button" className={styles.button} aria-label={`Use photo: ${photo.name}`} aria-pressed={selected === photo.src} onClick={() => onSelect(photo.src)}>{selected === photo.src ? "Selected photo" : "Use photo"}</button></li>)}</ul>}
+    {error && !deleting && <p className={styles.error} role="alert">{error}</p>}
+    {message && <p className={styles.status} role="status">{message}</p>}
+    {!library.loading && !library.error && !visible.length && <p className={styles.status}>{trash ? "Your temporary-photo Trash is empty." : onSelect ? "No uploaded photos yet. Your current image stays selected." : "No temporary photos yet."}</p>}
+    {visible.length > 0 && <ul className={`${styles.list} ${manager && layout === "list" ? styles.detailsList : ""}`}>{visible.map(photo => <li className={styles.item} key={photo.id} data-selected={selected === photo.src}>
+      <div className={styles.photoFrame}><LazyStagedThumbnail photo={photo} /><div className={styles.photoActions}><button type="button" className={styles.button} aria-label={`View photo: ${photo.name}`} onClick={() => setViewing(photo)}>View</button>{!trash && <button type="button" className={styles.button} aria-label={`Delete photo: ${photo.name}`} disabled={busy} onClick={() => { setError(""); setDeleting(photo); }}>Delete</button>}</div></div>
+      <div className={styles.photoIdentity}><p className={styles.name}>{photo.name}</p>{manager && <small className={styles.fileDetail}>{photo.width} × {photo.height} · {Math.max(1, Math.round(photo.bytes / 1024))} KB</small>}</div>
+      {trash ? <button type="button" className={styles.button} disabled={busy} aria-label={`Restore photo: ${photo.name}`} onClick={() => { void change(photo, "restore"); }}>Restore</button> : onSelect && <button type="button" className={styles.button} aria-label={`Use photo: ${photo.name}`} aria-pressed={selected === photo.src} onClick={() => onSelect(photo.src)}>{selected === photo.src ? "Selected photo" : "Use photo"}</button>}
+    </li>)}</ul>}
+    {viewing && library.available !== false && <TemporaryPhotoView photo={viewing} onClose={() => setViewing(null)} />}
+    {deleting && library.available !== false && <Dialog title="Move photo to Trash?" onClose={() => { if (!busy) { setDeleting(null); setError(""); } }} dismissDisabled={busy} actions={<><button type="button" className={styles.button} disabled={busy} onClick={() => { setDeleting(null); setError(""); }}>Cancel</button><button type="button" className={styles.button} disabled={busy} onClick={() => { void change(deleting, "trash"); }}>{busy ? "Moving to Trash…" : "Move to Trash"}</button></>}>
+      <p>“{deleting.name}” will be hidden from the temporary photo chooser. The image file is kept, and photos already used by drafts or published pages stay in place. No gallery entries are removed. You can bring it back from Trash.</p>{error && <p className={styles.error} role="alert">{error}</p>}
+    </Dialog>}
   </section>;
 }

@@ -10,7 +10,7 @@ export function premadeHref(page: OwnerPage, item: Pick<OwnerPremade, "id">): st
 export function getPublicPremade(content: OwnerContent, slug: readonly string[]): { page: OwnerPage; item: OwnerPremade } | undefined {
   const page = getStorefrontPage(content);
   if (!page || slug.length !== 2 || slug[0] !== page.slug) return undefined;
-  const item = content.premades.find(item => item.id === slug[1] && item.visible);
+  const item = content.premades.find(item => item.id === slug[1] && item.visible && !item.isDraft);
   return item ? { page, item } : undefined;
 }
 /** A listing URL is owner supplied, not a promise that inventory is still available. */
@@ -22,11 +22,11 @@ export function thirdPartyListingUrl(item: OwnerPremade): string | null {
   } catch { return null; }
 }
 export function premadeChannelLabel(item: OwnerPremade): string {
-  return item.soldChannel === "third-party" ? "Sold on third party" : item.soldChannel === "con" ? "Sold at con" : "Sold on TMC";
+  return item.soldChannel === "third-party" ? "Sold on third party" : item.soldChannel === "con" ? "Sold at con" : "Sold Here";
 }
 export function canAddPublishedPremade(content: OwnerContent, itemId: string): boolean {
   if (content.site.catalogMode || !getStorefrontPage(content)) return false;
-  return content.premades.some(item => item.id === itemId && item.visible && (!item.soldChannel || item.soldChannel === "tmc") && item.price !== null && Number.isFinite(item.price) && item.price >= 0);
+  return content.premades.some(item => item.id === itemId && item.visible && !item.isDraft && (!item.soldChannel || item.soldChannel === "tmc") && item.price !== null && Number.isFinite(item.price) && item.price >= 0);
 }
 export function getPublicRequestPage(content: OwnerContent, slug: readonly string[]): OwnerPage | undefined {
   if (slug.length !== 2 || slug[1] !== "request") return undefined;

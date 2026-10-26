@@ -15,8 +15,8 @@ async function portalFixture() {
     publishLive:async(c)=>{publications++;saved={...saved,draft:structuredClone(c),revision:saved.revision+1};return structuredClone(saved);},
     publishPremadeLive:async(item,revision)=>{itemPublications.push({item:structuredClone(item),revision}); if(gate)await gate.promise; saved={...saved,draft:{...saved.draft,premades:saved.draft.premades.map(p=>p.id===item.id?structuredClone(item):p)},revision:saved.revision+1};return structuredClone(saved);}
   };
-  const Component=h.load('src/owner/OwnerPortal.tsx').default, render=()=>h.render(Component,{store,mode:'cloud',userEmail:'test@example.test',onSignOut:async()=>{}});
-  const button=label=>h.find(n=>n.type==='button'&&content(n).trim()===label), component=name=>h.find(n=>typeof n.type==='function'&&n.type.name===name), dialog=()=>component('Dialog');
+  const Component=h.load('src/owner/OwnerPortal.tsx').default, render=()=>h.render(Component,{store,initialSection:'pages',mode:'cloud',userEmail:'test@example.test',onSignOut:async()=>{}});
+  const button=label=>h.find(n=>(n.type==='button'||n.type==='a')&&content(n).trim()===label), component=name=>h.find(n=>typeof n.type==='function'&&n.type.name===name), dialog=()=>component('Dialog');
   render();await flush();render();
   return {h,render,button,component,dialog,store,initial,get saved(){return saved;},get privateSaves(){return privateSaves;},get publications(){return publications;},get itemPublications(){return itemPublications;},get notifications(){return notifications;},set gate(v){gate=v;}};
 }
@@ -25,20 +25,20 @@ test('photo save opens existing chooser, both cards are real buttons and footer 
   const t=await portalFixture();t.button('Photos').props.onClick();t.render();
   t.component('PhotoGalleryManager').props.onSavePhotos();t.render();
   assert.equal(t.dialog().props.title,'Save your changes');assert.equal(t.privateSaves,0);assert.equal(t.publications,0);
-  const card=nodes(t.dialog()).find(n=>n.type==='button'&&content(n).startsWith('Save draftSave privately'));
-  assert.ok(card); assert.ok(nodes(t.dialog().props.actions).some(n=>n.type==='button'&&content(n)==='Save draft'));
+  const card=nodes(t.dialog()).find(n=>(n.type==='button'||n.type==='a')&&content(n).startsWith('Save draftSave privately'));
+  assert.ok(card); assert.ok(nodes(t.dialog().props.actions).some(n=>(n.type==='button'||n.type==='a')&&content(n)==='Save draft'));
   await card.props.onClick();t.render();assert.equal(t.privateSaves,1);assert.equal(t.publications,0);assert.equal(t.dialog(),undefined);t.h.unmount();
 });
 test('publish card and footer share duplicate lock and only report acknowledged publication',async()=>{
   const t=await portalFixture();t.button('Save →').props.onClick();t.render();
-  const card=nodes(t.dialog()).find(n=>n.type==='button'&&content(n).startsWith('Publish liveSave and publish'));
+  const card=nodes(t.dialog()).find(n=>(n.type==='button'||n.type==='a')&&content(n).startsWith('Publish liveSave and publish'));
   assert.ok(card);await card.props.onClick();t.render();assert.equal(t.publications,1);assert.equal(t.privateSaves,0);t.h.unmount();
 });
 test('publishing a selected premade preserves unrelated unsaved edits and updates only its baseline',async()=>{
   const t=await portalFixture();t.button('Premades').props.onClick();t.render();
   let manager=t.component('PremadesManager');manager.props.onEdit(d=>{d.home.title='UNSAVED HOME';d.premades[0].name='New fox';d.premades[1].name='PRIVATE WOLF';d.site.catalogMode=true;});t.render();
   manager=t.component('PremadesManager');manager.props.onPublishPremade(manager.props.content.premades[0]);t.render();
-  assert.equal(t.itemPublications.length,0);const confirmation=nodes(t.dialog().props.actions).find(n=>n.type==='button'&&content(n)==='Publish to store');
+  assert.equal(t.itemPublications.length,0);const confirmation=nodes(t.dialog().props.actions).find(n=>(n.type==='button'||n.type==='a')&&content(n)==='Publish to store');
   const gate=deferred();t.gate=gate;confirmation.props.onClick();confirmation.props.onClick();t.render();assert.equal(t.itemPublications.length,1);assert.equal(t.notifications,0);
   gate.resolve();await flush();t.render();manager=t.component('PremadesManager');
   assert.equal(manager.props.content.home.title,'UNSAVED HOME');assert.equal(manager.props.content.premades[1].name,'PRIVATE WOLF');assert.equal(manager.props.content.site.catalogMode,true);
@@ -90,9 +90,9 @@ test('page manager menu toggle updates explicit navigation placement, not only l
   const t=await portalFixture();let builder=t.component('OwnerVisualBuilder');const target=builder.props.content.pages.find(p=>p.builtinKey==='gallery');
   builder.props.onEdit(d=>{const page=d.pages.find(p=>p.id===target.id);page.navPlacement='more';page.showInNav=false;});t.render();builder=t.component('OwnerVisualBuilder');builder.props.onManagePages();t.render();
   const row=()=>nodes(t.dialog()).find(n=>n.key===target.id&&n.type==='div');
-  assert.match(content(row()),/More dropdown · off/);nodes(row()).find(n=>n.type==='button'&&content(n)==='Hide from menu').props.onClick();t.render();
+  assert.match(content(row()),/More dropdown · off/);nodes(row()).find(n=>(n.type==='button'||n.type==='a')&&content(n)==='Hide from menu').props.onClick();t.render();
   let page=t.component('OwnerVisualBuilder').props.content.pages.find(p=>p.id===target.id);assert.equal(page.navPlacement,'unlisted');assert.equal(page.showInNav,false);
-  nodes(row()).find(n=>n.type==='button'&&content(n)==='Show in menu').props.onClick();t.render();page=t.component('OwnerVisualBuilder').props.content.pages.find(p=>p.id===target.id);assert.equal(page.navPlacement,'main');assert.equal(page.showInNav,true);t.h.unmount();
+  nodes(row()).find(n=>(n.type==='button'||n.type==='a')&&content(n)==='Show in menu').props.onClick();t.render();page=t.component('OwnerVisualBuilder').props.content.pages.find(p=>p.id===target.id);assert.equal(page.navPlacement,'main');assert.equal(page.showInNav,true);t.h.unmount();
 });
 
 test('actual public dark selectors override baseline home heading, white cards, and pink/white buttons',async()=>{

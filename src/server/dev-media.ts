@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, opendir, realpath, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, opendir, realpath, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import type { PublicOwnerContent } from "@/owner/model";
@@ -12,7 +12,7 @@ export const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
 export const MAX_MEDIA_PIXELS = 40_000_000;
 export const MEDIA_ID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export const MEDIA_SOURCE_PATTERN = /^\/api\/media\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-export type StagedMedia = UploadedMedia & { name: string; createdAt: string };
+export type StagedMedia = UploadedMedia & { name: string; createdAt: string; trashedAt?: string | null };
 export type UploadedMedia = { id: string; src: string; width: number; height: number; bytes: number; contentType: "image/webp"; storage: "development-disk" };
 const unavailable = "Photo uploads are not connected on this server. Development uploads need a persistent local development server; production needs an authorized storage service.";
 export function developmentMediaEnabled(): boolean {
@@ -180,23 +180,130 @@ export async function readPrivateAssetRecord(directory: string, filename: string
   try {
     const stat = await file.stat();
     if (!stat.isFile() || stat.ino !== info.ino || stat.dev !== info.dev || stat.size > 4096) throw new Error("Invalid asset record");
-    return JSON.parse(await file.readFile("utf8"));
+    // Bound the read itself, including a file that grows after stat().
+    const bytes = Buffer.alloc(4097);
+    let size = 0;
+    while (size < bytes.length) {
+      const read = await file.read(bytes, size, bytes.length - size, size);
+      if (!read.bytesRead) break;
+      size += read.bytesRead;
+    }
+    if (size > 4096) throw new Error("Invalid asset record");
+    return JSON.parse(bytes.toString("utf8", 0, size));
   } finally { await file.close(); }
 }
+function validAssetDate(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 32 && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+}
+/** Return an allowlisted projection, never arbitrary fields from a private sidecar. */
+async function stagedMediaRecord(directory: string, id: string): Promise<StagedMedia> {
+  const raw = await readPrivateAssetRecord(directory, `${id}.photo.json`) as Partial<StagedMedia> | null;
+  if (!raw || Array.isArray(raw) || raw.id !== id || raw.src !== `/api/media/${id}` || raw.storage !== "development-disk" || raw.contentType !== "image/webp"
+    || typeof raw.name !== "string" || raw.name.length > 150 || !validAssetDate(raw.createdAt)
+    || !Number.isInteger(raw.width) || !Number.isInteger(raw.height) || !raw.width || raw.width < 1 || raw.width > 20_000 || !raw.height || raw.height < 1 || raw.height > 20_000
+    || !Number.isInteger(raw.bytes) || !raw.bytes || raw.bytes < 1 || raw.bytes > MAX_MEDIA_BYTES
+    || (raw.trashedAt !== undefined && raw.trashedAt !== null && !validAssetDate(raw.trashedAt))) throw new Error("Invalid photo record");
+  const stat = await lstat(path.join(directory, `${id}.webp`));
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== raw.bytes) throw new Error("Invalid photo file");
+  return { id, src: `/api/media/${id}`, width: raw.width, height: raw.height, bytes: raw.bytes, contentType: "image/webp", storage: "development-disk", name: assetDisplayName(raw.name, "Uploaded photo"), createdAt: raw.createdAt, ...(raw.trashedAt !== undefined ? { trashedAt: raw.trashedAt } : {}) };
+}
 /** Private dev-host library persists across picker opens and browser sessions; no fixed count cap. */
-export async function listDevelopmentMedia(): Promise<StagedMedia[]> {
+export async function listDevelopmentMedia(includeTrash = false): Promise<StagedMedia[]> {
   const directory = await mediaDirectory(), records: StagedMedia[] = [];
   const entries = await opendir(directory);
   for await (const entry of entries) {
     const id = entry.name.replace(/\.photo\.json$/, "");
     if (!entry.isFile() || !entry.name.endsWith(".photo.json") || !MEDIA_ID_PATTERN.test(id)) continue;
     try {
-      const raw = await readPrivateAssetRecord(directory, entry.name) as Partial<StagedMedia>;
-      if (raw.id !== id || raw.src !== `/api/media/${id}` || raw.storage !== "development-disk" || raw.contentType !== "image/webp" || typeof raw.name !== "string" || typeof raw.createdAt !== "string" || !Number.isFinite(Date.parse(raw.createdAt)) || !Number.isInteger(raw.width) || !Number.isInteger(raw.height) || !raw.width || !raw.height || !raw.bytes || raw.bytes > MAX_MEDIA_BYTES) continue;
-      const stat = await lstat(path.join(directory, `${id}.webp`));
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== raw.bytes) continue;
-      records.push({ ...raw, name: assetDisplayName(raw.name, "Uploaded photo") } as StagedMedia);
+      const media = await stagedMediaRecord(directory, id);
+      if (includeTrash || !media.trashedAt) records.push(media);
     } catch { /* Invalid/missing records cannot turn into public files or break healthy uploads. */ }
   }
   return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+const photoMutations = new Map<string, Promise<void>>();
+/** Metadata-only Trash. Never remove bytes: drafts and published references remain valid. */
+export async function setDevelopmentMediaTrash(id: string, action: "trash" | "restore"): Promise<StagedMedia> {
+  requireDevelopmentMedia();
+  if (!MEDIA_ID_PATTERN.test(id) || (action !== "trash" && action !== "restore")) throw new TaylorApiError(400, "Choose a valid photo and Trash or Restore action.");
+  const directory = await mediaDirectory();
+  id = id.toLowerCase();
+  const target = path.join(directory, `${id}.photo.json`);
+  const prior = photoMutations.get(target) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const tail = prior.then(() => gate);
+  photoMutations.set(target, tail);
+  await prior;
+  let temporary: string | undefined;
+  let lock: string | undefined;
+  try {
+    // Exclusive transient lock protects another dev process using the same disk.
+    // Never follow/remove somebody else's lock or infer that a lock is stale.
+    const lockPath = path.join(directory, `${id}.photo.lock`);
+    try {
+      const handle = await open(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
+      lock = lockPath;
+      await handle.close();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new TaylorApiError(409, "This photo is being updated. Refresh and try again. If this persists after a development-server restart, its private photo lock needs to be checked.");
+      throw error;
+    }
+    let current: StagedMedia;
+    try { current = await stagedMediaRecord(directory, id); } catch { throw new TaylorApiError(404, "Photo not found in the temporary library."); }
+    const media: StagedMedia = { ...current, trashedAt: action === "trash" ? current.trashedAt || new Date().toISOString() : null };
+    const filename = `${id}.${randomUUID()}.photo.tmp`;
+    // Exclusive create must succeed before cleanup owns the temporary path.
+    const temporaryPath = path.join(directory, filename);
+    const file = await open(temporaryPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0), 0o600);
+    temporary = temporaryPath;
+    try { await file.writeFile(JSON.stringify(media)); await file.sync(); } finally { await file.close(); }
+    await rename(temporary, target);
+    temporary = undefined;
+    return media;
+  } catch (error) {
+    if (error instanceof TaylorApiError) throw error;
+    throw new TaylorApiError(503, "The photo library could not be updated. Its image bytes and draft references have not been removed. Refresh to check its current status.");
+  } finally {
+    if (temporary) await unlink(temporary).catch(() => undefined);
+    if (lock) await unlink(lock).catch(() => undefined);
+    release();
+    if (photoMutations.get(target) === tail) photoMutations.delete(target);
+  }
+}
+
+/** Small, streamed and strict mutation request; no paths or client metadata are accepted. */
+export async function readMediaTrashRequest(request: Request): Promise<{ id: string; action: "trash" | "restore" }> {
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) throw new TaylorApiError(403, "Manage photos from Taylor’s Space on this site.");
+  if (request.headers.get("content-type")?.trim().toLowerCase() !== "application/json") throw new TaylorApiError(415, "Send a JSON photo action.");
+  const declared = request.headers.get("content-length");
+  if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > 512)) throw new TaylorApiError(413, "This photo action is too large.");
+  if (!request.body) throw new TaylorApiError(400, "Choose a photo action.");
+  const reader = request.body.getReader();
+  const chunks: Buffer[] = [];
+  let length = 0, complete = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new TaylorApiError(408, "The photo action timed out. Refresh and try again.")), 10_000); });
+  try {
+    while (true) {
+      const result = await Promise.race([reader.read(), deadline]);
+      if (result.done) { complete = true; break; }
+      length += result.value.byteLength;
+      if (length > 512) throw new TaylorApiError(413, "This photo action is too large.");
+      chunks.push(Buffer.from(result.value));
+    }
+    if (declared !== null && Number(declared) !== length) throw new TaylorApiError(400, "The photo action was incomplete.");
+    let raw: unknown;
+    try { raw = JSON.parse(Buffer.concat(chunks, length).toString("utf8")); } catch { throw new TaylorApiError(400, "Choose a valid JSON photo action."); }
+    if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length !== 2 || !Object.hasOwn(raw, "id") || !Object.hasOwn(raw, "action")) throw new TaylorApiError(400, "Choose only a photo ID and Trash or Restore action.");
+    const value = raw as { id: unknown; action: unknown };
+    if (typeof value.id !== "string" || !MEDIA_ID_PATTERN.test(value.id) || (value.action !== "trash" && value.action !== "restore")) throw new TaylorApiError(400, "Choose a valid photo and Trash or Restore action.");
+    return { id: value.id.toLowerCase(), action: value.action };
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (!complete) await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }

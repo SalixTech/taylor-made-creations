@@ -1,0 +1,32 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { harness, content, nodes } from './owner-ui-harness.mjs';
+
+test('Sold Here is the on-site label while persisted channel values and purchase rules stay unchanged', () => {
+  const h = harness();
+  const { premadeChannelLabel, canAddPublishedPremade } = h.load('src/components/storefront-model.ts');
+  const draft = h.load('src/owner/defaults.ts').createDefaultOwnerContent();
+  draft.site.showPremades = true; draft.site.catalogMode = false;
+  const item = { id: 'channel-copy', name: 'Premade', image: '/images/heads.webp', alt: 'Premade', description: '', price: 100, visible: true, soldChannel: 'tmc' };
+  draft.premades = [item];
+  assert.equal(premadeChannelLabel(item), 'Sold Here');
+  assert.equal(premadeChannelLabel({ ...item, soldChannel: undefined }), 'Sold Here');
+  assert.equal(premadeChannelLabel({ ...item, soldChannel: 'third-party' }), 'Sold on third party');
+  assert.equal(premadeChannelLabel({ ...item, soldChannel: 'con' }), 'Sold at con');
+  assert.equal(canAddPublishedPremade(draft, item.id), true);
+  const { PremadesManager } = h.load('src/owner/OwnerTemplateManagers.tsx');
+  const props = { content: draft, onEdit(change) { change(draft); }, onRemove() {}, liveShopVisibility: true, liveShopKnown: true, canUpdateLiveShop: true, onUpdateLiveShop() {} };
+  h.render(PremadesManager, props);
+  const card = h.find(node => typeof node.type === 'function' && node.type.name === 'Card' && node.props.title === 'Premade');
+  assert.match(content(card.props.action), /Sold Here/);
+  assert.doesNotMatch(content(card.props.action), /Sold on TMC/);
+  const edit = nodes(card.props.action).find(node => node.type === 'button' && content(node) === 'Edit listing');
+  edit.props.onClick(); h.render(PremadesManager, props);
+  const select = h.find(node => typeof node.type === 'function' && node.type.name === 'OwnerSelect' && node.props.label === 'Where is this sold?');
+  assert.deepEqual(select.props.options[0], { value: 'tmc', label: 'Sold Here' });
+  assert.equal(select.props.value, 'tmc');
+  select.props.onChange('third-party');
+  assert.equal(draft.premades[0].soldChannel, 'third-party');
+  assert.equal(canAddPublishedPremade(draft, item.id), false);
+  h.unmount();
+});

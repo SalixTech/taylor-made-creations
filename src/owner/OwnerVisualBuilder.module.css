@@ -102,3 +102,10 @@
 @media(max-width:650px) { .headerEditor { padding:12px 15px; }.headerEditorHeading { gap:8px; } }
 .editing [data-owner-nav-page] { cursor:grab; }
 .editing [data-owner-nav-page][data-owner-drop="true"] { outline:2px dashed #800014; outline-offset:3px; background:#fff5f7; color:#800014; }
+
+/* Editor chrome follows the private workspace palette, never the live canvas. */
+:global([data-owner-portal][data-color-mode="dark"]) .panel { box-shadow: 0 18px 70px #0007, 0 3px 14px #0003; }
+:global([data-owner-portal][data-color-mode="dark"]) :is(.panelNav, .modeSwitch, .deviceSwitch, .contextbar) button[aria-pressed="true"]:enabled { background-color: #48313e!important; border-color: #d7879b!important; color: #fff!important; box-shadow: inset 0 0 0 1px #d7879b; }
+:global([data-owner-portal][data-color-mode="dark"]) :is(.actionbar .designAction, .contextbar .applyShop):is(:enabled, :disabled) { background-color: #970d2a!important; border-color: #db6c84!important; color: #fff!important; }
+:global([data-owner-portal][data-color-mode="dark"]) :is(.actionbar .designAction, .contextbar .applyShop):enabled:hover { background-color: #b11739!important; border-color: #f39ab0!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .panelHeader > button:enabled { border-color: var(--owner-control-line, #947887)!important; }

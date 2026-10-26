@@ -87,7 +87,16 @@ test('production anonymous session opens sign-in only, never a private store or 
   const t = fixture(); await t.start(); t.locked();
   assert.match(content(t.h.tree), /Checking your owner sign-in/);
   t.emit(null); t.render(); t.locked();
-  assert.ok(t.h.find(node => node.type === 'form'));
+  const form = t.h.find(node => node.type === 'form');
+  assert.equal(typeof form.props.onSubmit, 'function'); // Native form submission includes Enter.
+  assert.match(content(t.h.tree), /Head Floof Email/);
+  assert.match(content(t.h.tree), /Pawsword/);
+  assert.doesNotMatch(content(t.h.tree), /Sign in to edit your site|Only your approved owner account/);
+  const email = t.h.find(node => node.type === 'input' && node.props.type === 'email');
+  const password = t.h.find(node => node.type === 'input' && node.props.type === 'password');
+  assert.equal(email.props.autoComplete, 'username'); assert.equal(email.props.required, true);
+  assert.equal(password.props.autoComplete, 'current-password'); assert.equal(password.props.required, true);
+  assert.equal(t.h.find(node => node.type === 'button' && node.props.type === 'submit').props.disabled, false);
   assert.equal(t.stores.length, 0); assert.equal(t.calls.reload, 0); assert.equal(t.calls.token, 0);
   t.h.unmount(); assert.equal(t.calls.listeners, 0);
 });
@@ -148,7 +157,7 @@ test('sign-out immediately disposes private storage, deduplicates clicks and sta
     assert.match(content(t.h.tree), /Signing out and locking/);
     if (failure) pending.reject(Error('Mock network unavailable')); else pending.resolve();
     await Promise.all([first, duplicate]); t.render(); t.locked();
-    assert.match(content(t.h.tree), failure ? /Sign-out could not be confirmed/ : /Sign in to edit your site/);
+    assert.match(content(t.h.tree), failure ? /Sign-out could not be confirmed/ : /Sign in to Taylor’s Space/);
     assert.equal(t.stores.length, 1);
     t.h.unmount();
   }

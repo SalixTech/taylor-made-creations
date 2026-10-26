@@ -46,6 +46,8 @@ export interface OwnerStore {
   renameNamedDraft(id: string, name: string, expectedRevision: number): Promise<OwnerNamedDraft>;
   deleteNamedDraft(id: string, expectedRevision: number): Promise<void>;
   saveDraft(content: OwnerContent, expectedRevision: number): Promise<OwnerWorkspace>;
+  /** Save only this listing privately; never publishes or saves unrelated form edits. */
+  savePremadeDraft(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>;
   publishLocal(expectedRevision: number): Promise<OwnerWorkspace>;
   /** Explicitly save + publish to the new site. Never supplied by local-only stores. */
   publishLive?(content: OwnerContent | undefined, expectedRevision: number): Promise<OwnerWorkspace>;
@@ -176,6 +178,18 @@ export function createOwnerStore(adapter: OwnerStorageAdapter): OwnerStore {
       // Snapshot immediately, before an awaited transaction can race with form edits.
       const draft = structuredClone(content);
       return change(expectedRevision, state => ({ ...state, draft }));
+    },
+    async savePremadeDraft(item, expectedRevision) {
+      const selected: OwnerPremade = { ...structuredClone(item), isDraft: true, visible: false };
+      // Validate only the selected item before touching storage. Unrelated invalid
+      // or unfinished form fields must not be saved by this per-card action.
+      assertOwnerContent({ ...createDefaultOwnerContent(), premades: [selected] });
+      return change(expectedRevision, state => ({ ...state, draft: {
+        ...state.draft,
+        premades: state.draft.premades.some(entry => entry.id === selected.id)
+          ? state.draft.premades.map(entry => entry.id === selected.id ? selected : entry)
+          : [selected, ...state.draft.premades],
+      } }));
     },
     async publishLocal(expectedRevision) {
       return change(expectedRevision, state => ({ ...state, localPublished: { content: structuredClone(state.draft), publishedAt: new Date().toISOString() } }));

@@ -29,7 +29,7 @@ test("brand passes editable text and image appearance without changing private-m
   const local = harness();
   local.overrides["@/owner/media-client"] = { useOwnerMediaSource: source => ({ src: source, error: null }) };
   const { Brand } = local.load("src/components/Brand.tsx");
-  local.render(Brand, { appearance: { textColor: "#112233", font: "mono" }, logoAppearance: { imageFit: "cover", imagePositionX: 25 }, privateMedia: true });
+  local.render(Brand, { logo: { src: "/images/heads.webp", alt: "Custom studio logo" }, appearance: { textColor: "#112233", font: "mono" }, logoAppearance: { imageFit: "cover", imagePositionX: 25 }, privateMedia: true });
   assert.equal(local.tree.props.style["--element-text-color"], "#112233");
   const logo = local.find(n => typeof n.type === "function" && n.type.name === "BrandLogo");
   assert.equal(logo.props.privateMedia, true);

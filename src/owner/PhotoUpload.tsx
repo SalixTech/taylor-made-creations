@@ -27,7 +27,7 @@ export function OwnerUploadCancel({ className }: { className?: string }) {
   return <button type="button" className={className} onClick={() => activity.cancelAll()}>Stop upload</button>;
 }
 
-export function PhotoUpload({ multiple = false, onUploaded, label = multiple ? "Upload photos" : "Upload a photo", staged = false }: { multiple?: boolean; onUploaded: (photos: { media: UploadedPhoto; name: string }[]) => void; label?: string; staged?: boolean }) {
+export function PhotoUpload({ multiple = false, onUploaded, label = multiple ? "Upload photos" : "Upload a photo", staged = false, libraryOnly = false }: { multiple?: boolean; onUploaded: (photos: { media: UploadedPhoto; name: string }[]) => void; label?: string; staged?: boolean; libraryOnly?: boolean }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const activity = useContext(UploadActivity) ?? idleUpload;
@@ -63,7 +63,7 @@ export function PhotoUpload({ multiple = false, onUploaded, label = multiple ? "
         }
       }
       if (!alive.current) return;
-      if (completed) setMessage(staged ? `${completed} ${completed === 1 ? "photo saved" : "photos saved"} to the temporary library on this development server. Choose Use photo below to place it; your current image has not changed.` : `${completed} ${completed === 1 ? "photo saved" : "photos saved"} to this development server and added to this draft. Save the draft to keep its photo references; this does not publish anything.`);
+      if (completed) setMessage(staged ? `${completed} ${completed === 1 ? "photo saved" : "photos saved"} to the temporary library on this development server. ${libraryOnly ? "Choose it from a page’s photo picker when you are ready; no page image has changed." : "Choose Use photo below to place it; your current image has not changed."}` : `${completed} ${completed === 1 ? "photo saved" : "photos saved"} to this development server and added to this draft. Save the draft to keep its photo references; this does not publish anything.`);
       if (failures.length) setError(failures.join("\n"));
       else if (controller.signal.aborted) setError(staged ? "Upload stopped. Photos already confirmed above are kept; the in-progress file may have reached the disk but was not selected. Refresh the temporary library to check completed uploads." : "Upload stopped. Photos already confirmed above are kept; the in-progress file may have reached the disk but was not added to this draft. Refresh the temporary library to check completed uploads.");
     } finally {
@@ -76,7 +76,7 @@ export function PhotoUpload({ multiple = false, onUploaded, label = multiple ? "
   return <div className={styles.upload}>
     <input ref={input} id={id} className={styles.fileInput} aria-label={label} aria-describedby={`${id}-help`} type="file" accept={PHOTO_UPLOAD_ACCEPT} multiple={multiple} disabled={Boolean(progress)} onChange={event => { void upload(Array.from(event.target.files ?? [])); }} />
     <div className={styles.uploadActions}><button type="button" className={styles.uploadButton} disabled={Boolean(progress)} onClick={() => input.current?.click()}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6" /></svg>{progress || label}</button>{progress && <button type="button" className={styles.quietButton} onClick={() => active.current?.abort()}>Stop upload</button>}</div>
-    <small id={`${id}-help`}>{multiple ? "No fixed photo-count limit. " : ""}PNG, JPEG, WebP, GIF or AVIF · 12 MB each. Converted to WebP at high quality; embedded metadata is removed, originals are untouched. Development-server disk only; home-drive and Google Drive storage are not connected.</small>
+    <small id={`${id}-help`}>{multiple ? "No fixed photo-count limit. " : ""}PNG, JPEG, WebP, GIF or AVIF · 12 MB each. Converted to WebP at high quality; embedded metadata is removed, originals are untouched. Development-server disk only; shared cloud storage is not connected.</small>
     {progress && <p role="status">{progress}</p>}{message && <p className={styles.success} role="status">{message}</p>}{error && <p className={styles.error} role="alert">{error}</p>}
   </div>;
 }

@@ -36,7 +36,10 @@ service cloud.firestore {
       allow list, delete: if false;
     }
     match /site/published {
-      allow get: if true;
+      // Temporary construction lock: also prevents direct Firestore REST reads.
+      // Launch requires BOTH restoring this public get and setting the server's
+      // TMC_PUBLIC_SITE_ACCESS=open. Keep every write check below unchanged.
+      allow get: if isOwner();
       allow create: if isOwner() && validWorkspace(request.resource.data)
         && publishingWithDraft(request.resource.data.revision);
       allow update: if isOwner() && validWorkspace(resource.data)

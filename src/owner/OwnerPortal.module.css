@@ -3,7 +3,7 @@
 :global(body):has(.portal) > :global(.selected-design) > :global(.preview-banner),
 :global(body):has(.portal) > :global(.selected-design) > :global(footer),
 :global(body):has(.portal) > :global(.selected-design) > :global([class*="cartTrigger"]) { display: none; }
-.portal { --owner-wine: #800014; --owner-ink: #302b2c; --owner-muted: #777173; --owner-line: #e9e5e5; display: flex; min-height: 100vh; color: var(--owner-ink); font-family: 'MS Reference Sans Serif', Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.5; }
+.portal { --owner-wine: #800014; --owner-ink: #302b2c; --owner-muted: #777173; --owner-line: #e9e5e5; --owner-surface: #fff; --owner-art-backplane: #e7e5e2; display: flex; min-height: 100vh; color: var(--owner-ink); font-family: 'MS Reference Sans Serif', Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.5; }
 .portal *, .dialog * { box-sizing: border-box; }
 .portal :is(h1, h2, h3):not(:where(.previewCanvas *, .dialogPreview *, [data-site-render-mode] *)), .dialogHeading h2 { font-family: 'MS Reference Sans Serif', Arial, Helvetica, sans-serif; font-weight: 600; letter-spacing: -.7px; }
 .portal button:not(:where(.previewCanvas *, .dialogPreview *, [data-site-render-mode] *)), .dialog button:not(:where(.dialogPreview *)) { font: inherit; cursor: pointer; transition: background .16s ease, border-color .16s ease; }
@@ -14,9 +14,9 @@
 .ownerBrand small { display: block; font-size: 8px; color: #766f70; letter-spacing: 1.6px; margin: 10px 0 0 2px; }
 .sidebarLabel { font-size: 9px; letter-spacing: 1.8px; font-weight: 600; margin: 49px 13px 15px; color: #766f70 !important; }
 .sideNav { display: flex; flex-direction: column; margin: 0 !important; gap: 6px !important; }
-.sideNav button { display: flex; align-items: center; gap: 13px; width: 100%; padding: 13px 14px; min-height: 46px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: #797174; font-size: 13px; text-align: left; }
-.sideNav button:hover { background: #f5f5f4; color: var(--owner-wine); }
-.sideNav button[aria-current="page"] { background: #f5f5f4; color: var(--owner-wine); font-weight: 600; }
+.sideNav :is(button, a) { display: flex; align-items: center; gap: 13px; width: 100%; padding: 13px 14px; min-height: 46px; background: transparent; border: 1px solid transparent; border-radius: 8px; color: #797174; font-size: 13px; text-align: left; }
+.sideNav :is(button, a):hover { background: #f5f5f4; color: var(--owner-wine); }
+.sideNav :is(button, a)[aria-current="page"] { background: #f5f5f4; color: var(--owner-wine); font-weight: 600; }
 .navDot { width: 5px; height: 5px; border-radius: 50%; background: var(--owner-wine); margin-left: auto; }
 .sidebarBottom { margin-top: auto; padding: 40px 12px 0; }
 .cloudBadge { display: inline-flex; align-items: center; gap: 7px; color: #7d6f72; font-size: 8px; letter-spacing: 1px; font-weight: 600; }
@@ -57,7 +57,7 @@
 .welcomeArt::before { content: ""; position: absolute; width: 215px; height: 215px; border-radius: 50%; border: 1px solid #e5e3e1; }
 .spadeDisc { position: absolute; right: 0; top: 8px; width: 46px; height: 46px; border-radius: 50%; background: #800014; display: grid; place-items: center; }
 .spadeDisc img { width: 36px; height: 36px; object-fit: contain; }
-.artWindow { display: block; position: relative; width: 215px; height: 175px; background: #fff; border-radius: 9px; border: 1px solid #e5e3e1; box-shadow: 9px 13px 0 #e7e5e2; transform: rotate(-6deg); padding: 13px 14px; color: #800014; }
+.artWindow { display: block; position: relative; width: 215px; height: 175px; background: #fff; border-radius: 9px; border: 1px solid #e5e3e1; box-shadow: 9px 13px 0 var(--owner-art-backplane); transform: rotate(-6deg); padding: 13px 14px; color: #800014; }
 .artWindow > i { display: inline-block; width: 4px; height: 4px; background: #a6a3a0; border-radius: 50%; margin-right: 3px; vertical-align: top; }
 .welcomeLogo { margin-top: 13px; }
 .artWindow > em { display: block; font-style: normal; text-transform: uppercase; font-size: 6px; text-align: center; letter-spacing: 2px; margin-top: 16px; }
@@ -127,7 +127,7 @@
 .help { font-size: 11px !important; color: #766f70 !important; line-height: 1.7; }
 .help strong { font-weight: 500; color: #745663; }
 .stack { display: flex; flex-direction: column; gap: 17px; }
-.block { border: 1px solid #e5e3e1; border-radius: 8px; padding: 21px; background: #fff; }
+.block { border: 1px solid #e5e3e1; border-radius: 8px; padding: 21px; background: var(--owner-surface, #fff); }
 .rowHeading { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 21px; flex-wrap: wrap; }
 .rowHeading h3 { font-size: 14px; letter-spacing: -.2px; margin: 0; color: #65505a; }
 .blockLabel { font-size: 11px; color: #800014; font-weight: 600; }
@@ -179,8 +179,8 @@
 .dialogActions .textButton { margin-right: auto; }
 @media (min-width: 1600px) { .content { padding-top: 52px; } .sidebar { flex-basis: 270px; width: 270px; padding-top: 40px; } .workspace { width: calc(100% - 270px); } }
 @media (max-width: 1150px) { .sidebar { flex-basis: 222px; width: 222px; padding-left: 13px; padding-right: 13px; } .workspace { width: calc(100% - 222px); } .content, .topbar { padding-left: 25px; padding-right: 25px; } .welcomeCard { padding: 28px; } .artWindow { width: 180px; height: 160px; } .welcomeArt::before { width: 180px; height: 180px; } .card { padding: 22px; } .pageRow { gap: 10px; } .pageRow .badge { margin-left: auto; } .pageRow .moveButtons { margin-left: 45px; } .pageIdentity { flex-basis: calc(100% - 155px); } .quickCard { padding: 20px; } .priceFields { grid-template-columns: 1fr .7fr; } .priceFields .field:last-child { grid-column: 1 / -1; } }
-@media (max-width: 900px) { .sidebar { flex-basis: 194px; width: 194px; padding-left: 10px; padding-right: 10px; } .workspace { width: calc(100% - 194px); } .sideNav button { gap: 10px; padding: 12px 10px; font-size: 12px; } .content { padding: 30px 20px 24px; } .topbar { padding: 15px 20px; flex-wrap: wrap; justify-content: flex-end; } .saveState { margin-right: auto; font-size: 10px; } .topbarActions { gap: 7px; } .topbarActions button { padding: 9px 12px; min-height: 39px; font-size: 11px !important; } .welcomeCard { grid-template-columns: 1fr; } .welcomeArt { display: none; } .twoCol { grid-template-columns: 1fr; } .quickGrid { gap: 12px; } .quickCard { padding: 18px 14px; } .quickCard > div { font-size: 10px; gap: 6px; } .quickCard > div svg { display: none; } .quickCard > small { font-size: 9px; } .photoGrid { grid-template-columns: 1fr; } .imagePicker { grid-template-columns: 1fr; } .imagePreview { max-width: 320px; } .simplePrice .twoCol { grid-template-columns: 1.3fr 1fr; } }
-@media (max-width: 650px) { .portal { display: block; } .sidebar { position: static; width: 100%; height: auto; padding: 18px 17px 12px; border-right: 0; border-bottom: 1px solid #e5e3e1; } .sidebarLabel, .sidebarBottom { display: none; } .sideNav { flex-direction: row; flex-wrap: nowrap !important; overflow-x: auto; padding: 20px 0 0; justify-content: flex-start !important; gap: 5px !important; } .sideNav button { width: auto; flex: 0 0 auto; gap: 7px; min-height: 38px; padding: 8px 12px; white-space: nowrap; font-size: 11px; } .sideNav button svg { width: 16px; height: 16px; } .navDot { display: none; } .workspace { width: 100%; } .topbar { padding: 12px 18px; min-height: 70px; } .saveState { width: 100%; } .content { padding: 28px 18px 20px; } .pageHeading h1 { font-size: 29px; letter-spacing: -.8px; } .pageHeading p { font-size: 12px; } .pageHeading { margin-bottom: 24px; } .topbarActions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; } .topbarActions button { min-height: 41px; } .welcomeCard { padding: 27px; } .quickGrid { grid-template-columns: 1fr; gap: 10px; } .quickCard { display: grid; grid-template-columns: 1fr auto; padding: 17px 20px; align-items: center; } .quickCard > div { font-size: 12px; } .quickCard > div svg { display: block; width: 16px; height: 16px; } .quickCard > strong { margin: 0; font-size: 24px; grid-column: 2; grid-row: 1 / 3; } .quickCard > small { grid-column: 1; font-size: 10px; margin-top: 5px; padding-left: 23px; justify-content: flex-start; gap: 8px; } .card { padding: 21px; } .cardHeading { flex-wrap: wrap; } .sectionActions { flex-wrap: wrap; } .pageRow { gap: 9px; } .pageIdentity { min-width: 125px; } .pageRow .secondary { padding: 7px 12px; min-height: 34px; } .pageRow .textButton { font-size: 10px !important; } .pageRow .moveButtons { margin-left: 0; } .pageRow .pageIcon { display: none; } .block { padding: 17px; } .priceFields { grid-template-columns: 1fr; gap: 0; } .priceRow { padding: 17px; } .priceFields .field:last-child { grid-column: auto; } .previewReady { align-items: flex-start; flex-direction: column; gap: 8px; } .dialogHeading { padding: 22px 22px 0; } .dialogBody { padding: 17px 22px; } .dialogActions { padding: 18px 22px; } .dialogActions .textButton { width: 100%; text-align: left; } .editor { gap: 19px; } .addButtons { gap: 8px; } .addButtons button { font-size: 11px !important; padding: 10px 11px; } }
+@media (max-width: 900px) { .sidebar { flex-basis: 194px; width: 194px; padding-left: 10px; padding-right: 10px; } .workspace { width: calc(100% - 194px); } .sideNav :is(button, a) { gap: 10px; padding: 12px 10px; font-size: 12px; } .content { padding: 30px 20px 24px; } .topbar { padding: 15px 20px; flex-wrap: wrap; justify-content: flex-end; } .saveState { margin-right: auto; font-size: 10px; } .topbarActions { gap: 7px; } .topbarActions button { padding: 9px 12px; min-height: 39px; font-size: 11px !important; } .welcomeCard { grid-template-columns: 1fr; } .welcomeArt { display: none; } .twoCol { grid-template-columns: 1fr; } .quickGrid { gap: 12px; } .quickCard { padding: 18px 14px; } .quickCard > div { font-size: 10px; gap: 6px; } .quickCard > div svg { display: none; } .quickCard > small { font-size: 9px; } .photoGrid { grid-template-columns: 1fr; } .imagePicker { grid-template-columns: 1fr; } .imagePreview { max-width: 320px; } .simplePrice .twoCol { grid-template-columns: 1.3fr 1fr; } }
+@media (max-width: 650px) { .portal { display: block; } .sidebar { position: static; width: 100%; height: auto; padding: 18px 17px 12px; border-right: 0; border-bottom: 1px solid #e5e3e1; } .sidebarLabel, .sidebarBottom { display: none; } .sideNav { flex-direction: row; flex-wrap: nowrap !important; overflow-x: auto; padding: 20px 0 0; justify-content: flex-start !important; gap: 5px !important; } .sideNav :is(button, a) { width: auto; flex: 0 0 auto; gap: 7px; min-height: 38px; padding: 8px 12px; white-space: nowrap; font-size: 11px; } .sideNav :is(button, a) svg { width: 16px; height: 16px; } .navDot { display: none; } .workspace { width: 100%; } .topbar { padding: 12px 18px; min-height: 70px; } .saveState { width: 100%; } .content { padding: 28px 18px 20px; } .pageHeading h1 { font-size: 29px; letter-spacing: -.8px; } .pageHeading p { font-size: 12px; } .pageHeading { margin-bottom: 24px; } .topbarActions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; } .topbarActions button { min-height: 41px; } .welcomeCard { padding: 27px; } .quickGrid { grid-template-columns: 1fr; gap: 10px; } .quickCard { display: grid; grid-template-columns: 1fr auto; padding: 17px 20px; align-items: center; } .quickCard > div { font-size: 12px; } .quickCard > div svg { display: block; width: 16px; height: 16px; } .quickCard > strong { margin: 0; font-size: 24px; grid-column: 2; grid-row: 1 / 3; } .quickCard > small { grid-column: 1; font-size: 10px; margin-top: 5px; padding-left: 23px; justify-content: flex-start; gap: 8px; } .card { padding: 21px; } .cardHeading { flex-wrap: wrap; } .sectionActions { flex-wrap: wrap; } .pageRow { gap: 9px; } .pageIdentity { min-width: 125px; } .pageRow .secondary { padding: 7px 12px; min-height: 34px; } .pageRow .textButton { font-size: 10px !important; } .pageRow .moveButtons { margin-left: 0; } .pageRow .pageIcon { display: none; } .block { padding: 17px; } .priceFields { grid-template-columns: 1fr; gap: 0; } .priceRow { padding: 17px; } .priceFields .field:last-child { grid-column: auto; } .previewReady { align-items: flex-start; flex-direction: column; gap: 8px; } .dialogHeading { padding: 22px 22px 0; } .dialogBody { padding: 17px 22px; } .dialogActions { padding: 18px 22px; } .dialogActions .textButton { width: 100%; text-align: left; } .editor { gap: 19px; } .addButtons { gap: 8px; } .addButtons button { font-size: 11px !important; padding: 10px 11px; } }
 @media (prefers-reduced-motion: reduce) { .portal *, .dialog * { transition: none !important; scroll-behavior: auto !important; } }
 .imageError { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; min-height: 120px; padding: 20px; font-size: 11px; line-height: 1.7; text-align: center; color: #800014; }
 
@@ -193,7 +193,7 @@
 .sidebar { overflow-y: auto; }
 .sidebarLabel { margin-top: 28px; }
 .sideNav { gap: 3px !important; }
-.sideNav button { padding-top: 10px; padding-bottom: 10px; min-height: 42px; }
+.sideNav :is(button, a) { padding-top: 10px; padding-bottom: 10px; min-height: 42px; }
 .sidebarBottom { padding-top: 27px; }
 .ownerSelect > label { display: block; margin-bottom: 8px; }
 .ownerSelect > div { margin-top: 0; }
@@ -206,9 +206,9 @@
 .quickCard > div, .blockLabel, .details summary, .textButton, .backButton, .iconButton, .softNote > strong, .pageIcon { color: #800014; }
 .field, .field input, .field textarea, .secondary, .dialog, .dialogHeading h2 { color: #393536; }
 .hubLinks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
-.hubLinks > button { display: flex; align-items: center; gap: 12px; text-align: left; padding: 19px; border: 1px solid var(--owner-line); border-radius: 9px; background: white; color: #800014; }
-.hubLinks > button:hover { border-color: #800014; }
-.hubLinks > button > span:nth-child(2) { flex: 1; }
+.hubLinks > :is(button, a) { display: flex; align-items: center; gap: 12px; text-align: left; padding: 19px; border: 1px solid var(--owner-line); border-radius: 9px; background: white; color: #800014; }
+.hubLinks > :is(button, a):hover { border-color: #800014; }
+.hubLinks > :is(button, a) > span:nth-child(2) { flex: 1; }
 .hubLinks strong { display: block; color: #393536; font-size: 12px; font-weight: 600; }
 .hubLinks small { display: block; color: #777173; font-size: 10px; margin-top: 5px; line-height: 1.5; }
 .futureHub { display: flex; gap: 22px; padding: 15px 0; max-width: 740px; }
@@ -241,8 +241,8 @@
 .dialogPreview { border: 1px solid #e5e3e1; border-radius: 7px; overflow: auto; max-height: min(65vh, 780px); }
 .premadeFraming { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 25px; margin: 25px 0; }
 .field input[type="range"] { min-height: 32px; padding: 0; accent-color: #800014; border: 0; }
-@media (max-width: 1150px) { .hubLinks { grid-template-columns: 1fr; gap: 10px; } .hubLinks > button { padding: 16px 19px; } .editorSplit { grid-template-columns: minmax(0, 1fr); } .editorTabs { display: inline-flex; gap: 4px; border: 1px solid #e5e3e1; border-radius: 8px; padding: 4px; align-self: flex-start; background: #f0efee; } .editorTabs button { border: 0; border-radius: 5px; padding: 10px 18px; color: #777173; font-size: 12px; background: transparent; } .editorTabs button[aria-pressed="true"] { background: white; color: #800014; box-shadow: 0 1px 4px #0001; } .editorSplit[data-pane="edit"] > .livePreview, .editorSplit[data-pane="preview"] > .editorForm { display: none; } .livePreview { position: static; } .previewCanvas { max-height: none; } }
-@media (max-width: 650px) { .sideNav button { min-height: 38px; } .topbarActions { display: flex; flex-wrap: wrap; justify-content: flex-end; } .topbarActions .signOutButton { margin-right: auto; min-height: 38px; } .blockPalette { grid-template-columns: repeat(2, minmax(0, 1fr)); } .premadeFraming { grid-template-columns: 1fr; gap: 0; } .futureHub { gap: 15px; } .futureHub > svg { width: 28px; height: 28px; flex-basis: 28px; } .editorForm .card { padding: 18px; } .dialogPreview { max-height: 62vh; } }
+@media (max-width: 1150px) { .hubLinks { grid-template-columns: 1fr; gap: 10px; } .hubLinks > :is(button, a) { padding: 16px 19px; } .editorSplit { grid-template-columns: minmax(0, 1fr); } .editorTabs { display: inline-flex; gap: 4px; border: 1px solid #e5e3e1; border-radius: 8px; padding: 4px; align-self: flex-start; background: #f0efee; } .editorTabs button { border: 0; border-radius: 5px; padding: 10px 18px; color: #777173; font-size: 12px; background: transparent; } .editorTabs button[aria-pressed="true"] { background: white; color: #800014; box-shadow: 0 1px 4px #0001; } .editorSplit[data-pane="edit"] > .livePreview, .editorSplit[data-pane="preview"] > .editorForm { display: none; } .livePreview { position: static; } .previewCanvas { max-height: none; } }
+@media (max-width: 650px) { .sideNav :is(button, a) { min-height: 38px; } .topbarActions { display: flex; flex-wrap: wrap; justify-content: flex-end; } .topbarActions .signOutButton { margin-right: auto; min-height: 38px; } .blockPalette { grid-template-columns: repeat(2, minmax(0, 1fr)); } .premadeFraming { grid-template-columns: 1fr; gap: 0; } .futureHub { gap: 15px; } .futureHub > svg { width: 28px; height: 28px; flex-basis: 28px; } .editorForm .card { padding: 18px; } .dialogPreview { max-height: 62vh; } }
 
 /* The page itself is the builder; tools appear only for the selected section. */
 .ownerBrand small { text-align:center; margin-left:0; width:100%; }
@@ -252,7 +252,8 @@
 .sidebarBottom { flex-shrink:0; padding:13px 4px 0; margin-top:auto; background:#fff; }
 .sidebarBottom > a { border-top:1px solid var(--owner-line); padding:13px 7px; font-size:10px; }
 .sidebarUtilities { display:flex; flex-direction:column; gap:6px; border-top:1px solid var(--owner-line); padding-top:10px; }
-.serviceTab { display:flex; align-items:center; gap:10px; min-height:39px; border:0; border-radius:6px; background:transparent; color:#756c6f; padding:9px 8px; text-align:left; font-size:11px!important; }
+.sidebarUtilities .serviceTab { display:flex; align-items:center; justify-content:flex-start; gap:10px; min-height:40px; border:1px solid transparent; border-radius:6px; background:transparent; color:#675b5f; padding:9px 10px; text-align:left; font-size:11px!important; }
+.serviceTab > svg { flex:0 0 18px; width:18px; height:18px; }
 .serviceTab:hover,.serviceTab[aria-current="page"] { color:#800014; background:#f5f4f3; }
 .sidebarUtilities > div { width:100%; }
 .sidebarUtilities > div > button { width:100%; font-size:11px!important; padding-left:9px; padding-right:9px; gap:8px; }
@@ -276,7 +277,7 @@
 .namedDraftRow strong { display:block; color:#4a373d; font-size:13px; overflow-wrap:anywhere; }
 .namedDraftRow small { display:block; margin-top:5px; color:#86777c; font-size:10px; }
 .namedDraftRow > div:last-child { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:13px; flex-shrink:0; }
-@media(max-width:1000px) and (min-width:651px) { .sidebar { width:210px; flex-basis:210px; }.workspace { width:calc(100% - 210px); }.sidebarUtilities > div > button { font-size:10px!important; }.sidebarUtilities > div > button > span { display:none; }.sideNav button { padding-left:10px; gap:10px; font-size:11px; } }
+@media(max-width:1000px) and (min-width:651px) { .sidebar { width:210px; flex-basis:210px; }.workspace { width:calc(100% - 210px); }.sidebarUtilities > div > button { font-size:10px!important; }.sidebarUtilities > div > button > span { display:none; }.sideNav :is(button, a) { padding-left:10px; gap:10px; font-size:11px; } }
 @media(max-width:650px) { .sidebar { position:static; width:100%; height:auto; flex-basis:auto; overflow:visible; padding:18px 15px 12px; }.sideNav { overflow-x:auto; overflow-y:hidden; flex-shrink:0; padding-bottom:0; }.sidebarBottom { display:flex; flex-direction:column; padding-top:10px; margin-top:12px; }.sidebarBottom > a,.sidebarBottom .cloudBadge,.sidebarBottom .accountEmail { display:none; }.sidebarUtilities { flex-direction:row; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; padding-top:10px; }.sidebarUtilities > div { width:auto; margin-left:auto; }.sidebarUtilities > div > button { min-height:36px; font-size:10px!important; }.sidebarUtilities .signOutButton { font-size:10px!important; }.serviceTab { font-size:10px!important; gap:6px; padding:7px; }.serviceTab svg { width:16px; height:16px; }.sidebarUtilities > div > p { position:absolute; width:240px; right:0; top:100%; z-index:10; }.workspace { width:100%; }.builderContent { padding:24px 10px 15px; }.builderContent .pageHeading { padding:0 8px; }.builderContent .pageHeading h1 { font-size:25px; }.topbarActions { gap:7px; }.topbarActions button { font-size:10px!important; padding:8px 11px; }.topbar { padding:12px 18px; }.draftCreate { align-items:stretch; flex-direction:column; }.namedDraftRow { align-items:flex-start; flex-direction:column; gap:12px; }.namedDraftRow > div:last-child { justify-content:flex-start; gap:13px; }.draftTabs { gap:9px; }.draftTabs .segmented button { padding:9px 11px; font-size:11px; } }
 
 
@@ -285,9 +286,9 @@
 .sidebar { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
 .ownerBrand, .sidebarLabel { flex-shrink: 0; }
 .sideNav { flex: 1 1 auto; flex-flow: column nowrap !important; align-items: stretch; justify-content: flex-start !important; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.sideNav button { flex: 0 0 auto; width: 100%; min-width: 0; white-space: normal; }
-.sideNav button > svg, .navDot { flex-shrink: 0; }
-.sideNav button > span:not(.navDot) { min-width: 0; overflow-wrap: anywhere; }
+.sideNav :is(button, a) { flex: 0 0 auto; width: 100%; min-width: 0; white-space: normal; }
+.sideNav :is(button, a) > svg, .navDot { flex-shrink: 0; }
+.sideNav :is(button, a) > span:not(.navDot) { min-width: 0; overflow-wrap: anywhere; }
 .sidebarBottom { flex: 0 0 auto; min-width: 0; }
 .saveState { min-width: 0; }
 .saveState > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -303,7 +304,7 @@
   .sidebar { position: relative; height: min(400px, 70dvh); min-height: 280px; overflow: hidden; }
   .ownerBrand { max-width: 190px; }
   .sideNav { flex: 1 1 auto; flex-direction: column !important; overflow-x: hidden; overflow-y: auto; padding-top: 12px; padding-bottom: 5px; }
-  .sideNav button { width: 100%; flex: 0 0 auto; white-space: normal; min-height: 38px; }
+  .sideNav :is(button, a) { width: 100%; flex: 0 0 auto; white-space: normal; min-height: 38px; }
   .sidebarBottom { margin-top: 0; padding-top: 6px; }
   .sidebarUtilities { padding-top: 8px; }
   .saveState { width: auto; flex: 1 1 100%; }
@@ -314,3 +315,49 @@
 .saveChoices > button:hover:not(:disabled) { border-color:var(--owner-wine,#800014); background:#faf5f6; }
 .saveChoices > button:focus-visible { outline:3px solid var(--owner-wine,#800014); outline-offset:3px; }
 .saveChoices > button > span { display:block; margin:7px 0 0; font-size:12px; color:var(--owner-muted,#777173); line-height:1.7; }
+
+/* Route links retain their existing control layout without losing native link behavior. */
+.ownerBrand, .sideNav a, .serviceTab, .quickCard, .hubLinks > a { text-decoration: none; }
+.sideNav a, .serviceTab, .quickCard, .hubLinks > a { transition: background .16s ease, border-color .16s ease; }
+:is(.ownerBrand, .sideNav a, .serviceTab, .quickCard, .hubLinks > a, .primary)[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+:is(.ownerBrand, .sideNav a, .serviceTab, .quickCard, .hubLinks > a, .primary):focus-visible { outline: 3px solid var(--owner-wine); outline-offset: 3px; }
+
+/* The public site's white nav links also wrap the owner route. Keep this rail
+   scoped above that selector in every state, without changing public previews. */
+.portal .sideNav :is(button, a) { color: #675b5f; }
+.portal .sideNav :is(button, a):is(:hover, [aria-current="page"]) { color: var(--owner-wine); background-color: #f5f5f4; }
+.portal .sidebarUtilities .serviceTab:is(:hover, [aria-current="page"]) { color: var(--owner-wine); background-color: #f5f4f3; }
+
+/* File Hub is intentionally only a private, non-interactive coming-soon surface.
+   It fills this section, not the viewport, so workspace navigation stays usable. */
+.fileHubComingSoon { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: max(380px, calc(100dvh - 150px)); padding: clamp(32px, 8vw, 100px) 24px; border: 1px solid var(--owner-line); border-radius: 14px; background: var(--owner-surface); text-align: center; }
+.fileHubComingSoonIcon { display: grid; place-items: center; width: 68px; height: 68px; margin-bottom: 10px; border: 1px solid var(--owner-line); border-radius: 20px; color: var(--owner-wine); background: var(--owner-raised, #f8f4f5); }
+.fileHubComingSoonIcon > svg { width: 32px; height: 32px; }
+.fileHubComingSoon :is(h1, h2) { font-size: clamp(26px, 3vw, 38px); line-height: 1.25; margin: 0; }
+.fileHubComingSoon p { margin: 0; font-size: 15px; color: var(--owner-muted); }
+@media(max-width:650px) { .fileHubComingSoon { min-height: max(340px, calc(100dvh - 330px)); } }
+
+/* Explicit owner-component rules outrank the legacy generic dark control rule.
+   Nothing here targets the public canvas or changes saved website colors. */
+.portal:global([data-owner-portal][data-color-mode="dark"]) { --owner-art-backplane: #3a3038; --owner-control-line: #947887; }
+.portal:global([data-color-mode="dark"]) .welcomeArt::before { border-color: var(--owner-line); }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .primary:is(:enabled, :disabled, :any-link) { background-color: #970d2a!important; border-color: #db6c84!important; color: #fff!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .primary:is(:enabled, :any-link):hover { background-color: #b11739!important; border-color: #f39ab0!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .primary:is(:enabled, :any-link):active { background-color: #7f0b24!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .secondary:is(:enabled, :disabled) { background-color: var(--owner-raised)!important; border-color: var(--owner-control-line)!important; color: var(--owner-ink)!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .secondary:enabled:hover { background-color: #48313e!important; border-color: #d7879b!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .danger:is(:enabled, :disabled) { background-color: #9f293f!important; border-color: #eb8da1!important; color: #fff!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .danger:enabled:hover { background-color: #b5334b!important; border-color: #ffc0cc!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) :is(.textButton, .dangerLink, .backButton):is(:enabled, :disabled) { background-color: transparent!important; color: #ffc0cc!important; border-color: transparent!important; border-radius: 5px; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) :is(.textButton, .dangerLink, .backButton):enabled:hover { background-color: #48313e!important; text-decoration: underline; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .dialog { box-shadow: 0 24px 90px #0008; }
+.portal:global([data-color-mode="dark"]) .dialog::backdrop { background: #0c080db3; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .dialogActions { background-color: #211a21!important; border-color: var(--owner-line)!important; gap: 10px; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .dialogActions :is(.textButton, .dangerLink) { min-height: 42px; padding: 10px 12px; margin-left: -12px; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .dialogHeading .iconButton { width: 34px; height: 34px; border-radius: 8px; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) :is(.sideNav a, .serviceTab, .quickCard, .hubLinks > a):hover:not([aria-disabled="true"]) { background-color: #48313e!important; border-color: #d7879b!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) :is(.sideNav a, .serviceTab)[aria-current="page"] { background-color: #48313e!important; border-color: #d7879b!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .hubLinks > a { background-color: var(--owner-surface)!important; border-color: var(--owner-line)!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .field :is(input, textarea, select, [role="combobox"]):not([type="color"]) { border-color: var(--owner-control-line)!important; }
+
+.portal:global([data-color-mode="dark"]) .block { border-color: var(--owner-line); }

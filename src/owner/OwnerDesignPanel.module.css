@@ -22,7 +22,7 @@
 .search input:focus { outline:2px solid #800014; outline-offset:2px; }
 .catalogSummary { display:flex; gap:10px; align-items:center; justify-content:space-between; margin:0 0 18px; color:#7b6870; font-size:10px; }
 .empty { font-size:12px; color:#746a6d; padding:20px 0; line-height:1.7; }
-.appearance { border:1px solid #e5dce0; border-radius:6px; margin:13px 0 19px; background:#fff; }
+.appearance { border:1px solid #e5dce0; border-radius:6px; margin:13px 0 19px; background:var(--owner-surface, #fff); }
 .appearance > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 12px; color:#6d3647; font-size:11px; cursor:pointer; list-style:none; }
 .appearance > summary::-webkit-details-marker { display:none; }
 .appearance > summary::before { content:"+"; font-size:16px; color:#800014; }
@@ -54,3 +54,10 @@
 .numberEntry:has(input[aria-invalid="true"]),.hexField input[aria-invalid="true"] { border-color:#800014; }
 .range > label > span { display:flex; justify-content:space-between; gap:12px; margin-bottom:8px; }
 .range .numberField { margin:8px 0; }
+
+/* Explicit surfaces for the element editor; color swatches keep their chosen values. */
+:global([data-owner-portal][data-color-mode="dark"]) .appearance > summary::before { color: var(--owner-wine); }
+:global([data-owner-portal][data-color-mode="dark"]) :is(.group + .group, .colorRow, .templateField, .appearance, .appearance[open] > summary) { border-color: var(--owner-line); }
+:global([data-owner-portal][data-color-mode="dark"]) .numberEntry:focus-within { outline-color: #ffb8ca; }
+:global([data-owner-portal][data-color-mode="dark"]) .numberField .numberEntry,
+:global([data-owner-portal][data-color-mode="dark"]) .hexField input[type="text"] { border-color: var(--owner-control-line, #947887)!important; }
