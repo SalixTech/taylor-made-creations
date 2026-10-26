@@ -4,6 +4,7 @@ import { getOwnerSocialLinks } from "./social-links";
 import { Field } from "./OwnerFields";
 import { OwnerPriceReorderList } from "./OwnerPriceReorderList";
 import { reorderById } from "./builder-interactions";
+import { TrashIcon } from "./TrashIcon";
 import buttons from "./OwnerButton.module.css";
 import ui from "./OwnerPortal.module.css";
 import styles from "./OwnerTemplateManagers.module.css";
@@ -18,7 +19,7 @@ export function OwnerSocialLinksEditor({ content, onEdit, onRemove }: Props) {
       <div className={styles.socialHeading}><strong>{link.label || "New contact method"}</strong>{handle}</div>
       <div className={styles.socialFields}><Field label="Contact label" value={link.label} onChange={value => edit(items => { const item = items.find(entry => entry.id === link.id); if (item) item.label = value; })} /><Field label="Display text" value={link.value} onChange={value => edit(items => { const item = items.find(entry => entry.id === link.id); if (item) item.value = value; })} />
       <Field label="Link address (optional)" value={link.url ?? ""} onChange={value => edit(items => { const item = items.find(entry => entry.id === link.id); if (item) item.url = value; })} /></div>
-      <button type="button" data-owner-button className={`${buttons.button} ${buttons.danger} ${buttons.compact}`} onClick={() => onRemove(`Delete “${link.label || "contact method"}” card?`, "This removes the contact method from this draft. Save Live applies the contact card to the website.", () => edit(items => { const index = items.findIndex(item => item.id === link.id); if (index >= 0) items.splice(index, 1); }))}>Delete Card</button>
+      <button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.icon} ${buttons.compact}`} aria-label={`Delete ${link.label || "contact method"} card`} title="Delete card" onClick={() => onRemove(`Delete “${link.label || "contact method"}” card?`, "This removes the contact method from this draft. Save Live applies the contact card to the website.", () => edit(items => { const index = items.findIndex(item => item.id === link.id); if (index >= 0) items.splice(index, 1); }))}><TrashIcon /></button>
     </div>}</OwnerPriceReorderList>
     <button type="button" className={ui.secondary} disabled={links.length >= 50} onClick={() => edit(items => { if (items.length < 50) items.push({ id: newOwnerId("social"), label: "", value: "", url: "" }); })}>＋ Add contact or social</button>
   </div>;

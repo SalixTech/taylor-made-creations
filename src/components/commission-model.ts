@@ -4,18 +4,38 @@ import {getCommissionField, getCommissionOptionLabel, getCommissionQuestionOrder
 export {acceptedImages, suitTypes, partTypes, headOptions, handOptions, tailOptions, tailSizes, discoveryOptions} from './commission-options';
 
 export type CommissionFormOptions = {additionalPartsQuantities?:boolean;configuration?:CommissionFormConfig};
-export type AdditionalPart = {part:typeof partTypes[number];quantity:number};
+export type AdditionalPartDetails = Partial<Pick<Draft,'hands'|'tail'|'pockets'|'sandals'>>;
+export type AdditionalPart = {part:typeof partTypes[number];quantity:number;details?:AdditionalPartDetails};
 export type CustomCommissionAnswers = Record<string,string|string[]>;
 export type Draft = {email:string;telegram:string;discord:string;tos:string;tosAgreed:boolean;usa:string;country:string;character:string;species:string;suit:string;parts:string[];additionalParts?:AdditionalPart[];customAnswers?:CustomCommissionAnswers;head:string[];hands:string[];tail:string[];tailSize:string;pockets:string;feet:string;sandals:boolean;previous:string;previousCharacter:string;discovery:string;discoveryOther:string;friendName:string;personName:string;additional:string};
 export const emptyDraft: Draft = {email:'',telegram:'',discord:'',tos:'',tosAgreed:false,usa:'',country:'',character:'',species:'',suit:'',parts:[],additionalParts:[],customAnswers:{},head:[],hands:[],tail:[],tailSize:'',pockets:'',feet:'',sandals:false,previous:'',previousCharacter:'',discovery:'',discoveryOther:'',friendName:'',personName:'',additional:''};
-export function eligible(d:Draft) {const full=d.suit==='Plantigrade fullsuit'||d.suit==='Digitigrade fullsuit';const parts=d.suit==='Parts';return {head:!!d.suit&&!parts,hands:full||['Mini partial','Full partial'].includes(d.suit)||(parts&&d.parts.includes('Hand paws')),tail:full||['Mini partial','Full partial'].includes(d.suit)||(parts&&d.parts.some(p=>p.includes('Tail'))),body:full||(parts&&d.parts.some(p=>p.includes('Body Suit'))),feet:full||d.suit==='Full partial'||(parts&&d.parts.some(p=>p.startsWith('Feetpaws')))};}
+function partsEligibility(parts:readonly string[]) {return {hands:parts.includes('Hand paws'),tail:parts.some(p=>p.includes('Tail')),body:parts.some(p=>p.includes('Body Suit')),feet:parts.some(p=>p.startsWith('Feetpaws'))};}
+export function eligible(d:Draft) {const full=d.suit==='Plantigrade fullsuit'||d.suit==='Digitigrade fullsuit';const parts=d.suit==='Parts', selected=partsEligibility(parts?d.parts:[]);return {head:!!d.suit&&!parts,hands:full||['Mini partial','Full partial'].includes(d.suit)||selected.hands,tail:full||['Mini partial','Full partial'].includes(d.suit)||selected.tail,body:full||selected.body,feet:full||d.suit==='Full partial'||selected.feet};}
+/** Use the original Parts applicability, with answers scoped to each extra item. */
+export function additionalPartFollowups(part:AdditionalPart['part']):(keyof AdditionalPartDetails)[] {
+  const e=partsEligibility([part]);
+  return [...(e.hands?['hands' as const]:[]),...(e.tail?['tail' as const]:[]),...(e.body?['pockets' as const]:[]),...(e.feet?['sandals' as const]:[])];
+}
+export function additionalPartFieldId(part:AdditionalPart['part'],key:keyof AdditionalPartDetails) {return `additionalParts-${partTypes.indexOf(part)}-${key}`;}
+function cleanPartDetails(item:AdditionalPart,config?:CommissionFormConfig):AdditionalPartDetails {
+  const details:AdditionalPartDetails={};
+  for(const key of additionalPartFollowups(item.part)){
+    const value=item.details?.[key], field=getCommissionField(config,key);
+    if((key==='hands'||key==='tail')&&Array.isArray(value))details[key]=field.options?.filter(option=>value.includes(option))||[];
+    else if(key==='pockets'&&typeof value==='string'&&field.options?.includes(value))details.pockets=value;
+    else if(key==='sandals'&&typeof value==='boolean')details.sandals=value;
+  }
+  return details;
+}
 /** Additional parts are separate from the parts and options included in a suit. */
 export function allowsAdditionalParts(d:Pick<Draft,'suit'>):boolean {return d.suit!=='Parts'&&suitTypes.includes(d.suit as typeof suitTypes[number]);}
 function cleanAdditionalParts(d:Draft, options:CommissionFormOptions):AdditionalPart[] {
   if(!allowsAdditionalParts(d))return [];
   return partTypes.flatMap(part=>{
     const selected=d.additionalParts?.find(item=>item.part===part);
-    return selected?[{part,quantity:options.additionalPartsQuantities===true?selected.quantity:1}]:[];
+    if(!selected)return [];
+    const details=cleanPartDetails(selected,options.configuration);
+    return [{part,quantity:options.additionalPartsQuantities===true?selected.quantity:1,...(Object.keys(details).length?{details}:{})}];
   });
 }
 function cleanCustomAnswers(d:Draft, configuration?:CommissionFormConfig):CustomCommissionAnswers {
@@ -75,6 +95,17 @@ export function validate(d:Draft, files:Reference[], options:CommissionFormOptio
   if(d.tos==='Yes'&&!hasTermsAgreement(d))errors.tos='Read and agree to the terms of service to confirm Yes.';
   if(d.usa==='No'&&d.country&&!countryName(d.country))errors.country='Choose a valid shipping country.';
   if(options.additionalPartsQuantities===true&&allowsAdditionalParts(d)&&(d.additionalParts||[]).some(item=>!partTypes.includes(item.part)||!Number.isSafeInteger(item.quantity)||item.quantity<1))errors.additionalParts='Choose a whole-number quantity of at least 1 for each additional part.';
+  if(allowsAdditionalParts(d))for(const item of d.additionalParts||[]){
+    if(!partTypes.includes(item.part))continue;
+    for(const key of additionalPartFollowups(item.part)){
+      const field=getCommissionField(config,key),value=item.details?.[key];
+      const missing=Array.isArray(value)?!value.length:typeof value==='boolean'?!value:!String(value??'').trim();
+      const errorKey=additionalPartFieldId(item.part,key),partLabel=getCommissionOptionLabel(config,'additionalParts',item.part);
+      if(field.required&&missing)errors[errorKey]=`Complete “${field.label}” for ${partLabel}.`;
+      if(!missing&&field.options&&(Array.isArray(value)?value:[value]).some(option=>typeof option!=='string'||!field.options!.includes(option)))errors[errorKey]=`Choose a valid option for “${field.label}” for ${partLabel}.`;
+      if(key==='sandals'&&value!==undefined&&typeof value!=='boolean')errors[errorKey]=`Choose a valid option for “${field.label}” for ${partLabel}.`;
+    }
+  }
   const answers=cleanCustomAnswers(d,options.configuration);
   for(const question of options.configuration?.customQuestions||[]){
     const value=answers[question.id];
@@ -106,7 +137,15 @@ export function reviewRows(input:Draft, files:Reference[], options:CommissionFor
     const text=Array.isArray(answer)?answer.map(value=>question.options?.find(option=>option.id===value)?.label||'').filter(Boolean).join(', '):question.type==='select'?question.options?.find(option=>option.id===answer)?.label||'':answer||'';
     if(text.trim())customRows[question.id]=[question.label,text];
   }
-  return getCommissionSectionOrder(config).flatMap(section=>getCommissionQuestionOrder(config,section).flatMap(key=>{const row=rows[key as CommissionFieldId]||customRows[key];return row?[row]:[];}));
+  return getCommissionSectionOrder(config).flatMap(section=>getCommissionQuestionOrder(config,section).flatMap(key=>{const row=rows[key as CommissionFieldId]||customRows[key];if(!row)return [];
+    if(key!=='additionalParts')return [row];
+    const detailRows:[string,string][]=[];
+    for(const item of d.additionalParts||[])for(const detailKey of additionalPartFollowups(item.part)){
+      const value=item.details?.[detailKey];
+      const text=Array.isArray(value)?value.map(answer=>option(detailKey,answer)).join(', '):typeof value==='boolean'?(value?'Requested':'Not requested'):typeof value==='string'?option(detailKey,value):'';
+      if(text)detailRows.push([`${option('additionalParts',item.part)} · ${getCommissionField(config,detailKey).label}`,text]);
+    }
+    return [row,...detailRows];}));
 }
 
 /** Header sniffing supplements the MIME allowlist; it is not a server-side upload guarantee. */

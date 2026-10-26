@@ -31,9 +31,6 @@
 .barcodeInput { align-items: center; min-width: 0; }
 .barcodeInput input { flex: 1 1 0; width: 0; min-width: 0; }
 .barcodeInput button { flex: 0 0 auto; min-width: max-content; white-space: nowrap; }
-.createChoice { padding: 16px; border: 1px solid var(--owner-line, #ded3d5); border-radius: 12px; margin: 16px 0; background: var(--owner-card, #fff); }
-.createChoice label { display: grid; gap: 8px; }
-.createChoice input { width: 100%; min-width: 0; color: var(--owner-ink); background: var(--owner-input, var(--owner-card, #fff)); }
 
 /* Inventory controls use their own compact rhythm, not page-level field margins. */
 .filters > label,.filters > div,.form > label,.form > div { margin:0; align-self:start; }
@@ -52,7 +49,7 @@
 .form [aria-invalid="true"] { border-color:var(--owner-error,#a30e2a); }
 .error { margin:0 0 12px; font-size:13px; }
 .error strong { display:block; margin-bottom:3px; }
-.printRow { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.printRow { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin-top:12px; }
 .printRow button { min-height:36px; padding:7px 12px; font-size:13px; }
 .barcodePreview { margin-top:8px; font-size:13px; }
 .barcodePreview summary { cursor:pointer; }
@@ -82,3 +79,15 @@
 
 /* Actions sit directly on the workspace, not in an extra dark-mode strip. */
 :global([data-owner-portal][data-color-mode]) .root .toolbar { background-color:transparent!important; border:0; box-shadow:none; }
+
+.trashButton { min-width:36px; display:inline-flex; align-items:center; justify-content:center; }
+
+.printRow > .hint { flex:1 1 180px; }
+.printActions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+
+.openableCard { cursor:pointer; }
+.openableCard:focus-visible { outline:2px solid var(--owner-muted,#6d6064); outline-offset:3px; }
+.card .code { cursor:text; user-select:text; }
+.cardActions { display:flex; flex-wrap:nowrap; align-items:center; gap:8px; margin-top:14px; }
+.cardActions .cardIcon { width:38px; min-width:38px; height:38px; min-height:38px; padding:0; flex:0 0 38px; display:inline-flex; align-items:center; justify-content:center; }
+.cardIcon svg { pointer-events:none; flex-shrink:0; }

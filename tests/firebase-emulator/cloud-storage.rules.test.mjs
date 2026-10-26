@@ -3,7 +3,7 @@ import {test, before, beforeEach, after} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {initializeTestEnvironment, assertFails, assertSucceeds} from '@firebase/rules-unit-testing';
-import {doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch} from 'firebase/firestore';
+import {doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp} from 'firebase/firestore';
 import {ref, uploadBytes, uploadBytesResumable, getBytes, getMetadata, updateMetadata, deleteObject, listAll} from 'firebase/storage';
 const PROJECT='demo-tmc-storage-rules';
 const OWNER='a4ARjp0z8ZOByKlC2AfGzmMRj843';
@@ -18,6 +18,10 @@ async function seed(path,data){await env.withSecurityRulesDisabled(ctx=>setDoc(d
 async function seedPhoto(id=ID){await seed(`ownerFiles/${id}`,metadata());await assertSucceeds(uploadBytes(object(owner,id),new Uint8Array([1,2,3]),{contentType:'image/webp',cacheControl:'private, no-store, max-age=0',contentDisposition:'inline',customMetadata:{fileId:id}}));}
 async function seedPublic(ids=[ID],closed=false){await seed('site/access',{schemaVersion:1,revision:1,constructionMode:closed});await seed('site/publishedAssets',{schemaVersion:1,revision:1,ids});}
 async function publish(ctx,revision=1,ids=[],options={}){const db=ctx.firestore(),batch=writeBatch(db),wrapper={schemaVersion:1,revision,payload:'{}'};batch.set(doc(db,'ownerWorkspace/current'),wrapper);batch.set(doc(db,'site/published'),wrapper);if(!options.omitIndex)batch.set(doc(db,'site/publishedAssets'),{schemaVersion:1,revision:options.indexRevision??revision,ids});return batch.commit();}
+const inventoryKeys=code=>{const alphabet='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%',checksum=alphabet[[...code].reduce((n,c)=>n+alphabet.indexOf(c),0)%43];return [code,code+checksum].map(v=>Buffer.from(v).toString('hex'));};
+const inventoryFixture=(extra={})=>({schemaVersion:1,revision:1,name:'Fur',kind:'material',categoryId:'',barcode:'FUR01',tags:[],quantity:2,unit:'yards',lowStock:1,notes:'',archived:false,createdAt:ISO,updatedAt:ISO,history:[],...extra});
+async function createInventory(ctx,id=ID,item=inventoryFixture(),assignment='manual') {const db=ctx.firestore(),batch=writeBatch(db),keys=inventoryKeys(item.barcode);batch.set(doc(db,`ownerInventory/${id}`),{...item,barcodeKeys:keys,trashedAt:null});for(const key of keys)batch.set(doc(db,`ownerInventoryBarcodes/${key}`),{itemId:id,releasedAt:null,assignment});return batch.commit();}
+async function retireInventory(ctx,id=ID,{barcode,stamp=serverTimestamp(),omitKey=false}={}) {const db=ctx.firestore(),target=doc(db,`ownerInventory/${id}`),before=(await getDoc(target)).data(),batch=writeBatch(db),oldKeys=inventoryKeys(before.barcode),newKeys=barcode?inventoryKeys(barcode):oldKeys;batch.set(target,{...before,revision:before.revision+1,barcode:barcode??before.barcode,barcodeKeys:newKeys,trashedAt:barcode?null:stamp});for(const key of oldKeys)if((!barcode||!newKeys.includes(key))&&(!omitKey||key!==oldKeys[1]))batch.set(doc(db,`ownerInventoryBarcodes/${key}`),{itemId:id,releasedAt:stamp,assignment:'manual'});if(barcode)for(const key of newKeys)batch.set(doc(db,`ownerInventoryBarcodes/${key}`),{itemId:id,releasedAt:null,assignment:'manual'});return batch.commit();}
 before(async()=>{env=await initializeTestEnvironment({projectId:PROJECT,firestore:{host:'127.0.0.1',port:18080,rules:readFileSync(new URL('../../firebase/firestore.rules', import.meta.url),'utf8')},storage:{host:'127.0.0.1',port:19199,rules:readFileSync(new URL('../../firebase/storage.rules', import.meta.url),'utf8')}});owner=env.authenticatedContext(OWNER);wrong=env.authenticatedContext('not-the-owner');anon=env.unauthenticatedContext();});
 beforeEach(async()=>{await env.clearFirestore();await env.withSecurityRulesDisabled(async ctx=>{async function clear(path){const listing=await listAll(path);await Promise.all(listing.items.map(item=>deleteObject(item)));await Promise.all(listing.prefixes.map(clear));}await clear(ref(ctx.storage()));});});
 after(async()=>{await env?.cleanup();});
@@ -101,12 +105,12 @@ test('default Fonts folder cannot be renamed, moved, trashed or removed by owner
 test('inventory data and barcode registries are exactownerprivate and revisionbound',async()=>{
  const item={schemaVersion:1,revision:1,name:'Fur',kind:'material',categoryId:'',barcode:'FUR01',tags:['blue'],quantity:2,unit:'yards',lowStock:1,notes:'',archived:false,createdAt:ISO,updatedAt:ISO,history:[]};
  for(const ctx of [wrong,anon])await assertFails(setDoc(doc(ctx.firestore(),`ownerInventory/${ID}`),item));
- await assertSucceeds(setDoc(doc(owner.firestore(),`ownerInventory/${ID}`),item));
+ await assertSucceeds(createInventory(owner,ID,item));
  for(const ctx of [wrong,anon]){await assertFails(getDoc(doc(ctx.firestore(),`ownerInventory/${ID}`)));await assertFails(getDocs(collection(ctx.firestore(),'ownerInventory')));}
  await assertFails(updateDoc(doc(owner.firestore(),`ownerInventory/${ID}`),{quantity:-1,revision:2}));await assertFails(updateDoc(doc(owner.firestore(),`ownerInventory/${ID}`),{quantity:3,revision:1}));
  await assertSucceeds(updateDoc(doc(owner.firestore(),`ownerInventory/${ID}`),{quantity:3,revision:2}));await assertFails(deleteDoc(doc(owner.firestore(),`ownerInventory/${ID}`)));
  const categories={schemaVersion:1,revision:1,categories:[]};await assertSucceeds(setDoc(doc(owner.firestore(),'ownerInventorySettings/categories'),categories));
- const key='4655523031';await assertSucceeds(setDoc(doc(owner.firestore(),`ownerInventoryBarcodes/${key}`),{itemId:ID}));
+ const key='4655523031';await assertSucceeds(setDoc(doc(owner.firestore(),`ownerInventoryBarcodes/${key}`),{itemId:ID,releasedAt:null,assignment:'manual'}));
  for(const ctx of [wrong,anon]){await assertFails(getDoc(doc(ctx.firestore(),`ownerInventoryBarcodes/${key}`)));await assertFails(setDoc(doc(ctx.firestore(),'ownerInventorySettings/categories'),categories));await assertFails(deleteDoc(doc(ctx.firestore(),`ownerInventoryBarcodes/${key}`)));}
 });
 
@@ -126,11 +130,74 @@ test('inventory custom settings and half thresholds preserve legacy stock; barco
  const db=owner.firestore(),target=doc(db,`ownerInventory/${ID}`);
  const item={schemaVersion:1,revision:1,name:'Fur / trim',kind:ID2,categoryId:'',barcode:'FUR01',tags:[],quantity:2.375,unit:'rolls',lowStock:0.5,notes:'',archived:false,createdAt:ISO,updatedAt:ISO,history:[]};
  await assertSucceeds(setDoc(doc(db,'ownerInventorySettings/categories'),{schemaVersion:1,revision:1,categories:[],itemTypes:[{id:ID2,name:'Packaging'}],units:['rolls']}));
- await assertFails(setDoc(target,{...item,lowStock:0.25}));await assertSucceeds(setDoc(target,item));
+ await assertFails(setDoc(target,{...item,lowStock:0.25}));await assertSucceeds(createInventory(owner,ID,item));
  await assertFails(updateDoc(target,{revision:2,lowStock:0.1}));await assertSucceeds(updateDoc(target,{revision:2,lowStock:1.5}));
  await seed(`ownerInventory/${ID}`,{...item,lowStock:0.125});
  await assertSucceeds(updateDoc(target,{revision:2,name:'Legacy preserved'}));await assertFails(updateDoc(target,{revision:3,lowStock:0.25}));
  const reservation=doc(db,'ownerInventoryBarcodes/4655523031');
- await assertSucceeds(setDoc(reservation,{itemId:ID}));await assertSucceeds(setDoc(reservation,{itemId:ID}));
+ await seed('ownerInventoryBarcodes/4655523031',{itemId:ID});await assertSucceeds(setDoc(reservation,{itemId:ID}));
  await assertFails(setDoc(reservation,{itemId:ID2}));assert.equal((await getDoc(reservation)).data().itemId,ID);
+});
+
+
+test('inventory retirement is server-timed, atomic, retained and protects generated reassignment',async()=>{
+ await assertSucceeds(createInventory(owner));
+ await assertFails(retireInventory(owner,ID,{stamp:Timestamp.fromMillis(Date.now()-61*86400000)}));
+ await assertFails(retireInventory(owner,ID,{omitKey:true}));
+ await assertSucceeds(retireInventory(owner));
+ const db=owner.firestore(),item=(await getDoc(doc(db,`ownerInventory/${ID}`))).data();assert.ok(item.trashedAt instanceof Timestamp);
+ for(const key of inventoryKeys(item.barcode)){
+  const reservation=doc(db,`ownerInventoryBarcodes/${key}`);assert.equal((await getDoc(reservation)).data().releasedAt.toMillis(),item.trashedAt.toMillis());
+  await assertFails(deleteDoc(reservation));await assertFails(updateDoc(reservation,{releasedAt:Timestamp.fromMillis(0)}));
+ }
+ await assertFails(createInventory(owner,ID2,inventoryFixture(),'generated'));
+ await assertSucceeds(createInventory(owner,ID2,inventoryFixture(),'manual'));
+ const batch=writeBatch(db);batch.update(doc(db,`ownerInventory/${ID}`),{revision:3,trashedAt:null});for(const key of inventoryKeys(item.barcode))batch.set(doc(db,`ownerInventoryBarcodes/${key}`),{itemId:ID,releasedAt:null,assignment:'manual'});await assertFails(batch.commit());
+ assert.ok((await getDoc(doc(db,`ownerInventory/${ID}`))).data().trashedAt);
+});
+
+test('replaced barcodes receive same hold, manual claims allowed, active ownership cannot transfer',async()=>{
+ await assertSucceeds(createInventory(owner));await assertSucceeds(retireInventory(owner,ID,{barcode:'NEWCODE'}));
+ await assertFails(createInventory(owner,ID2,inventoryFixture(),'generated'));
+ await assertSucceeds(createInventory(owner,ID2,inventoryFixture(),'manual'));
+ const db=owner.firestore(),key=inventoryKeys('FUR01')[0];await assertFails(updateDoc(doc(db,`ownerInventoryBarcodes/${key}`),{itemId:ID}));
+ assert.equal((await getDoc(doc(db,`ownerInventory/${ID}`))).data().barcode,'NEWCODE');
+});
+
+test('expired hold uses server time; generated and manual claims still require both aliases',async()=>{
+ await createInventory(owner);await retireInventory(owner);
+ for(const key of inventoryKeys('FUR01'))await seed(`ownerInventoryBarcodes/${key}`,{itemId:ID,releasedAt:Timestamp.fromMillis(Date.now()-60*86400000-1000),assignment:'manual'});
+ await assertSucceeds(createInventory(owner,ID2,inventoryFixture(),'generated'));
+ const db=owner.firestore(),third='33333333-3333-4333-8333-333333333333';
+ await assertFails(createInventory(owner,third,inventoryFixture(),'manual'));
+ const batch=writeBatch(db);batch.set(doc(db,`ownerInventory/${third}`),{...inventoryFixture({barcode:'PARTIAL'}),barcodeKeys:inventoryKeys('PARTIAL'),trashedAt:null});batch.set(doc(db,`ownerInventoryBarcodes/${inventoryKeys('PARTIAL')[0]}`),{itemId:third,releasedAt:null,assignment:'manual'});await assertFails(batch.commit());
+});
+
+test('legacy keyless stock updates are allowed but keyless lifecycle bypasses are denied',async()=>{
+ const item=inventoryFixture(),db=owner.firestore(),target=doc(db,`ownerInventory/${ID}`);await seed(`ownerInventory/${ID}`,item);
+ for(const key of inventoryKeys(item.barcode))await seed(`ownerInventoryBarcodes/${key}`,{itemId:ID});
+ await assertSucceeds(updateDoc(target,{quantity:3,revision:2}));
+ await assertFails(updateDoc(target,{barcode:'EVASION',revision:3}));await assertFails(updateDoc(target,{trashedAt:serverTimestamp(),revision:3}));
+ await assertSucceeds(retireInventory(owner,ID,{barcode:'MIGRATED'}));
+ await assertFails(createInventory(owner,ID2,item,'generated'));await assertSucceeds(createInventory(owner,ID2,item,'manual'));
+});
+
+
+test('overlapping aliases retain ownership and successful restore reclaims both aliases',async()=>{
+ await createInventory(owner,ID,inventoryFixture({barcode:'A'}));await assertSucceeds(retireInventory(owner,ID,{barcode:'AA'}));
+ const db=owner.firestore();assert.equal((await getDoc(doc(db,`ownerInventoryBarcodes/${inventoryKeys('AA')[0]}`))).data().releasedAt,null);
+ await assertFails(createInventory(owner,ID2,inventoryFixture({barcode:'A'}),'manual'));
+ await assertSucceeds(retireInventory(owner));const target=doc(db,`ownerInventory/${ID}`),item=(await getDoc(target)).data(),batch=writeBatch(db);
+ batch.update(target,{revision:item.revision+1,trashedAt:null});for(const key of item.barcodeKeys)batch.set(doc(db,`ownerInventoryBarcodes/${key}`),{itemId:ID,releasedAt:null,assignment:'manual'});await assertSucceeds(batch.commit());
+ assert.equal((await getDoc(target)).data().trashedAt,null);
+});
+
+test('unrelated stock edits preserve retired alias timestamp and future timestamps cannot accelerate hold',async()=>{
+ await createInventory(owner);await retireInventory(owner,ID,{barcode:'OTHER'});
+ const db=owner.firestore(),key=inventoryKeys('FUR01')[0],ref=doc(db,`ownerInventoryBarcodes/${key}`),stamp=(await getDoc(ref)).data().releasedAt;
+ await assertSucceeds(updateDoc(doc(db,`ownerInventory/${ID}`),{quantity:4,revision:3}));
+ assert.equal((await getDoc(ref)).data().releasedAt.toMillis(),stamp.toMillis());
+ for(const alias of inventoryKeys('FUR01'))await seed(`ownerInventoryBarcodes/${alias}`,{itemId:ID,releasedAt:Timestamp.fromMillis(Date.now()+86400000),assignment:'manual'});
+ await assertFails(createInventory(owner,ID2,inventoryFixture(),'generated'));
+ await assertSucceeds(createInventory(owner,ID2,inventoryFixture(),'manual'));
 });

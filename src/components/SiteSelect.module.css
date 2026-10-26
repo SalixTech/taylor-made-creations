@@ -2,8 +2,27 @@
 
 .list[data-floating=true]::backdrop{background:transparent;pointer-events:none}.list[data-floating=false]{width:100%;inset:auto;margin-top:6px}.list[data-floating=true]{inset:auto;margin:0}.root{isolation:isolate}.list .option{min-height:40px;box-sizing:border-box}.list .empty{white-space:normal}
 
-/* Keyboard-active and selected rows keep the shared red in both themes. */
-.list[data-site-select-menu] .option[data-active=true]{background:#800014!important;color:#fff!important}.list[data-site-select-menu] .option[data-active=true] span{color:inherit!important}
-
 .createRow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;padding:9px 5px 5px;border-top:1px solid var(--owner-line,#dedada);margin-top:5px;align-items:center}.createRow .createLabel{grid-column:1/-1;margin:0;font-size:12px;color:var(--owner-ink,#393536)}.createRow input{box-sizing:border-box;min-width:0;width:100%;height:36px!important;min-height:36px!important;margin:0!important;padding:7px 9px!important;border:1px solid var(--owner-line,#dedada);border-radius:6px;color:var(--owner-ink,#393536);background:var(--owner-input-bg,#fff);font:inherit;font-size:13px}.createRow button{min-height:36px;border:1px solid var(--owner-line,#dedada);border-radius:6px;padding:6px 9px;background:var(--owner-card,#fff);color:var(--owner-ink,#393536);font:inherit;font-size:12px;cursor:pointer}.createRow button:disabled{opacity:.55;cursor:default}.createRow input:focus-visible,.createRow button:focus-visible{outline:2px solid #800014;outline-offset:2px}
 .createRow .createError { grid-column:1/-1; margin:0; color:var(--owner-error,#a30e2a); font-size:12px; line-height:1.4; }
+
+/* Theme the complete popover, not only its inner listbox. Native top-layer
+   popovers retain these inherited tokens, including their scrollbar gutter. */
+.root{--select-surface:#fff;--select-ink:#393536;--select-line:#c5c5ca;--select-selected:#f1f1f4;--select-active:#e4e4eb;--select-focus:#64748b}
+:global([data-owner-portal][data-color-mode="dark"]) .root,
+:global([data-theme-scope="public"][data-color-mode="dark"]) .root{--select-surface:#303034;--select-ink:#e5e7eb;--select-line:#85858c;--select-selected:#3b3b42;--select-active:#484850;--select-focus:#a1a1aa;color-scheme:dark}
+.root .list[data-site-select-menu]{background:var(--select-surface);color:var(--select-ink);border:1px solid var(--select-line);border-radius:10px;padding:5px;scrollbar-color:var(--select-line) var(--select-surface)}
+.root .list[data-site-select-menu] [role="listbox"]{background:transparent!important;border:0!important;padding:0}
+.root .list[data-site-select-menu] .option{border-radius:6px;font-weight:500;font-synthesis:none;text-shadow:none;line-height:1.4}
+/* Component-qualified rules also beat the generic owner/public dark defaults. */
+:is(:global([data-owner-portal][data-color-mode]),:global([data-theme-scope="public"][data-color-mode])) .root .list[data-site-select-menu] .option,
+.root .list[data-site-select-menu] .option{background:var(--select-surface)!important;color:var(--select-ink)!important;border-color:transparent!important;outline:none}
+:is(:global([data-owner-portal][data-color-mode]),:global([data-theme-scope="public"][data-color-mode])) .root .list[data-site-select-menu] .option[aria-selected="true"],
+.root .list[data-site-select-menu] .option[aria-selected="true"]{background:var(--select-selected)!important;font-weight:500}
+:is(:global([data-owner-portal][data-color-mode]),:global([data-theme-scope="public"][data-color-mode])) .root .list[data-site-select-menu] .option[data-active="true"],
+.root .list[data-site-select-menu] .option[data-active="true"]{background:var(--select-active)!important;color:var(--select-ink)!important;outline:1px solid var(--select-focus);outline-offset:-1px}
+.root .list[data-site-select-menu] .option span{color:inherit!important;text-shadow:none}
+.root .createRow{border-color:var(--select-line)}
+.root .createRow input,.root .createRow button{background:var(--select-surface);color:var(--select-ink);border-color:var(--select-line);border-radius:8px}
+.root .control{font-weight:500;font-synthesis:none;text-shadow:none;border-radius:10px}
+/* An explicitly light public preview must not inherit its dark owner shell. */
+:global([data-theme-scope="public"][data-color-mode="light"]) .root{--select-surface:#fff;--select-ink:#393536;--select-line:#c5c5ca;--select-selected:#f1f1f4;--select-active:#e4e4eb;--select-focus:#64748b;color-scheme:light}

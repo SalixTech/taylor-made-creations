@@ -5,6 +5,7 @@ export type InventoryItem = {
   id: string; schemaVersion: 1; revision: number; name: string; kind: string;
   categoryId: string; barcode: string; tags: string[]; quantity: number; unit: string;
   lowStock: number; notes: string; archived: boolean; createdAt: string; updatedAt: string; history: StockChange[];
+  trashedAt?: string | null; barcodeKeys?: string[];
 };
 export type InventoryEdit = Pick<InventoryItem, "name" | "kind" | "categoryId" | "barcode" | "tags" | "quantity" | "unit" | "lowStock" | "notes" | "archived">;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,7 +41,9 @@ export function validateInventoryEdit(value: InventoryEdit, allowLegacyThreshold
 export function decodeInventoryItem(value: unknown, id: string): InventoryItem {
   inventoryId(id);
   if (!value || typeof value !== "object") throw new Error("This inventory item could not be read.");
-  const v = { ...(value as InventoryItem), id };
+  const raw = value as InventoryItem & { trashedAt?: unknown };
+  const v: InventoryItem = { ...raw, id, trashedAt: inventoryTimestamp(raw.trashedAt) };
+  if (v.barcodeKeys !== undefined && (!Array.isArray(v.barcodeKeys) || v.barcodeKeys.length !== 2 || v.barcodeKeys.some((key, index) => key !== barcodeKey(barcodeAliases(v.barcode)[index])))) throw new Error("This inventory item's barcode registry is invalid.");
   validateInventoryEdit(v, true);
   if (v.schemaVersion !== 1 || !Number.isSafeInteger(v.revision) || v.revision < 1 || !Number.isFinite(Date.parse(v.createdAt)) || !Number.isFinite(Date.parse(v.updatedAt)) || !Array.isArray(v.history) || v.history.length > 30 || v.history.some(h => !h || !Number.isFinite(Date.parse(h.at)) || !inventoryQuantity(h.from) || !inventoryQuantity(h.to) || !text(h.fromUnit, 30, true) || !text(h.unit, 30, true) || !text(h.note, 200))) throw new Error("This inventory item has invalid saved data. Refresh before editing.");
   return v;
@@ -71,4 +74,17 @@ export function uniqueInventoryBarcode(items: Pick<InventoryItem, "barcode">[], 
   const occupied = new Set(items.flatMap(item => barcodeAliases(item.barcode)));
   for (let attempt = 0; attempt < 50; attempt++) { const candidate = generate(); if (validInventoryBarcode(candidate) && barcodeAliases(candidate).every(alias => !occupied.has(alias))) return candidate; }
   throw new Error("Could not generate an unused barcode. Try again.");
+}
+
+export const INVENTORY_BARCODE_HOLD_MS = 60 * 24 * 60 * 60 * 1000;
+// Firestore timestamps remain raw in storage and become JSON-safe ISO strings here.
+export function inventoryTimestamp(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  let milliseconds: number;
+  if (typeof value === "string") milliseconds = Date.parse(value);
+  else if (typeof value === "object" && "toMillis" in value && typeof value.toMillis === "function") milliseconds = value.toMillis();
+  else if (typeof value === "object" && "seconds" in value && typeof value.seconds === "number") milliseconds = value.seconds * 1000;
+  else throw new Error("Inventory retirement time is invalid.");
+  if (!Number.isFinite(milliseconds)) throw new Error("Inventory retirement time is invalid.");
+  return new Date(milliseconds).toISOString();
 }

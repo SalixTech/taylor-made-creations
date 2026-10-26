@@ -9,3 +9,40 @@
 .item{position:relative}.item[data-insert=before]{box-shadow:0 -4px 0 var(--owner-wine,#800014)}.item[data-insert=after]{box-shadow:0 4px 0 var(--owner-wine,#800014)}.placement{display:flex;flex-wrap:wrap;gap:6px}.item[data-dragging=true]{opacity:.6;outline:2px dashed var(--owner-wine,#800014)}
 
 .moveStatus{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;margin:12px 0;border:1px solid var(--owner-line,#d8c4cc);border-radius:8px;background:var(--owner-raised,#f7f2f4)}.moveStatus .hint{margin:0;min-width:0;overflow-wrap:anywhere}.moveStatus>button{flex:0 0 auto;white-space:nowrap}.breadcrumbs{justify-content:flex-start}@media(max-width:450px){.moveStatus{align-items:flex-start;flex-direction:column}.moveStatus>button{align-self:flex-end}}
+
+/* Compact Explorer-style folder navigation stays independent of grid/list layout. */
+.explorer{display:grid;grid-template-columns:minmax(165px,210px) minmax(0,1fr);gap:16px;align-items:start;margin-top:12px}
+.filePane{min-width:0}
+.folderSidebar{min-width:0;border:1px solid var(--owner-line,#d8c4cc);border-radius:10px;background:var(--owner-surface,#fff);overflow:hidden}
+.folderSidebar>summary{padding:12px;cursor:pointer;font-size:13px;font-weight:700;color:var(--owner-ink,#2b2025)}
+.folderSidebar nav{padding:4px 6px 10px;max-height:65dvh;overflow:auto}
+.folderBranch{min-width:0}
+.folderChildren{margin-top:6px;margin-left:12px;border-left:1px solid var(--owner-line,#d8c4cc);padding-left:3px}
+/* Separate visible rows without enlarging their buttons or drop targets. */
+.folderBranch+.folderBranch{margin-top:6px}
+.folderRow{display:flex;align-items:center;gap:2px;border-radius:7px;min-width:0}
+.folderExpand,.folderLink{font:inherit;font-size:12px;color:var(--owner-ink,#2b2025);background:transparent;border:0;border-radius:7px;box-shadow:none;text-shadow:none;cursor:pointer}
+.folderExpand,.folderSpacer{width:22px;min-width:22px;height:30px}
+.folderExpand{padding:0}
+.folderLink{display:flex;align-items:center;gap:6px;min-width:0;flex:1;text-align:left;padding:8px 4px}
+.folderLink>span:first-of-type{overflow-wrap:anywhere}
+.folderLink svg{width:18px;height:16px;flex:0 0 auto}
+.folderLink[aria-current=location]{background:var(--owner-raised,#f7f2f4);font-weight:700}
+.folderLink:hover:not(:disabled),.folderExpand:hover{background:var(--owner-raised,#f7f2f4)}
+.folderLink:disabled{opacity:.55;cursor:not-allowed}
+.folderLink:focus-visible,.folderExpand:focus-visible,.folderSidebar>summary:focus-visible{outline:2px solid var(--owner-button-focus,#800014);outline-offset:-2px}
+.folderRow[data-drop-target=true]{outline:2px dashed var(--owner-wine,#800014);outline-offset:-2px;background:var(--owner-raised,#f7f2f4)}
+@media(max-width:1050px){.explorer .details .item{grid-template-columns:60px minmax(0,1fr)}.explorer .details .actions{grid-column:1/-1;justify-content:flex-start}}
+@media(max-width:700px){.explorer{grid-template-columns:minmax(0,1fr);gap:10px}.folderSidebar nav{max-height:230px}}
+
+/* The open folder rail fills its Explorer row, not just its folder contents.
+   A collapsed rail stays compact, and mobile remains a stacked disclosure. */
+.folderSidebar[open]{align-self:stretch}
+.headingActions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+:global([data-owner-portal]) .hub .headingActions .trashView[data-owner-button]{width:36px;min-width:36px;padding:8px;flex:0 0 36px}
+.trashView[aria-pressed=true]{outline:2px solid var(--owner-button-focus,#800014);outline-offset:2px}
+@media(max-width:700px){.folderSidebar[open]{align-self:start}}
+
+/* Public header nav rules must never right-align or shrink the folder hierarchy. */
+.hub .folderSidebar nav{display:block;width:100%;box-sizing:border-box;margin:0;padding:4px 10px 12px;gap:0;align-items:stretch;justify-content:flex-start;text-align:left}
+.hub .folderSidebar nav>.folderBranch{width:100%}

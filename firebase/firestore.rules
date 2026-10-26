@@ -341,7 +341,9 @@ service cloud.firestore {
 
     function validInventory(data) {
       return data.keys().hasAll(['schemaVersion', 'revision', 'name', 'kind', 'categoryId', 'barcode', 'tags', 'quantity', 'unit', 'lowStock', 'notes', 'archived', 'createdAt', 'updatedAt', 'history'])
-        && data.keys().hasOnly(['schemaVersion', 'revision', 'name', 'kind', 'categoryId', 'barcode', 'tags', 'quantity', 'unit', 'lowStock', 'notes', 'archived', 'createdAt', 'updatedAt', 'history'])
+        && data.keys().hasOnly(['schemaVersion', 'revision', 'name', 'kind', 'categoryId', 'barcode', 'tags', 'quantity', 'unit', 'lowStock', 'notes', 'archived', 'createdAt', 'updatedAt', 'history', 'trashedAt', 'barcodeKeys'])
+        && (data.get('trashedAt', null) == null || data.trashedAt is timestamp)
+        && (!('barcodeKeys' in data) || (data.barcodeKeys is list && data.barcodeKeys.size() == 2 && data.barcodeKeys[0] is string && data.barcodeKeys[1] is string && data.barcodeKeys[0].matches('^[a-f0-9]{2,50}$') && data.barcodeKeys[1].matches('^[a-f0-9]{2,50}$') && data.barcodeKeys[0] != data.barcodeKeys[1]))
         && data.schemaVersion == 1 && data.revision is int && data.revision >= 1 && data.revision <= 9007199254740991
         && data.name is string && data.name.size() > 0 && data.name.size() <= 150
         && data.name.matches('.*\\S.*') && !data.name.matches('.*[\\x00-\\x1F\\x7F].*')
@@ -356,13 +358,51 @@ service cloud.firestore {
         && validCloudTime(data.createdAt) && validCloudTime(data.updatedAt)
         && data.history is list && data.history.size() <= 30;
     }
+    function inventoryReservationAfter(key) {
+      return getAfter(/databases/$(database)/documents/ownerInventoryBarcodes/$(key)).data;
+    }
+    function inventoryBoundKey(key, itemId, trashedAt) {
+      let reservation = inventoryReservationAfter(key);
+      return reservation.itemId == itemId && reservation.get('releasedAt', null) == trashedAt;
+    }
+    function inventoryBound(data, itemId) {
+      return 'barcodeKeys' in data
+        && inventoryBoundKey(data.barcodeKeys[0], itemId, data.get('trashedAt', null))
+        && inventoryBoundKey(data.barcodeKeys[1], itemId, data.get('trashedAt', null));
+    }
+    function inventoryReleasedKey(key, itemId, next) {
+      return (next.get('trashedAt', null) == null && key in next.barcodeKeys)
+        || inventoryBoundKey(key, itemId, request.time);
+    }
+    function inventoryOldKeysReleased(before, next, itemId) {
+      return !('barcodeKeys' in before)
+        || (inventoryReleasedKey(before.barcodeKeys[0], itemId, next)
+          && inventoryReleasedKey(before.barcodeKeys[1], itemId, next));
+    }
+    function inventoryTransition(before, next, itemId) {
+      let oldTrash = before.get('trashedAt', null);
+      let newTrash = next.get('trashedAt', null);
+      return (
+        // Legacy stock edits remain compatible, but cannot bypass lifecycle migration.
+        (!('barcodeKeys' in next) && !('barcodeKeys' in before)
+          && next.barcode == before.barcode && oldTrash == null && newTrash == null)
+        || (inventoryBound(next, itemId)
+          && (oldTrash == newTrash || newTrash == null || (oldTrash == null && newTrash == request.time))
+          && (oldTrash == null || (next.barcode == before.barcode && next.quantity == before.quantity && next.history == before.history))
+          && (newTrash == null || (next.barcode == before.barcode && next.quantity == before.quantity && next.history == before.history))
+          && ((before.barcode == next.barcode && (!('barcodeKeys' in before) || next.barcodeKeys == before.barcodeKeys))
+            || (before.barcode != next.barcode && inventoryOldKeysReleased(before, next, itemId))))
+      );
+    }
     match /ownerInventory/{itemId} {
       allow get, list: if isOwner();
       allow create: if isOwner() && validCloudId(itemId) && validInventory(request.resource.data) && request.resource.data.revision == 1
+        && request.resource.data.get('trashedAt', null) == null && inventoryBound(request.resource.data, itemId)
         && request.resource.data.lowStock * 2 == int(request.resource.data.lowStock * 2);
-      allow update: if isOwner() && validInventory(resource.data) && validInventory(request.resource.data)
+      allow update: if isOwner() && validInventory(request.resource.data)
         && request.resource.data.revision == resource.data.revision + 1 && request.resource.data.createdAt == resource.data.createdAt
-        && (request.resource.data.lowStock == resource.data.lowStock || request.resource.data.lowStock * 2 == int(request.resource.data.lowStock * 2));
+        && (request.resource.data.lowStock == resource.data.lowStock || request.resource.data.lowStock * 2 == int(request.resource.data.lowStock * 2))
+        && inventoryTransition(resource.data, request.resource.data, itemId);
       allow delete: if false;
     }
     function validInventoryCategories(data) {
@@ -378,14 +418,42 @@ service cloud.firestore {
       allow update: if isOwner() && validInventoryCategories(request.resource.data) && request.resource.data.revision == resource.data.revision + 1;
       allow list, delete: if false;
     }
+    function validInventoryReservation(data) {
+      return data.keys().hasAll(['itemId', 'releasedAt', 'assignment'])
+        && data.keys().hasOnly(['itemId', 'releasedAt', 'assignment'])
+        && validCloudId(data.itemId) && data.assignment in ['manual', 'generated']
+        && (data.releasedAt == null || data.releasedAt is timestamp);
+    }
+    function inventoryClaimBound(data, key) {
+      let item = getAfter(/databases/$(database)/documents/ownerInventory/$(data.itemId)).data;
+      return data.releasedAt == null && item.get('trashedAt', null) == null
+        && key in item.barcodeKeys;
+    }
+    function inventoryReleaseBound(data, key) {
+      let before = get(/databases/$(database)/documents/ownerInventory/$(data.itemId)).data;
+      let after = getAfter(/databases/$(database)/documents/ownerInventory/$(data.itemId)).data;
+      return data.releasedAt == request.time && data.assignment == 'manual'
+        && before.get('trashedAt', null) == null
+        && (!('barcodeKeys' in before) || key in before.barcodeKeys)
+        && after.revision == before.revision + 1
+        && (after.get('trashedAt', null) == request.time
+          || (after.barcode != before.barcode && !(key in after.barcodeKeys)));
+    }
     match /ownerInventoryBarcodes/{barcodeKey} {
       allow get, list: if isOwner();
-      allow create: if isOwner() && barcodeKey.matches('^[a-f0-9]{2,50}$')
-        && request.resource.data.keys().hasOnly(['itemId']) && request.resource.data.keys().hasAll(['itemId'])
-        && validCloudId(request.resource.data.itemId);
-      // A reservation cannot be transferred to another item, including direct SDK writes.
-      allow update: if isOwner() && request.resource.data == resource.data;
-      allow delete: if isOwner();
+      allow create: if isOwner() && barcodeKey.matches('^[a-f0-9]{2,50}$') && validInventoryReservation(request.resource.data)
+        && (inventoryClaimBound(request.resource.data, barcodeKey) || inventoryReleaseBound(request.resource.data, barcodeKey));
+      allow update: if isOwner() && (request.resource.data == resource.data || (
+        validInventoryReservation(request.resource.data)
+        && ((inventoryClaimBound(request.resource.data, barcodeKey)
+          && ((resource.data.get('releasedAt', null) == null && request.resource.data.itemId == resource.data.itemId)
+            || (resource.data.get('releasedAt', null) is timestamp
+              && (request.resource.data.assignment == 'manual' || request.time >= resource.data.releasedAt + duration.value(60, 'd')))))
+          || (resource.data.get('releasedAt', null) == null && request.resource.data.itemId == resource.data.itemId
+            && inventoryReleaseBound(request.resource.data, barcodeKey)))
+      ));
+      // Released aliases are retained, never removed to evade the generation hold.
+      allow delete: if false;
     }
 
     // No access to other documents, collection listing or public owner data.

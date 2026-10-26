@@ -61,7 +61,7 @@ function cloud() {
   const docs=new Map();let fail=false,changed=false;
   const view=path=>({exists:()=>docs.has(path),data:()=>structuredClone(docs.get(path)),id:path.split('/').at(-1)});
   const session={db:{},assertCurrent:()=>{if(changed)throw Error('Session changed');}};
-  const api={doc:(_db,...p)=>({path:p.join('/')}),collection:(_db,path)=>({path}),getDoc:async r=>view(r.path),getDocs:async r=>({docs:[...docs.keys()].filter(p=>p.startsWith(r.path+'/')).map(view)}),runTransaction:async(_db,fn)=>{const changes=[];let wrote=false; const tx={get:async r=>{assert.equal(wrote,false,'all reads precede writes');return view(r.path);},set:(r,v)=>{wrote=true;changes.push([r.path,structuredClone(v)]);},delete:r=>{wrote=true;changes.push([r.path,null]);}};const result=await fn(tx);if(fail)throw Error('Network failed');for(const[p,v]of changes){if(v===null)docs.delete(p);else docs.set(p,v);}return result;}};
+  const api={serverTimestamp:()=>({seconds:Date.now()/1000}),doc:(_db,...p)=>({path:p.join('/')}),collection:(_db,path)=>({path}),getDoc:async r=>view(r.path),getDocs:async r=>({docs:[...docs.keys()].filter(p=>p.startsWith(r.path+'/')).map(view)}),runTransaction:async(_db,fn)=>{const changes=[];let wrote=false; const tx={get:async r=>{assert.equal(wrote,false,'all reads precede writes');return view(r.path);},set:(r,v)=>{wrote=true;changes.push([r.path,structuredClone(v)]);},delete:r=>{wrote=true;changes.push([r.path,null]);}};const result=await fn(tx);if(fail)throw Error('Network failed');for(const[p,v]of changes){if(v===null)docs.delete(p);else docs.set(p,v);}return result;}};
   const load=sourceLoader({'firebase/firestore/lite':api,'./taylor-services-client':{taylorOwnerSession:async()=>session}});
   return {client:load('src/owner/inventory-client.ts'),docs,fail:()=>fail=true,changeSession:()=>changed=true};
 }
@@ -87,7 +87,7 @@ test('stock adjustments preserve history, revisions and archive; stale writes ne
 test('barcode change releases old reservations only after valid atomic commit',async()=>{
   const c=cloud();const first=await c.client.saveInventoryItem(null,edit());
   const second=await c.client.saveInventoryItem(first,edit({barcode:'FUR-002'}));
-  for(const alias of model.barcodeAliases(first.barcode))assert.equal(c.docs.has(`ownerInventoryBarcodes/${model.barcodeKey(alias)}`),false);
+  for(const alias of model.barcodeAliases(first.barcode))assert.ok(c.docs.get(`ownerInventoryBarcodes/${model.barcodeKey(alias)}`).releasedAt);
   for(const alias of model.barcodeAliases(second.barcode))assert.equal(c.docs.get(`ownerInventoryBarcodes/${model.barcodeKey(alias)}`).itemId,first.id);
   c.fail();await assert.rejects(c.client.saveInventoryItem(second,edit({barcode:'FUR-003'})),/Network/);
   assert.equal((await c.client.readInventory()).items[0].barcode,'FUR-002');
@@ -151,4 +151,71 @@ test('generated barcodes retry collisions with both scanner aliases without chan
  // Another device may reserve an offered candidate before save. The atomic save rejects it.
  await c.client.saveInventoryItem(null,edit({barcode:'UNUSED'}));
  await assert.rejects(c.client.saveInventoryItem(null,edit({barcode:'UNUSED'})),/already assigned/);
+});
+
+
+test('retired aliases block automatic generation but permit deliberate manual reassignment', async()=>{
+ const c=cloud(), original=await c.client.saveInventoryItem(null,edit());
+ const changed=await c.client.saveInventoryItem(original,edit({barcode:'FUR-NEW'}));
+ assert.equal(changed.barcode,'FUR-NEW');
+ let n=0;assert.equal(await c.client.generateAvailableInventoryBarcode(()=>n++===0?'FUR-001':'FRESH'),'FRESH');
+ await assert.rejects(c.client.saveInventoryItem(null,edit(),'',{barcodeAssignment:'generated'}),/60-day/);
+ const reclaimed=await c.client.saveInventoryItem(null,edit(),'',{barcodeAssignment:'manual'});
+ assert.equal(reclaimed.barcode,'FUR-001');
+ await assert.rejects(c.client.saveInventoryItem(null,edit()),/already assigned/);
+ assert.equal((await c.client.readInventory()).items.find(i=>i.id===original.id).barcode,'FUR-NEW');
+});
+
+test('recoverable Trash preserves stock and history; restore checks both aliases and stale revisions',async()=>{
+ const c=cloud(), first=await c.client.saveInventoryItem(null,edit());
+ const trashed=await c.client.trashInventoryItem(first);
+ assert.ok(trashed.trashedAt);assert.equal(trashed.quantity,first.quantity);assert.deepEqual(trashed.history,first.history);
+ assert.doesNotThrow(()=>JSON.stringify(trashed));
+ await assert.rejects(c.client.saveInventoryItem(trashed,edit()),/Restore/);
+ await assert.rejects(c.client.trashInventoryItem(first),/another device/);
+ const restored=await c.client.restoreInventoryItem(trashed);assert.equal(restored.trashedAt,null);
+ const again=await c.client.trashInventoryItem(restored);
+ const newItem=await c.client.saveInventoryItem(null,edit());
+ await assert.rejects(c.client.restoreInventoryItem(again),/already assigned.*Change the active item.*keep this item in Trash/);
+ assert.equal((await c.client.readInventory()).items.find(i=>i.id===again.id).trashedAt,again.trashedAt);
+ assert.equal(c.docs.get(`ownerInventoryBarcodes/${model.barcodeKey(first.barcode)}`).itemId,newItem.id);
+});
+
+test('expired alias holds allow generation; exact checksum aliases remain protected',async()=>{
+ const c=cloud(),first=await c.client.saveInventoryItem(null,edit({barcode:'CODE39'}));
+ await c.client.trashInventoryItem(first);
+ for(const alias of model.barcodeAliases(first.barcode)) c.docs.get(`ownerInventoryBarcodes/${model.barcodeKey(alias)}`).releasedAt={seconds:(Date.now()-model.INVENTORY_BARCODE_HOLD_MS-1000)/1000};
+ assert.equal(await c.client.generateAvailableInventoryBarcode(()=>'CODE39'),'CODE39');
+ const newItem=await c.client.saveInventoryItem(null,edit({barcode:'CODE39'}),'',{barcodeAssignment:'generated'});
+ await assert.rejects(c.client.saveInventoryItem(null,edit({barcode:'CODE39W'})),/already assigned/);
+ assert.equal(newItem.barcode,'CODE39');
+});
+
+test('legacy inventory upgrades on rename without losing original history',async()=>{
+ const c=cloud(),first=await c.client.saveInventoryItem(null,edit());
+ const raw=c.docs.get(`ownerInventory/${first.id}`);delete raw.barcodeKeys;delete raw.trashedAt;delete raw.retiredBarcodes;
+ for(const alias of model.barcodeAliases(first.barcode)) c.docs.set(`ownerInventoryBarcodes/${model.barcodeKey(alias)}`,{itemId:first.id});
+ const legacy=(await c.client.readInventory()).items[0];assert.equal(legacy.trashedAt,null);
+ const updated=await c.client.saveInventoryItem(legacy,edit({barcode:'NEWCODE'}));
+ assert.equal(updated.barcodeKeys.length,2);
+});
+
+
+test('overlapping scanner aliases stay active while only removed aliases retire',async()=>{
+ const c=cloud(),first=await c.client.saveInventoryItem(null,edit({barcode:'A'}));
+ const second=await c.client.saveInventoryItem(first,edit({barcode:'AA'}));
+ assert.equal(c.docs.get(`ownerInventoryBarcodes/${model.barcodeKey('AA')}`).releasedAt,null);
+ assert.ok(c.docs.get(`ownerInventoryBarcodes/${model.barcodeKey('A')}`).releasedAt);
+ assert.equal(second.barcode,'AA');
+ await assert.rejects(c.client.saveInventoryItem(null,edit({barcode:'A'})),/already assigned/);
+});
+
+test('stale generated candidate is rechecked at save; unrelated stock edits never reset released hold',async()=>{
+ const c=cloud(), candidate=await c.client.generateAvailableInventoryBarcode(()=>'RACECODE');
+ const other=await c.client.saveInventoryItem(null,edit({barcode:candidate}));
+ const changed=await c.client.saveInventoryItem(other,edit({barcode:'OTHER-CODE'}));
+ const key=`ownerInventoryBarcodes/${model.barcodeKey(candidate)}`,stamp=structuredClone(c.docs.get(key).releasedAt);
+ await assert.rejects(c.client.saveInventoryItem(null,edit({barcode:candidate}),'',{barcodeAssignment:'generated'}),/60-day/);
+ await c.client.saveInventoryItem(changed,edit({barcode:'OTHER-CODE',quantity:2}));
+ assert.deepEqual(c.docs.get(key).releasedAt,stamp);
 });

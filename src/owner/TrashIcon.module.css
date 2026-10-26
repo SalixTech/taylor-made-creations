@@ -1,0 +1,2 @@
+.icon { display:block; flex:0 0 18px; color:#b42338; pointer-events:none; }
+:global([data-color-mode="dark"]) .icon { color:#f27889; }

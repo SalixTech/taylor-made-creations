@@ -30,7 +30,7 @@ export default function TermsAgreement({onAgree,onDismiss,previewContent}:{onAgr
     };
   },[]);
 
-  return <dialog ref={dialogRef} className={styles.dialog} aria-labelledby="commission-terms-heading" onCancel={event=>{event.preventDefault();onDismiss();}}>
+  return <dialog data-terms-dialog ref={dialogRef} className={styles.dialog} aria-labelledby="commission-terms-heading" onCancel={event=>{event.preventDefault();onDismiss();}}>
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>BEFORE WE BEGIN</p><h2 ref={headingRef} tabIndex={-1} id="commission-terms-heading">{page?.title ?? "Terms of service"}</h2></div>
       <button type="button" className={styles.close} aria-label="Close terms of service" onClick={onDismiss}>×</button>
@@ -45,7 +45,7 @@ export default function TermsAgreement({onAgree,onDismiss,previewContent}:{onAgr
     </div>
     <footer className={styles.actions}>
       <button type="button" className={styles.cancel} onClick={onDismiss}>Cancel</button>
-      <button type="button" className="button" disabled={!canAgree} onClick={() => { if (canAgree) onAgree(); }}>I agree to the terms of service</button>
+      <button type="button" className={styles.agree} disabled={!canAgree} onClick={() => { if (canAgree) onAgree(); }}>I agree to the terms of service</button>
     </footer>
   </dialog>;
 }

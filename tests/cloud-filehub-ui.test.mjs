@@ -62,8 +62,8 @@ test('new folder is inline, cancellation does not write, and Enter saves its nam
 });
 test('Trash confirmation is recoverable, repeated submits issue one write, and dismissal cannot conceal a pending change', async () => {
   const gate = deferred(), t = setup({ fileChange: () => gate.promise });
-  // The first Trash button is the section tab; use the file action.
-  t.h.all(n => n.type === 'button' && content(n) === 'Trash').at(-1).props.onClick(); t.render();
+  // The icon has a specific action name, distinct from the Trash view.
+  t.button('Move to Trash: Private cloud photo').props.onClick(); t.render();
   assert.match(content(t.dialog()), /No bytes are deleted/); assert.match(content(t.dialog()), /Existing page and published photo references are kept/);
   t.action('Move to Trash').props.onClick(); t.action('Move to Trash').props.onClick(); t.render(); assert.equal(t.calls.filter(c => c.method === 'file').length, 1); assert.equal(t.dialog().props.dismissDisabled, true);
   t.dialog().props.onClose(); t.render(); assert.ok(t.dialog()); gate.resolve(file); await flush(); t.render(); assert.equal(t.dialog(), undefined); assert.match(content(t.h.tree), /Moved to Trash/); t.h.unmount();
@@ -236,4 +236,96 @@ test('photo picker displays folders as soon as the first library read completes'
   assert.ok(t.button('Open'));
   assert.equal(t.calls.length, 0);
   t.h.unmount();
+});
+
+const treeFolders = () => ({schemaVersion:1, revision:3, folders:{
+ [folderId]:{name:'Projects',parentId:'root',trashedAt:null},
+ [childId]:{name:'References',parentId:folderId,trashedAt:null},
+ ['44444444-4444-4444-8444-444444444444']:{name:'Archive',parentId:'root',trashedAt:null},
+ ['55555555-5555-4555-8555-555555555555']:{name:'Deleted folder',parentId:'root',trashedAt:'2026-10-26T00:00:00.000Z'},
+ ['00000000-0000-4000-8000-000000000001']:{name:'Fonts',parentId:'root',trashedAt:null}
+}});
+const treeRow = (t,id) => nodes(t.h.find(n=>n.props['data-folder-branch']===id)).find(n=>n.props.onDrop);
+function startFileDrag(t) {
+ const transfer={types:[],files:[],setData(type){this.types.push(type);},setDragImage(){}};
+ t.h.all(n=>n.type==='li').find(n=>content(n).includes(file.name)).props.onDragStart({currentTarget:{},dataTransfer:transfer,preventDefault(){}});
+ t.render();
+ return {dataTransfer:transfer,preventDefault(){},stopPropagation(){}};
+}
+test('folder hierarchy loads immediately, expands ancestors and highlights current folder without exposing Trash',()=>{
+ const t=setup({library:{folders:treeFolders()}});
+ const tree=()=>t.h.find(n=>n.props['aria-label']==='File hierarchy');
+ assert.ok(tree());assert.doesNotMatch(content(tree()),/Deleted folder/);
+ assert.ok(t.button('Open folder: Fonts')); assert.equal(t.button('Open folder: My files').props['aria-current'],'location');
+ assert.equal(t.button('Open folder: References'),undefined);
+ t.button('Expand Projects').props.onClick();t.render();t.button('Open folder: References').props.onClick();t.render();
+ assert.equal(t.button('Open folder: References').props['aria-current'],'location');
+ assert.equal(t.button('Collapse Projects').props['aria-expanded'],true);
+ assert.equal(t.h.find(n=>n.type==='details').props.open,true);
+ t.button('Collapse Projects').props.onClick();t.render();assert.equal(t.button('Open folder: References'),undefined);
+ t.h.unmount();
+});
+test('hierarchy moves nested file directly to sibling folder, repeated drop writes only once',async()=>{
+ const gate=deferred(), t=setup({library:{folders:treeFolders(),files:[{...file,parentId:childId}]},fileChange:()=>gate.promise});
+ t.button('Expand Projects').props.onClick();t.render();t.button('Open folder: References').props.onClick();t.render();
+ const event=startFileDrag(t), target=treeRow(t,'44444444-4444-4444-8444-444444444444');
+ target.props.onDragOver(event);t.render();assert.equal(treeRow(t,'44444444-4444-4444-8444-444444444444').props['data-drop-target'],true);
+ target.props.onDrop(event);target.props.onDrop(event);
+ assert.equal(t.calls.filter(c=>c.method==='file').length,1);
+ assert.equal(t.calls.find(c=>c.method==='file').change.parentId,'44444444-4444-4444-8444-444444444444');
+ gate.resolve(file);await flush();t.render();assert.equal(t.dialog(),undefined);t.h.unmount();
+});
+test('hierarchy moves nested file to root and canceled drag never writes',async()=>{
+ const t=setup({library:{folders:treeFolders(),files:[{...file,parentId:childId}]}});
+ t.button('Expand Projects').props.onClick();t.render();t.button('Open folder: References').props.onClick();t.render();
+ let event=startFileDrag(t);t.h.tree.props.onKeyDown({key:'Escape'});t.render();treeRow(t,'root').props.onDrop(event);await flush();
+ assert.equal(t.calls.some(c=>c.method==='file'),false);
+ event=startFileDrag(t);treeRow(t,'root').props.onDrop(event);await flush();assert.equal(t.calls.find(c=>c.method==='file').change.parentId,'root');t.h.unmount();
+});
+test('hierarchy rejects self, descendant and stale destinations without bubbling a fallback move',async()=>{
+ const t=setup({library:{folders:treeFolders(),files:[]}});t.button('Expand Projects').props.onClick();t.render();
+ const card=t.h.all(n=>n.type==='li').find(n=>content(n).includes('Projects'));
+ const dataTransfer={types:[],files:[],setData(type){this.types.push(type);},setDragImage(){}};
+ let stopped=0;const event={currentTarget:{},dataTransfer,preventDefault(){},stopPropagation(){stopped++;}};
+ card.props.onDragStart(event);t.render();treeRow(t,childId).props.onDragOver(event);
+ assert.equal(dataTransfer.dropEffect,'none');assert.equal(stopped,1);
+ treeRow(t,childId).props.onDrop(event);await flush();assert.equal(t.calls.some(c=>c.method==='folder'),false);
+ card.props.onDragStart(event);t.render();const stale=treeRow(t,'44444444-4444-4444-8444-444444444444');
+ delete t.library.folders.folders['44444444-4444-4444-8444-444444444444'];t.render();stale.props.onDrop(event);await flush();
+ assert.equal(t.calls.some(c=>c.method==='folder'),false);t.h.unmount();
+});
+test('hierarchy keyboard move can be canceled and respects protected Fonts',async()=>{
+ const t=setup({library:{folders:treeFolders()}});await flush();t.render();
+ const card=t.h.all(n=>n.type==='li').find(n=>content(n).includes(file.name));
+ nodes(card).find(n=>n.type==='button'&&content(n)==='Reorder / move').props.onClick();t.render();
+ assert.ok(t.button('Move selected item to: Projects'));t.button('Cancel move').props.onClick();t.render();
+ assert.equal(t.button('Move selected item to: Projects'),undefined);assert.equal(t.calls.some(c=>c.method==='file'),false);
+ const fonts=t.h.all(n=>n.type==='li').find(n=>content(n).includes('Fonts folder'));
+ assert.equal(fonts.props.draggable,false);assert.equal(treeRow(t,'00000000-0000-4000-8000-000000000001').props.draggable,undefined);
+ t.library.ready=false;t.render();await flush();t.render();assert.equal(t.h.find(n=>n.props['aria-label']==='File hierarchy'),undefined);t.h.unmount();
+});
+
+test('Trash is an accessible icon view beside Refresh, never a destructive shortcut', async () => {
+ const t=setup({library:{files:[file,{...file,id:childId,name:'Old photo',trashedAt:'2026-10-26T00:00:00.000Z'}]}});
+ const actions=t.h.find(n=>n.type==='div' && n.props.className==='headingActions');
+ assert.ok(actions); assert.deepEqual(nodes(actions).filter(n=>n.type==='button').map(n=>n.props['aria-label']||content(n)),['Refresh files','Trash']);
+ assert.equal(t.button('Trash').props.title,'View Trash');assert.equal(t.button('Trash').props['aria-pressed'],false);
+ assert.ok(nodes(t.button('Trash')).some(n=>n.type?.name==='TrashIcon'));assert.equal(content(t.button('Trash')),'');
+ t.button('Trash').props.onClick();await flush();t.render();assert.equal(t.button('Trash').props['aria-pressed'],true);
+ assert.match(content(t.h.tree),/Old photo/);assert.doesNotMatch(content(t.h.tree),/Private cloud photo/);
+ assert.equal(t.dialog(),undefined);assert.equal(t.calls.some(c=>['file','folder','purge','purge-folders'].includes(c.method)),false);
+ t.button('My files').props.onClick();t.render();assert.equal(t.button('Trash').props['aria-pressed'],false);assert.match(content(t.h.tree),/Private cloud photo/);t.h.unmount();
+ const picker=setup({props:{manager:false,onSelect(){}}});assert.equal(picker.button('Trash'),undefined);picker.h.unmount();
+});
+
+test('file and folder Trash entrypoints are named red icons and protected Fonts has no Trash action', () => {
+ const folders={schemaVersion:1,revision:1,folders:{[folderId]:{name:'Project',parentId:'root',trashedAt:null},'00000000-0000-4000-8000-000000000001':{name:'Fonts',parentId:'root',trashedAt:null}}};
+ const t=setup({library:{folders}});
+ assert.equal(t.button('Move to Trash: Fonts'),undefined);
+ for(const name of ['Private cloud photo','Project']){
+  const button=t.button(`Move to Trash: ${name}`);assert.ok(button);assert.equal(button.props.title,`Move to Trash: ${name}`);
+  assert.equal(content(button),'');assert.ok(nodes(button).some(n=>n.type?.name==='TrashIcon'));
+  assert.match(button.props.className,/icon/);assert.doesNotMatch(button.props.className,/danger/);
+ }
+ t.h.unmount();
 });

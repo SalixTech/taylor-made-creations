@@ -256,3 +256,66 @@ test('reference constraints stay visible and reachable even if their configurabl
   for(const id of t.field('references').props['aria-describedby'].split(' '))assert.ok(t.h.find(n=>n.props.id===id),`missing description ${id}`);
   t.props.configuration={};t.render();for(const id of t.field('references').props['aria-describedby'].split(' '))assert.ok(t.h.find(n=>n.props.id===id));t.h.unmount();
 });
+
+test('spare parts reuse original applicability without merging main suit or other spare answers',()=>{
+  const {additionalPartFollowups}=sourceLoader()('src/components/commission-model.ts');
+  const mapping={'Arm sleeves':[],'Feetpaws (indoor)':['sandals'],'Feetpaws (outdoor)':['sandals'],'Hand paws':['hands'],'Short Tail':['tail'],'Large Tail':['tail'],'Floor Dragger Tail':['tail'],'Digitigrade Body Suit':['pockets'],'Plantigrade Body Suit':['pockets']};
+  for(const part of partTypes)assert.deepEqual(additionalPartFollowups(part),mapping[part]);
+  const draft={...valid,suit:'Mini partial',hands:['Finger Escapes'],tailSize:'Large (16–30 inches)',tail:['Squeaker'],additionalParts:[{part:'Hand paws',quantity:2,details:{hands:['Plush claws'],tail:['Squeaker']}},{part:'Large Tail',quantity:1,details:{tail:['Hidden pocket']}},{part:'Short Tail',quantity:1,details:{tail:['Squeaker']}}]};
+  const clean=cleanDraft(draft,quantities);
+  assert.deepEqual(clean.hands,['Finger Escapes']);assert.deepEqual(clean.tail,['Squeaker']);
+  assert.deepEqual(clean.additionalParts.find(item=>item.part==='Hand paws').details,{hands:['Plush claws']});
+  const rows=reviewRows(draft,[image],quantities);
+  assert.deepEqual(rows.find(([label])=>label==='Large Tail · Tail extras'),['Large Tail · Tail extras','Hidden pocket']);
+  assert.deepEqual(rows.find(([label])=>label==='Short Tail · Tail extras'),['Short Tail · Tail extras','Squeaker']);
+  assert.deepEqual(cleanDraft(draft).additionalParts.find(item=>item.part==='Hand paws'),{part:'Hand paws',quantity:1,details:{hands:['Plush claws']}});
+  assert.equal(reviewRows({...draft,suit:'Parts',parts:['Arm sleeves']},[image]).some(([label])=>label.includes(' · ')),false);
+});
+
+test('additional followups honor original configurable labels/options/requirements and do not require inactive main fields',()=>{
+  const configuration={fields:{tail:{label:'Tail customizations',required:true,optionLabels:{'Hidden pocket':'Secret pocket'}}}};
+  const selected={...valid,additionalParts:[{part:'Large Tail',quantity:1}]};
+  const errors=validate(selected,[image],{configuration});
+  assert.equal(errors.tail,undefined);assert.equal(errors.tailSize,undefined);
+  assert.match(errors['additionalParts-5-tail'],/Tail customizations.*Large Tail/);
+  const answered={...selected,additionalParts:[{part:'Large Tail',quantity:1,details:{tail:['Hidden pocket']}}]};
+  assert.deepEqual(validate(answered,[image],{configuration}),{});
+  assert.deepEqual(reviewRows(answered,[image],{configuration}).find(([label])=>label==='Large Tail · Tail customizations'),['Large Tail · Tail customizations','Secret pocket']);
+  const invalid={...selected,additionalParts:[{part:'Large Tail',quantity:1,details:{tail:['Invalid']}}]};
+  assert.match(validate(invalid,[image],{configuration})['additionalParts-5-tail'],/valid option/);
+  assert.doesNotMatch(JSON.stringify(reviewRows(invalid,[image],{configuration})),/Invalid/);
+  assert.deepEqual(validate(selected,[image],{configuration:{fields:{tail:{required:false}}}}),{});
+});
+
+test('selected additional parts show scoped original followups, survive review and lose answers when deselected',async()=>{
+  const t=fixture({configuration:{fields:{tail:{label:'Tail customizations',hint:'Tail help',required:true,optionLabels:{'Hidden pocket':'Secret pocket'}}}}});
+  t.selectSuit('Head only');t.choose('Large Tail');
+  assert.match(content(t.field('additionalParts-5-tail')),/Tail customizations.*Secret pocket.*Tail help/);
+  assert.equal(t.field('tail'),undefined);assert.equal(t.field('tailSize'),undefined);
+  await t.complete();t.submit();assert.match(content(t.h.tree),/Complete “Tail customizations” for Large Tail/);
+  const choice=nodes(t.field('additionalParts-5-tail')).find(n=>n.type==='input'&&n.props.value==='Hidden pocket');
+  choice.props.onChange({target:{checked:true}});t.render();t.submit();
+  assert.match(content(t.h.tree),/Large Tail · Tail customizationsSecret pocket/);
+  t.button('Back to edit').props.onClick();t.render();
+  assert.equal(nodes(t.field('additionalParts-5-tail')).find(n=>n.type==='input'&&n.props.value==='Hidden pocket').props.checked,true);
+  t.choose('Large Tail',false);assert.equal(t.field('additionalParts-5-tail'),undefined);t.submit();
+  assert.doesNotMatch(content(t.h.tree),/Secret pocket/);
+  t.button('Back to edit').props.onClick();t.render();t.choose('Large Tail');
+  assert.equal(nodes(t.field('additionalParts-5-tail')).find(n=>n.type==='input'&&n.props.value==='Hidden pocket').props.checked,false);
+  t.h.unmount();
+});
+
+test('all original extra-part controls remain reachable in private preview with separate values and exact wording',()=>{
+  const h=harness(),previewContent=h.load('src/owner/defaults.ts').createDefaultOwnerContent();h.unmount();
+  const t=fixture({previewContent,configuration:{}});t.selectSuit('Head only');
+  for(const part of ['Hand paws','Feetpaws (indoor)','Feetpaws (outdoor)','Digitigrade Body Suit','Plantigrade Body Suit'])t.choose(part);
+  assert.match(content(t.field('additionalParts-3-hands')),/Hand paw extras.*Finger Escapes.*Squeakers.*NFC chip\(s\).*Plush claws/);
+  assert.match(content(t.field('additionalParts-7-pockets')),/Body suit pockets.*None.*1 pocket.*2 pockets/);
+  const indoor=nodes(t.field('additionalParts-1-sandals')).find(n=>n.type==='input');indoor.props.onChange({target:{checked:true}});t.render();
+  assert.equal(nodes(t.field('additionalParts-1-sandals')).find(n=>n.type==='input').props.checked,true);
+  assert.equal(nodes(t.field('additionalParts-2-sandals')).find(n=>n.type==='input').props.checked,false);
+  const pocket=nodes(t.field('additionalParts-7-pockets')).find(n=>n.type==='input'&&n.props.value==='2 pockets');pocket.props.onChange({target:{checked:true}});t.render();
+  assert.equal(nodes(t.field('additionalParts-7-pockets')).find(n=>n.type==='input'&&n.props.value==='2 pockets').props.checked,true);
+  assert.equal(nodes(t.field('additionalParts-8-pockets')).find(n=>n.type==='input'&&n.props.value==='2 pockets').props.checked,false);
+  t.h.unmount();
+});

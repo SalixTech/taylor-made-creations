@@ -17,3 +17,5 @@
 
 /* Consistent rounded action controls, including the custom file label. */
 .fileButton,.secondary{border-radius:10px;text-shadow:none;font-synthesis:none;font-weight:500}
+/* Each spare part owns its followup questions below its selection row. */
+.additionalPart{flex-wrap:wrap}.additionalPart>.field{flex-basis:100%;min-width:0;margin:0}
