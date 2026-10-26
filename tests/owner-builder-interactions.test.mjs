@@ -145,3 +145,13 @@ test('uploaded font selectors use only known draft library IDs',()=>{
   const props={value,fonts:[font],onEdit(change){value=structuredClone(value);change(value);props.value=value;},onReset(){}};const render=()=>h.render(OwnerAppearancePanel,props);render();const select=()=>h.find(n=>n.type?.name==='OwnerSelect'&&n.props.label==='Uploaded font for this element');
   select().props.onChange(font.id);render();assert.equal(value.fontId,font.id);select().props.onChange('unknown-font');assert.equal(value.fontId,font.id);select().props.onChange('');assert.equal(value.fontId,undefined);
 });
+test('More summary remains a working disclosure in edit mode instead of opening Header settings',()=>{
+  const t=builderSetup();const summary=t.node({ownerEdit:'site'});summary.closest=selector=>selector==='.nav-more > summary'?summary:null;let prevented=0;
+  for(const key of [undefined,'Enter',' ']){const event={target:summary,preventDefault(){prevented++;},stopPropagation(){},...(key?{key}:{detail:1})};(key?t.canvas().props.onKeyDownCapture:t.canvas().props.onClickCapture)(event);t.render();assert.equal(t.h.find(n=>n.type==='aside'&&n.props['aria-label']==='Header & footer'),undefined);}
+  assert.equal(prevented,0,'native details activation is not swallowed');
+});
+test('native canvas drag uses whole-section ghost, stable placeholder and cancels without a draft write',()=>{
+  const t=builderSetup();t.props.onEdit(draft=>{draft.pages[0].blocks=['a','b','c'].map(id=>({id,type:'text',heading:'',body:id}));});t.render();const a=t.node({ownerEdit:'block:a'});let ghost;
+  const event=t.event(a,10,25);event.dataTransfer.setDragImage=(node,x,y)=>{ghost={node,x,y};};t.canvas().props.onDragStartCapture(event);assert.equal(ghost.node,a);assert.equal(a.dataset.ownerDragging,'true');assert.deepEqual(t.value.pages[0].blocks.map(b=>b.id),['a','b','c']);
+  t.canvas().props.onDragEnd();assert.equal(a.dataset.ownerDragging,undefined);assert.deepEqual(t.value.pages[0].blocks.map(b=>b.id),['a','b','c']);let blocked=0;t.canvas().props.onClickCapture({target:a,detail:1,preventDefault(){blocked++;},stopPropagation(){}});assert.equal(blocked,1);
+});

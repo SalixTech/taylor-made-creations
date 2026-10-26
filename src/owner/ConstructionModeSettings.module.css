@@ -1,0 +1,29 @@
+.content {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.content > p { margin: 0; }
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  min-width: 0;
+}
+.setting {
+  flex: 1 1 380px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.setting > label { margin: 0; }
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+.actions > button { flex: 0 0 auto; width: auto; }

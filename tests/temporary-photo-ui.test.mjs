@@ -39,10 +39,10 @@ test('Trash waits for confirmation, ignores repeated clicks, hides chooser item,
   assert.equal(t.dialog(), undefined); assert.equal(t.button(`Use photo: ${photo.name}`), undefined); assert.equal(t.library.assets[0].src, photo.src); assert.deepEqual(t.selected, []);
   assert.match(content(t.h.tree), /Existing page photos are unchanged/); assert.equal(t.h.focusLog.at(-1), 'Photos (0)'); t.h.unmount();
 });
-test('Trash shows View and Restore, never Use photo or permanent deletion; restore returns item to chooser', async () => {
+test('Trash shows View, Restore and safely scoped Empty Trash; restore returns item to chooser', async () => {
   const t = setup({ library: { assets: [{ ...photo, trashedAt: '2026-10-26T00:00:00.000Z' }] } });
   t.button('Trash (1)').props.onClick(); t.render(); assert.ok(t.button(`View photo: ${photo.name}`)); assert.equal(t.button(`Use photo: ${photo.name}`), undefined); assert.equal(t.button(`Delete photo: ${photo.name}`), undefined);
-  assert.match(content(t.h.tree), /Permanent deletion is not available/); t.button(`Restore photo: ${photo.name}`).props.onClick(); await flush(); t.render();
+  assert.match(content(t.h.tree), /Empty Trash permanently removes library entries/); assert.match(content(t.h.tree), /does not free disk space/); t.button(`Restore photo: ${photo.name}`).props.onClick(); await flush(); t.render();
   assert.deepEqual(t.calls.map(call => call.action), ['restore']); assert.equal(t.library.assets[0].trashedAt, null); assert.equal(t.h.focusLog.at(-1), 'Trash (0)');
   t.button('Photos (1)').props.onClick(); t.render(); assert.ok(t.button(`Use photo: ${photo.name}`)); assert.deepEqual(t.selected, []); t.h.unmount();
 });

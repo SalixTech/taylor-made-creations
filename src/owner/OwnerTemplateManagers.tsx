@@ -81,6 +81,7 @@ export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility,
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [tagInputs, setTagInputs] = useState<Record<string, string>>({});
   const savingListing = useRef(false);
+  const [savingListingId, setSavingListingId] = useState<string | null>(null);
   const draftSection = useRef<HTMLDetailsElement>(null);
   function editListing(id: string, patch: Partial<OwnerPremade>) {
     onEdit(draft => { const item = draft.premades.find(listing => listing.id === id); if (item) Object.assign(item, patch); });
@@ -91,14 +92,15 @@ export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility,
     setEditing(id); setDraftsOpen(true); draftSection.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
   async function saveListing(item: OwnerPremade) {
-    if (!canSavePremadeDraft || !onSavePremadeDraft || savingListing.current) return;
-    savingListing.current = true;
+    const tags = getPremadeTags(item);
+    if (!canSavePremadeDraft || !onSavePremadeDraft || savingListing.current || tags.length > MAX_PREMADE_TAGS || tags.some(tag => tag.length > MAX_PREMADE_TAG_LENGTH)) return;
+    savingListing.current = true; setSavingListingId(item.id);
     try {
       if (await onSavePremadeDraft(item)) {
         setEditing(null); setDraftsOpen(false);
         setTagInputs(current => { const next = { ...current }; delete next[item.id]; return next; });
       }
-    } finally { savingListing.current = false; }
+    } finally { savingListing.current = false; setSavingListingId(null); }
   }
   const activeListings = content.premades.filter(item => !item.isDraft);
   const draftListings = content.premades.filter(item => item.isDraft);
@@ -106,15 +108,23 @@ export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility,
     const cover = getPremadeCoverPhoto(item), photos = getPremadePhotos(item);
     const tags = getPremadeTags(item);
     const tagsInvalid = tags.length > MAX_PREMADE_TAGS || tags.some(tag => tag.length > MAX_PREMADE_TAG_LENGTH);
-    return <div key={item.id} className={editing === item.id ? styles.expandedListing : undefined}><Card title={item.name || "Untitled premade"} action={<div className={ui.inlineActions}>
-      <span className={ui.badge}>{item.soldChannel === "third-party" ? "Sold on third party" : item.soldChannel === "con" ? "Sold at con" : "Sold Here"}</span>{tags.map(tag => <span className={`${ui.badge} ${styles.listingTag}`} key={tag}>{tag}</span>)}<span className={`${ui.badge} ${item.visible && !item.isDraft ? ui.badgeVisible : ""}`}>{item.isDraft ? "Private listing draft" : item.visible ? "Shown in draft" : "Hidden in draft"}</span>
-      {!item.isDraft && <MoveButtons label={item.name || "listing"} index={index} length={group.length} onMove={direction => onEdit(draft => {
+    const listingSaveProps = {
+      disabled: !canSavePremadeDraft || !onSavePremadeDraft || tagsInvalid || savingListingId !== null,
+      "aria-busy": savingListingId === item.id,
+      onClick: () => void saveListing(item),
+    };
+    const listingSaveLabel = savingListingId === item.id ? "Saving draft…" : "Save as Draft";
+    return <div key={item.id} className={`${styles.listingCard} ${editing === item.id ? styles.expandedListing : ""}`}><Card title={item.name || "Untitled premade"} action={<div className={styles.listingActions}>
+      <div className={styles.listingBadges}>
+      <span className={ui.badge}>{item.soldChannel === "third-party" ? "Sold on third party" : item.soldChannel === "con" ? "Sold at con" : "Sold Here"}</span>{tags.map(tag => <span className={`${ui.badge} ${styles.listingTag}`} key={tag}>{tag}</span>)}<span className={`${ui.badge} ${item.visible && !item.isDraft ? ui.badgeVisible : ""}`}>{item.isDraft ? "Private listing draft" : item.visible ? "Shown in draft" : "Hidden in draft"}</span></div>
+      <div className={styles.listingControls}>{!item.isDraft && <MoveButtons label={item.name || "listing"} index={index} length={group.length} onMove={direction => onEdit(draft => {
         const other = group[index + direction];
         if (!other) return;
         const from = draft.premades.findIndex(entry => entry.id === item.id), to = draft.premades.findIndex(entry => entry.id === other.id);
         if (from >= 0 && to >= 0) [draft.premades[from], draft.premades[to]] = [draft.premades[to], draft.premades[from]];
       })} />}
-      <button type="button" className={ui.secondary} aria-expanded={editing === item.id} onClick={() => setEditing(editing === item.id ? null : item.id)}>{editing === item.id ? "Close details" : "Edit listing"}</button>
+      {editing === item.id && <button type="button" className={ui.secondary} {...listingSaveProps}>{listingSaveLabel}</button>}
+      <button type="button" className={ui.secondary} aria-expanded={editing === item.id} onClick={() => setEditing(editing === item.id ? null : item.id)}>{editing === item.id ? "Close details" : "Edit listing"}</button></div>
     </div>}>
       {editing === item.id ? <>
         <div className={ui.twoCol}><Field label="Listing name" value={item.name} onChange={value => editListing(item.id, { name: value })} /><Field label="Price (USD, optional)" type="number" value={item.price ?? ""} onChange={value => editListing(item.id, { price: value === "" ? null : Number(value) })} hint="Leave blank if you’re not ready to set a price." /></div>
@@ -130,14 +140,14 @@ export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility,
         {tagsInvalid && <p className={ui.error} role="alert">Use no more than 10 tags, with up to 80 characters in each tag. No tags have been discarded.</p>}
         <PremadePhotoEditor key={item.id} item={item} onChange={patch => editListing(item.id, patch)} />
         {item.isDraft ? <p className={ui.help}>This listing draft stays private, even when you publish the whole website. Choose Publish to store when it is ready.</p> : <Toggle label="Show this listing" checked={item.visible} onChange={value => editListing(item.id, { visible: value })} hint="The shop switch also needs to be on for visitors to see this listing. Preview to review your draft privately." />}
-        <div className={styles.publishListing}><button type="button" className={ui.secondary} disabled={!canSavePremadeDraft || !onSavePremadeDraft || tagsInvalid} onClick={() => void saveListing(item)}>Save as Draft</button><button type="button" className={ui.primary} disabled={!canPublishPremade || !onPublishPremade || tagsInvalid} onClick={() => onPublishPremade?.(item)}>Publish to store</button><p className={ui.help}>Save as Draft saves only this card privately, without changing an already-live listing. {canPublishPremade ? "Publish to store publishes only this listing; other draft edits and the shop switch are unchanged." : "Publish the website once and confirm its live shop state before publishing individual listings."}</p></div>
+        <div className={styles.publishListing}><button type="button" className={ui.secondary} {...listingSaveProps}>{listingSaveLabel}</button><button type="button" className={ui.primary} disabled={!canPublishPremade || !onPublishPremade || tagsInvalid} onClick={() => onPublishPremade?.(item)}>Publish to store</button><p className={ui.help}>Save as Draft saves only this card privately, without changing an already-live listing. {canPublishPremade ? "Publish to store publishes only this listing; other draft edits and the shop switch are unchanged." : "Publish the website once and confirm its live shop state before publishing individual listings."}</p></div>
         <button type="button" className={ui.dangerLink} onClick={() => onRemove(`Remove “${item.name}”?`, "This removes the listing from your draft. Its photos are not deleted, and the live website stays unchanged until you publish.", () => { onEdit(draft => { draft.premades = draft.premades.filter(listing => listing.id !== item.id); }); setEditing(null); })}>Remove listing</button>
       </> : <>
         <div className={styles.listingSummary}>
           <div className={styles.listingThumbnail}><OwnerImage src={cover.src} alt={cover.alt} style={{ objectFit: item.imageFit ?? "contain", objectPosition: `${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%` }} /></div>
           <div><p className={styles.listingPrice}>{item.price === null ? "No price set" : `$${item.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}`}</p><p className={ui.help}>{item.description || "Add a description and photos to introduce this character."}</p><p className={styles.itemMeta}>{photos.length} {photos.length === 1 ? "photo" : "photos"} · Cover shown</p></div>
         </div>
-        {!item.isDraft && <button type="button" className={ui.secondary} disabled={!canSavePremadeDraft || !onSavePremadeDraft || tagsInvalid} onClick={() => void saveListing(item)}>Save as Draft</button>}
+        {!item.isDraft && <button type="button" className={ui.secondary} {...listingSaveProps}>{listingSaveLabel}</button>}
       </>}
     </Card></div>;
   }
@@ -175,8 +185,9 @@ export function HomePageManager({ content, onEdit }: ManagerProps) {
   </div>;
 }
 
-export function ContactSettingsManager({ content, onEdit, userEmail, onSync }: ManagerProps & { userEmail: string; onSync: () => void }) {
+export function ContactSettingsManager({ content, onEdit, userEmail, onSync, constructionSettings }: ManagerProps & { userEmail: string; onSync: () => void; constructionSettings?: import("react").ReactNode }) {
   return <div className={styles.manager} data-template-manager="settings">
+    {constructionSettings}
     <div className={ui.twoCol}>
       <Card title="Your business"><Field label="Business name" value={content.site.name} onChange={value => onEdit(draft => { draft.site.name = value; })} hint="Shown in your website’s header and footer after publishing." /></Card>
       <Card title="Commission availability">
@@ -193,7 +204,7 @@ export function ContactSettingsManager({ content, onEdit, userEmail, onSync }: M
     </div></Card>
     <Card title="This workspace">
       <p className={ui.help}>Signed in as <strong>{userEmail}</strong>.</p>
-      <p className={ui.help}>Save draft stores changes privately in your owner account. Preview shows current edits without saving. Publish live updates the public website; the premade shop has a separate, explicit visibility-only Update live action. Saving needs an internet connection; an error leaves your edits on screen.</p>
+      <p className={ui.help}>Save draft stores changes privately in your owner account. Preview shows current edits without saving. Publish live updates published content but never turns Construction Mode off. Construction Mode and the premade shop have separate, explicit Update live actions. Saving needs an internet connection; an error leaves your edits on screen.</p>
       <p className={ui.help}>Cloud Sync checks your saved cloud draft. If you have unsaved edits, you can save first, explicitly reload the saved version, or keep editing. It never silently replaces unsaved work.</p>
       <button type="button" className={ui.secondary} onClick={onSync}>Cloud Sync</button>
     </Card>

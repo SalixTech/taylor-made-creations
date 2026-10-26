@@ -7,23 +7,20 @@ import { harness, content, nodes } from './owner-ui-harness.mjs';
 const read = file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-test('construction is fail-closed by default, even when configured; only exact server open permits public reads', async () => {
+test('construction is fail-closed without explicit valid live config, regardless of obsolete server environment', async () => {
   const reader = sourceLoader()('src/server/published-site.ts');
   const previous = process.env.TMC_PUBLIC_SITE_ACCESS;
-  let fetches = 0;
   try {
-    for (const setting of [undefined, '', 'closed', 'false', 'true', 'OPEN', ' open ']) {
+    for (const setting of [undefined, '', 'closed', 'false', 'true', 'OPEN', ' open ', 'open']) {
       if (setting === undefined) delete process.env.TMC_PUBLIC_SITE_ACCESS;
       else process.env.TMC_PUBLIC_SITE_ACCESS = setting;
       for (const projectId of ['', 'taylor-made-creations']) {
-        const state = await reader.readPublishedSite({ projectId, fetcher: async () => { fetches++; throw Error('Must not fetch locked data'); } });
+        const paths=[];
+        const state = await reader.readPublishedSite({ projectId, fetcher: async url => { paths.push(url); return Response.json({}, {status:404}); } });
         assert.deepEqual(state, { status: 'locked' });
-        assert.equal(JSON.stringify(state), '{"status":"locked"}');
+        assert.ok(paths.every(path=>path.endsWith('/site/access')));
       }
     }
-    assert.equal(fetches, 0);
-    process.env.TMC_PUBLIC_SITE_ACCESS = 'open';
-    assert.deepEqual(await reader.readPublishedSite({ projectId: '' }), { status: 'baseline', reason: 'unconfigured' });
   } finally {
     if (previous === undefined) delete process.env.TMC_PUBLIC_SITE_ACCESS;
     else process.env.TMC_PUBLIC_SITE_ACCESS = previous;
@@ -52,8 +49,10 @@ test('root, builtins, custom routes, direct product and commission requests retu
   const { PublishedRoute } = h.load('src/server/PublishedRoute.tsx');
   for (const slug of [[], ['gallery'], ['terms'], ['suitcare'], ['contact'], ['about-taylor'], ['premades', 'private-product'], ['commissions', 'request']]) {
     const tree = await PublishedRoute({ slug, fallback: 'DO_NOT_SERIALIZE_BASELINE_OR_DRAFT' });
-    assert.equal(tree.type.name, 'UnderConstruction');
-    assert.deepEqual(tree.props, {});
+    assert.equal(tree.type.name, 'PublishedPage');
+    assert.deepEqual(tree.props.serverState, {status:'locked'});
+    assert.deepEqual(tree.props.slug, slug);
+    assert.equal(tree.props.fallback, undefined);
     assert.doesNotMatch(JSON.stringify(tree), /DO_NOT_SERIALIZE/);
   }
 });
@@ -76,8 +75,8 @@ test('malformed and deeper public paths return the construction gate before the 
   const CustomPage = h.load('src/app/[...slug]/page.tsx').default;
   for (const slug of [['does', 'not', 'exist'], ['UPPERCASE'], ['not-a-page!']]) {
     const result = await CustomPage({ params: Promise.resolve({ slug }) });
-    assert.equal(result.type.name, 'UnderConstruction');
-    assert.deepEqual(result.props, {});
+    assert.equal(result.type.name, 'PublishedPage');
+    assert.deepEqual(result.props, {slug, serverState:{status:'locked'}});
   }
 });
 
@@ -108,15 +107,15 @@ test('locked 404, client page, header and footer never expose baseline links or 
   assert.equal(h.render(chrome.PublicFooter), null);
 });
 
-test('locked public and private owner routes do not refresh public content; an already-open tab accepts a lock response', async () => {
+test('locked public tabs refresh while private owner routes stay independent; open tabs accept a lock response', async () => {
   for (const pathname of ['/', '/gallery', '/taylor', '/taylor/preview/gallery']) {
     const h = harness(); h.pathname = pathname;
     let calls = 0;
-    h.globals.fetch = async () => { calls++; throw Error('Public fetch forbidden'); };
+    h.globals.fetch = async () => { calls++; return Response.json({status:'locked'},{status:503}); };
     const { PublicSiteProvider } = h.load('src/components/PublicSiteContext.tsx');
     h.render(PublicSiteProvider, { initialState: { status: 'locked' }, children: null });
     await flush();
-    assert.equal(calls, 0, pathname);
+    assert.equal(calls, /^\/taylor/.test(pathname) ? 0 : 1, pathname);
     assert.deepEqual(h.tree.props.value.state, { status: 'locked' });
     h.unmount();
   }
@@ -153,10 +152,10 @@ test('private preview passes the existing verified owner session only, renders r
   h.unmount();
 });
 
-test('Firestore public document gets are owner-only during construction; exact owner and write checks remain intact', () => {
+test('Firestore publication is conditional on safe live access; exact owner and write checks remain intact', () => {
   const rules = read('firebase/firestore.rules');
   const publication = rules.slice(rules.indexOf('match /site/published'), rules.indexOf('function validDraftId'));
-  assert.match(publication, /allow get: if isOwner\(\);/);
+  assert.match(publication, /allow get: if isOwner\(\) \|\| \(isPublicSiteOpen\(\) && validWorkspace\(resource\.data\)\);/);
   assert.doesNotMatch(publication, /allow get: if true|allow read:/);
   assert.match(rules, /request\.auth\.uid == 'a4ARjp0z8ZOByKlC2AfGzmMRj843'/);
   assert.match(publication, /allow create: if isOwner\(\) && validWorkspace/);

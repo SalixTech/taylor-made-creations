@@ -1,0 +1,79 @@
+/* Opt in with data-owner-button and button + a variant. Keep native button
+   semantics. The owner boundary excludes editable/public design canvases. */
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button]) {
+  --action-bg:var(--owner-button-secondary-bg);
+  --action-ink:var(--owner-button-secondary-ink);
+  --action-line:var(--owner-button-secondary-line);
+  --action-hover:var(--owner-button-secondary-hover);
+  --action-active:var(--owner-button-secondary-active);
+  appearance:none;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-width:0;
+  max-width:100%;
+  min-height:var(--owner-button-height);
+  padding:10px 16px;
+  border:1px solid var(--action-line);
+  border-radius:var(--owner-button-radius);
+  background-color:var(--action-bg);
+  color:var(--action-ink);
+  font:inherit;
+  font-size:12px;
+  font-weight:600;
+  line-height:1.5;
+  text-align:center;
+  text-decoration:none;
+  white-space:normal;
+  overflow-wrap:anywhere;
+  cursor:pointer;
+  transition:background-color .16s ease,border-color .16s ease;
+}
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))).primary:global([data-owner-button]) {
+  --action-bg:var(--owner-button-primary-bg);
+  --action-ink:var(--owner-button-primary-ink);
+  --action-line:var(--owner-button-primary-line);
+  --action-hover:var(--owner-button-primary-hover);
+  --action-active:var(--owner-button-primary-active);
+}
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))).secondary:global([data-owner-button]) { --action-bg:var(--owner-button-secondary-bg); }
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))).danger:global([data-owner-button]) {
+  --action-bg:var(--owner-button-danger-bg);
+  --action-ink:var(--owner-button-danger-ink);
+  --action-line:var(--owner-button-danger-line);
+  --action-hover:var(--owner-button-danger-hover);
+  --action-active:var(--owner-button-danger-active);
+}
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))).quiet:global([data-owner-button]) {
+  --action-bg:transparent;
+  --action-ink:var(--owner-button-quiet-ink);
+  --action-line:transparent;
+}
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))).compact:global([data-owner-button]) { min-height:var(--owner-button-compact-height); padding:7px 10px; }
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))).icon:global([data-owner-button]) { width:var(--owner-button-height); min-width:var(--owner-button-height); padding:0; flex-shrink:0; font-size:20px; }
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button]) > svg { flex-shrink:0; }
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button]):enabled:hover { background-color:var(--action-hover); }
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button]):enabled:active { background-color:var(--action-active); }
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button])[aria-pressed="true"] {
+  --action-bg:var(--owner-button-selected-bg);
+  --action-ink:var(--owner-button-selected-ink);
+  --action-line:var(--owner-button-selected-line);
+  --action-hover:var(--owner-button-selected-hover);
+  --action-active:var(--owner-button-selected-active);
+  box-shadow:inset 0 0 0 1px var(--owner-button-selected-line);
+}
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button]):focus-visible { outline:3px solid var(--owner-button-focus); outline-offset:3px; }
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button]):disabled {
+  background-color:var(--owner-button-disabled-bg);
+  color:var(--owner-button-disabled-ink);
+  border-color:var(--owner-button-disabled-line);
+  opacity:1;
+  box-shadow:none;
+  cursor:not-allowed;
+}
+:global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button])[aria-busy="true"] { cursor:progress; }
+@media(prefers-reduced-motion:reduce) { :global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button]) { transition:none; } }
+@media(forced-colors:active) { :global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))):global([data-owner-button])[aria-pressed="true"] { outline:2px solid Highlight; outline-offset:-4px; } }
+
+@media(max-width:550px) { :global([data-owner-portal]) .button:not(:where(:global([data-site-render-mode]), :global([data-site-render-mode] *))).compact:global([data-owner-button]) { min-height:var(--owner-button-height); padding:7px 8px; } }

@@ -8,3 +8,14 @@
 .dialog > div:last-child { flex:0 0 auto; }
 .dialog p,.dialog li,.dialog strong { overflow-wrap:anywhere; }
 @media(max-width:600px) { .dialog > div:first-child h2 { font-size:19px; } }
+
+.headingActions { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.headingActions button { display:grid; place-items:center; }
+.dialog.maximized { position:fixed; inset:0; margin:0; width:100vw; height:100dvh; max-width:100vw; max-height:100dvh; border-radius:0; }
+.dialog.maximized > div:nth-child(2) { display:flex; flex-direction:column; overflow:hidden; }
+.dialog.maximized [data-dialog-preview] { flex:1 1 auto; min-height:0; max-height:none; }
+.dialog.maximized > div:nth-child(2) > p { flex:0 0 auto; }
+
+/* Title-only confirmations keep their count and actions without an empty body. */
+.dialog[data-compact=true] > div:first-child { padding-bottom:22px; }
+.dialog[data-compact=true] > div:nth-child(2) { display:none; }

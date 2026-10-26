@@ -1,6 +1,7 @@
 import { createDefaultOwnerContent, createInitialOwnerWorkspace } from "./defaults";
 import { assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assertOwnerDraftId, normalizeOwnerDraftName, namedDraftSummary, newOwnerId, MAX_NAMED_DRAFTS, OwnerValidationError } from "./model";
 import type { OwnerContent, OwnerPremade, OwnerWorkspace, OwnerNamedDraft, OwnerNamedDraftSummary, SaveNamedDraftOptions } from "./model";
+import type { SiteAccess } from "./site-access";
 
 export const OWNER_STORAGE_EVENT = "tmc-owner-workspace-changed";
 export const OWNER_DATABASE_NAME = "tmc-owner-local-preview-v1";
@@ -58,6 +59,10 @@ export interface OwnerStore {
   readLiveShopVisibility?(): Promise<boolean | null>;
   /** Changes only an already-published shop flag, never publishes draft edits. */
   updateLiveShopVisibility?(showPremades: boolean, expectedRevision: number): Promise<OwnerWorkspace>;
+  /** Minimal live gate, independent of workspace/publication. Missing config is ON, revision zero. */
+  readLiveSiteAccess?(): Promise<SiteAccess>;
+  /** Exact-owner, optimistic transaction. Opening requires an existing valid published snapshot. */
+  updateConstructionMode?(constructionMode: boolean, expectedRevision: number): Promise<SiteAccess>;
   /** Discards draft edits, returning to the last local preview, or baseline if none. */
   resetDraft(expectedRevision: number): Promise<OwnerWorkspace>;
   subscribe(callback: () => void): () => void;

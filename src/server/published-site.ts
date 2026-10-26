@@ -1,11 +1,13 @@
 import { cache } from "react";
 import { assertPublishedOwnerSnapshot, type PublishedOwnerSnapshot } from "../owner/model";
+import { decodeSiteAccessRestDocument } from "../owner/site-access";
 
-export type PublicSiteState =
+export type PublicSiteState = (
   | { status: "locked" }
   | { status: "baseline"; reason: "unconfigured" | "not-published" }
   | { status: "published"; snapshot: PublishedOwnerSnapshot }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string }
+) & { accessRevision?: number };
 const unavailable = (): PublicSiteState => ({ status: "error", message: "The published website could not be loaded. Please try again shortly. No older or private draft content has been substituted." });
 const MAX_PUBLIC_BYTES = 700_000;
 
@@ -28,30 +30,34 @@ export function decodePublishedRestDocument(value: unknown): PublishedOwnerSnaps
   return snapshot;
 }
 
-/** Public Firestore REST GET: no Admin SDK, credentials, cookies, or owner token. Rules remain authoritative. */
+/** Public Firestore REST GETs: no Admin SDK, credentials, cookies, or owner token.
+ * The safe access document and deployed rules, not a build-time flag, authorize
+ * publication. Missing configuration never opens the bundled baseline site. */
 export async function readPublishedSite({ projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, fetcher = fetch }: { projectId?: string; fetcher?: typeof fetch } = {}): Promise<PublicSiteState> {
-  // Temporary construction lock, including the root layout's serialized RSC props,
-  // direct page routes, public JSON, media and fonts. Only an explicit SERVER setting
-  // opens it; query strings, browser storage and client Firebase state cannot.
-  // Firestore /site/published rules must also be owner-only while this is locked.
-  if (process.env.TMC_PUBLIC_SITE_ACCESS !== "open") return { status: "locked" };
-  if (!projectId) return { status: "baseline", reason: "unconfigured" };
-  if (!/^[a-z][a-z0-9-]{4,29}$/.test(projectId)) return unavailable();
+  if (!projectId || !/^[a-z][a-z0-9-]{4,29}$/.test(projectId)) return { status: "locked" };
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/site`;
+  const read = (path: string) => fetcher(`${base}/${path}`, {
+    method: "GET", cache: "no-store", credentials: "omit", headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000),
+  });
+  let accessRevision: number;
   try {
-    const response = await fetcher(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/site/published`, {
-      method: "GET", cache: "no-store", credentials: "omit", headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000),
-    });
-    if (response.status === 404) {
-      const error = await response.json() as { error?: { status?: string; message?: string } };
-      // A missing database/project/endpoint is not evidence of a never-published site.
-      return error.error?.status === "NOT_FOUND" && /^Document\s.+\snot found\.?$/i.test(error.error.message ?? "")
-        ? { status: "baseline", reason: "not-published" } : unavailable();
-    }
-    if (!response.ok) return unavailable();
+    const response = await read("access");
+    if (!response.ok) return { status: "locked" };
     const text = await response.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_PUBLIC_BYTES * 2 + 20_000) return unavailable();
-    return { status: "published", snapshot: decodePublishedRestDocument(JSON.parse(text)) };
-  } catch { return unavailable(); }
+    if (new TextEncoder().encode(text).byteLength > 4096) return { status: "locked" };
+    const access = decodeSiteAccessRestDocument(JSON.parse(text));
+    accessRevision = access.revision;
+    if (access.constructionMode) return { status: "locked", accessRevision };
+  } catch { return { status: "locked" }; }
+  try {
+    const response = await read("published");
+    // A valid OFF flag is not permission to substitute defaults or a draft when
+    // the published document disappears, is denied, or cannot be validated.
+    if (!response.ok) return { ...unavailable(), accessRevision };
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_PUBLIC_BYTES * 2 + 20_000) return { ...unavailable(), accessRevision };
+    return { status: "published", snapshot: decodePublishedRestDocument(JSON.parse(text)), accessRevision };
+  } catch { return { ...unavailable(), accessRevision }; }
 }
 /** One coherent snapshot per server render, with no persistent cross-request cache. */
 export const getPublishedSite = cache(readPublishedSite);

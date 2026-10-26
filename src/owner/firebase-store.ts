@@ -3,6 +3,7 @@ import type { Auth } from "firebase/auth";
 import { assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assertOwnerDraftId, MAX_NAMED_DRAFTS, assertPublishedOwnerSnapshot, createPublishedOwnerSnapshot, createPublishedPremadeSnapshot, OwnerValidationError, type OwnerContent, type OwnerPremade, type OwnerWorkspace, type OwnerNamedDraft, type PublishedOwnerSnapshot } from "./model";
 import { createInitialOwnerWorkspace } from "./defaults";
 import { createOwnerStore, OwnerStorageError, type OwnerStore } from "./storage";
+import { SITE_ACCESS_DOCUMENT, decodeSiteAccess, defaultSiteAccess, type SiteAccess } from "./site-access";
 
 export const OWNER_CLOUD_DOCUMENT = "ownerWorkspace/current";
 export const OWNER_DRAFT_INDEX_DOCUMENT = "ownerDraftIndex/current";
@@ -16,7 +17,7 @@ const CLOUD_CHANGED = "tmc-private-owner-cloud-changed";
 export type EncodedOwnerWorkspace = { schemaVersion: 1; revision: number; payload: string };
 export type EncodedPublishedOwnerSnapshot = { schemaVersion: 1; revision: number; payload: string };
 export type OwnerDraftIndex = { schemaVersion: 1; revision: number; drafts: Record<string, number>; changedDraftId: string };
-export type FirebaseOwnerStore = OwnerStore & { publishPremadeLive(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>; readLiveShopVisibility(): Promise<boolean | null>; updateLiveShopVisibility(showPremades: boolean, expectedRevision: number): Promise<OwnerWorkspace>; publishLive(content: OwnerContent | undefined, expectedRevision: number): Promise<OwnerWorkspace>; dispose(): void };
+export type FirebaseOwnerStore = OwnerStore & { readLiveSiteAccess(): Promise<SiteAccess>; updateConstructionMode(constructionMode: boolean, expectedRevision: number): Promise<SiteAccess>; publishPremadeLive(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>; readLiveShopVisibility(): Promise<boolean | null>; updateLiveShopVisibility(showPremades: boolean, expectedRevision: number): Promise<OwnerWorkspace>; publishLive(content: OwnerContent | undefined, expectedRevision: number): Promise<OwnerWorkspace>; dispose(): void };
 
 function payloadBytes(payload: string): number { return new TextEncoder().encode(payload).byteLength; }
 
@@ -276,6 +277,43 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
   });
   return {
     ...store,
+    async readLiveSiteAccess() {
+      try {
+        await confirmOwner();
+        const snapshot = await getDoc(doc(db, SITE_ACCESS_DOCUMENT)); requireOwner();
+        return snapshot.exists() ? decodeSiteAccess(snapshot.data()) : defaultSiteAccess();
+      } catch (cause) {
+        throw new OwnerStorageError("read", "Construction Mode could not be checked. No setting was changed. Check your connection and owner session, then choose Check again.", { cause });
+      }
+    },
+    async updateConstructionMode(constructionMode, expectedRevision) {
+      if (typeof constructionMode !== "boolean" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new OwnerStorageError("write", "Check Construction Mode again before updating it.");
+      try {
+        await confirmOwner();
+        const saved = await runTransaction(db, async transaction => {
+          requireOwner();
+          const accessReference = doc(db, SITE_ACCESS_DOCUMENT);
+          const accessSnapshot = await transaction.get(accessReference); requireOwner();
+          const current = accessSnapshot.exists() ? decodeSiteAccess(accessSnapshot.data()) : defaultSiteAccess();
+          if (current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "Construction Mode changed on another device. Check again before updating it; your draft has not changed.");
+          if (!constructionMode) {
+            const publication = await transaction.get(doc(db, PUBLIC_CLOUD_DOCUMENT)); requireOwner();
+            if (!publication.exists()) throw new OwnerStorageError("not-published", "Publish the website once before turning Construction Mode off. This setting never publishes your private draft.");
+            decodePublishedOwnerSnapshot(publication.data());
+          }
+          const next = decodeSiteAccess({ schemaVersion: 1, revision: current.revision + 1, constructionMode });
+          requireOwner(); transaction.set(accessReference, next);
+          return next;
+        });
+        requireOwner();
+        // No workspace/publication write or workspace-change notification: only
+        // the explicitly confirmed live gate was changed by this transaction.
+        return saved;
+      } catch (cause) {
+        if (cause instanceof OwnerStorageError && ["conflict", "not-published", "unavailable"].includes(cause.code)) throw cause;
+        throw new OwnerStorageError("write", "The Construction Mode update was not confirmed. Check the live setting again before retrying. No private draft was published.", { cause });
+      }
+    },
     async readLiveShopVisibility() {
       try {
         await confirmOwner();

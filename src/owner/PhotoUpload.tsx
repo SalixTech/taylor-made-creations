@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { PHOTO_UPLOAD_ACCEPT, uploadOwnerPhoto, type UploadedPhoto } from "./media-client";
 import styles from "./PhotoManager.module.css";
+import buttons from "./OwnerButton.module.css";
 
 type UploadActivityValue = { begin: (cancel?: () => void) => () => void; cancelAll: () => void };
 const idleUpload: UploadActivityValue = { begin: () => () => undefined, cancelAll: () => undefined };
@@ -75,7 +76,7 @@ export function PhotoUpload({ multiple = false, onUploaded, label = multiple ? "
   }
   return <div className={styles.upload}>
     <input ref={input} id={id} className={styles.fileInput} aria-label={label} aria-describedby={`${id}-help`} type="file" accept={PHOTO_UPLOAD_ACCEPT} multiple={multiple} disabled={Boolean(progress)} onChange={event => { void upload(Array.from(event.target.files ?? [])); }} />
-    <div className={styles.uploadActions}><button type="button" className={styles.uploadButton} disabled={Boolean(progress)} onClick={() => input.current?.click()}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6" /></svg>{progress || label}</button>{progress && <button type="button" className={styles.quietButton} onClick={() => active.current?.abort()}>Stop upload</button>}</div>
+    <div className={styles.uploadActions}><button type="button" data-owner-button className={`${buttons.button} ${buttons.primary}`} disabled={Boolean(progress)} aria-busy={Boolean(progress)} onClick={() => input.current?.click()}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6" /></svg>{progress || label}</button>{progress && <button type="button" data-owner-button className={`${buttons.button} ${buttons.quiet}`} onClick={() => active.current?.abort()}>Stop upload</button>}</div>
     <small id={`${id}-help`}>{multiple ? "No fixed photo-count limit. " : ""}PNG, JPEG, WebP, GIF or AVIF · 12 MB each. Converted to WebP at high quality; embedded metadata is removed, originals are untouched. Development-server disk only; shared cloud storage is not connected.</small>
     {progress && <p role="status">{progress}</p>}{message && <p className={styles.success} role="status">{message}</p>}{error && <p className={styles.error} role="alert">{error}</p>}
   </div>;

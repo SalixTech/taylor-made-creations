@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import styles from './SiteSelect.module.css';
+import { DropdownChevron } from './DropdownChevron';
 
 export type SelectOption = {value:string;label:string};
 export type SiteSelectProps = {id:string;value:string;onChange:(value:string)=>void;options:readonly SelectOption[];placeholder?:string;required?:boolean;invalid?:boolean;describedBy?:string;searchable?:boolean};
@@ -51,7 +52,7 @@ export default function SiteSelect({id,value,onChange,options,placeholder='Choos
   }
   const aria={'aria-haspopup':'listbox' as const,'aria-required':required,'aria-invalid':invalid,'aria-describedby':describedBy,'aria-activedescendant':open&&visible[index]?`${listId}-${index}`:undefined};
   return <div ref={root} className={styles.root} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget))close();}}>
-    <div className={styles.controlWrap}>{searchable?<input {...aria} ref={control} id={id} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" autoComplete="off" className={styles.control} placeholder={placeholder} value={open?query:selected?.label||''} onClick={()=>{if(!open)show();}} onChange={event=>{if(!open)place();setQuery(event.target.value);setActive(0);setOpen(true);}} onKeyDown={keyDown}/>:<button {...aria} ref={control} id={id} role="combobox" aria-expanded={open} aria-controls={listId} type="button" className={styles.control} onClick={()=>open?close():show()} onKeyDown={keyDown}>{selected?.label||placeholder}</button>}<span className={styles.arrow} aria-hidden="true"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m5 7.5 5 5 5-5" /></svg></span></div>
+    <div className={styles.controlWrap}>{searchable?<input {...aria} ref={control} id={id} role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="list" autoComplete="off" className={styles.control} placeholder={placeholder} value={open?query:selected?.label||''} onClick={()=>{if(!open)show();}} onChange={event=>{if(!open)place();setQuery(event.target.value);setActive(0);setOpen(true);}} onKeyDown={keyDown}/>:<button {...aria} ref={control} id={id} role="combobox" aria-expanded={open} aria-controls={listId} type="button" className={styles.control} onClick={()=>open?close():show()} onKeyDown={keyDown}>{selected?.label||placeholder}</button>}<span className={styles.arrow} aria-hidden="true"><DropdownChevron /></span></div>
     {open&&<div id={listId} role="listbox" aria-label={searchable?'Countries':'Available options'} className={styles.list} style={{maxHeight:placement.maxHeight,top:placement.above?"auto":"calc(100% + 6px)",bottom:placement.above?"calc(100% + 6px)":"auto"}}>{visible.map((option,i)=><div id={`${listId}-${i}`} key={option.value} role="option" data-active={i===index||undefined} aria-selected={value===option.value} className={`${styles.option} ${i===index?styles.active:''}`} onPointerMove={()=>setActive(i)} onMouseDown={event=>event.preventDefault()} onClick={()=>choose(option)}>{option.label}{value===option.value&&<span aria-hidden="true">✓</span>}</div>)}{!visible.length&&<p role="status" className={styles.empty}>No countries found. Try another name or country code.</p>}</div>}
   </div>;
 }

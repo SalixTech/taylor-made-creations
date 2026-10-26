@@ -1,5 +1,5 @@
 import { apiErrorResponse, privateJson, TaylorApiError, verifyTaylorOwner } from "@/server/taylor-auth";
-import { developmentMediaEnabled, listDevelopmentMedia, uploadedAssetName, MAX_MEDIA_BYTES, readMediaBody, readMediaTrashRequest, requireDevelopmentMedia, setDevelopmentMediaTrash, storeDevelopmentMedia } from "@/server/dev-media";
+import { developmentMediaEnabled, emptyDevelopmentMediaTrash, readEmptyMediaTrashRequest, listDevelopmentMedia, uploadedAssetName, MAX_MEDIA_BYTES, readMediaBody, readMediaTrashRequest, requireDevelopmentMedia, setDevelopmentMediaTrash, storeDevelopmentMedia } from "@/server/dev-media";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,4 +39,15 @@ export async function POST(request: Request) {
     return privateJson({ ok: true, media }, 201);
   } catch (error) { return apiErrorResponse(error); }
   finally { if (acquired) activeUploads--; }
+}
+
+/** Explicit, snapshot-scoped library removal. Image bytes are never deleted. */
+export async function DELETE(request: Request) {
+  try {
+    await verifyTaylorOwner(request);
+    requireDevelopmentMedia();
+    const entries = await readEmptyMediaTrashRequest(request);
+    const outcomes = await emptyDevelopmentMediaTrash(entries);
+    return privateJson({ ok: true, outcomes, filesRetained: true });
+  } catch (error) { return apiErrorResponse(error); }
 }

@@ -22,3 +22,11 @@
 @media (max-width: 650px) { .draftListings > summary small { display: block; margin: 8px 0 0; } }
 
 .manager .listingTag { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+
+/* Keep listing actions together while long titles and badges wrap independently. */
+.listingCard > section > div:first-child { align-items:center; flex-wrap:wrap; }
+.listingCard > section > div:first-child > div:first-child { min-width:0; flex:1 1 170px; overflow-wrap:anywhere; }
+.listingActions { display:flex; align-items:center; justify-content:flex-end; flex:1 1 430px; flex-wrap:wrap; gap:10px 16px; min-width:0; }
+.listingBadges { display:flex; align-items:center; justify-content:flex-end; flex:1 1 220px; flex-wrap:wrap; gap:8px; min-width:0; }
+.listingControls { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; min-width:0; }
+@media(max-width:650px) { .listingActions,.listingBadges,.listingControls { justify-content:flex-start; } .listingBadges { flex-basis:100%; } }

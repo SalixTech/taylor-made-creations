@@ -180,7 +180,7 @@ test('every concrete public route renders its own identity and stays behind the 
     assert.deepEqual(element.props.slug, slug, file); assert.equal(element.props.fallback.type.name, fallbackName, file);
     assert.equal(!!element.props.request, file === 'commissions/request/page.tsx', file);
     const locked = await element.type(element.props);
-    assert.equal(locked.type.name, 'UnderConstruction', file); assert.equal(locked.props.fallback, undefined, file);
+    assert.equal(locked.type.name, 'PublishedPage', file); assert.equal(locked.props.fallback, undefined, file);
   }
 });
 
@@ -201,5 +201,5 @@ test('care alias and catch-all preserve current publication routing, validation,
   await assert.rejects(custom({ params: Promise.resolve({ slug: ['a', 'b', 'c'] }) }), /MOCK_NOT_FOUND_404/);
   state = { status: 'locked' };
   const locked = await custom({ params: Promise.resolve({ slug: ['a', 'b', 'c'] }) });
-  assert.equal(locked.type.name, 'UnderConstruction');
+  assert.equal(locked.type.name, 'PublishedPage');
 });

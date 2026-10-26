@@ -35,11 +35,44 @@ service cloud.firestore {
         && request.resource.data.revision == resource.data.revision + 1;
       allow list, delete: if false;
     }
+    function validSiteAccess(data) {
+      // This is the ONLY anonymously readable configuration. Never add private
+      // contact details, owner identifiers, drafts or arbitrary extra fields.
+      return data.keys().hasAll(['schemaVersion', 'revision', 'constructionMode'])
+        && data.keys().hasOnly(['schemaVersion', 'revision', 'constructionMode'])
+        && data.schemaVersion is int && data.schemaVersion == 1
+        && data.revision is int && data.revision >= 1
+        && data.revision <= 9007199254740991
+        && data.constructionMode is bool;
+    }
+    function isPublicSiteOpen() {
+      let access = /databases/$(database)/documents/site/access;
+      // No document, invalid data, and read errors all fail closed. The old
+      // server environment setting cannot grant direct Firestore access.
+      return exists(access) && validSiteAccess(get(access).data)
+        && get(access).data.constructionMode == false;
+    }
+    function canApplySiteAccess(data) {
+      let publication = /databases/$(database)/documents/site/published;
+      // Closing does not depend on a publication. Opening requires an already
+      // saved public wrapper; the owner SDK additionally validates parsed JSON.
+      return data.constructionMode == true
+        || (exists(publication) && validWorkspace(get(publication).data));
+    }
+    match /site/access {
+      allow get: if isOwner() || validSiteAccess(resource.data);
+      allow create: if isOwner() && validSiteAccess(request.resource.data)
+        && request.resource.data.revision == 1 && canApplySiteAccess(request.resource.data);
+      allow update: if isOwner() && validSiteAccess(resource.data)
+        && validSiteAccess(request.resource.data)
+        && request.resource.data.revision == resource.data.revision + 1
+        && canApplySiteAccess(request.resource.data);
+      allow list, delete: if false;
+    }
     match /site/published {
-      // Temporary construction lock: also prevents direct Firestore REST reads.
-      // Launch requires BOTH restoring this public get and setting the server's
-      // TMC_PUBLIC_SITE_ACCESS=open. Keep every write check below unchanged.
-      allow get: if isOwner();
+      // Runtime access is authoritative here as well as in the application:
+      // construction mode blocks direct anonymous REST/SDK publication reads.
+      allow get: if isOwner() || (isPublicSiteOpen() && validWorkspace(resource.data));
       allow create: if isOwner() && validWorkspace(request.resource.data)
         && publishingWithDraft(request.resource.data.revision);
       allow update: if isOwner() && validWorkspace(resource.data)
