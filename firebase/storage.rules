@@ -1,0 +1,68 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isOwner() {
+      return request.auth != null && request.auth.uid == 'a4ARjp0z8ZOByKlC2AfGzmMRj843';
+    }
+    function validId(id) {
+      return id.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$');
+    }
+    function reservedUpload(id, kind, contentType, maxBytes, disposition) {
+      let file = firestore.get(/databases/(default)/documents/ownerFiles/$(id)).data;
+      return validId(id) && file.schemaVersion == 1 && file.kind == kind
+        && file.status == 'uploading' && file.trashedAt == null
+        && file.contentType == contentType && file.bytes == request.resource.size
+        && request.resource.size > 0 && request.resource.size <= maxBytes
+        && request.resource.contentType == contentType
+        // cacheControl is set by the uploader; it is not a Rules Resource field.
+        && request.resource.contentDisposition == disposition
+        && request.resource.metadata.keys().hasOnly(['fileId'])
+        && request.resource.metadata.fileId == id;
+    }
+    function publiclyIndexedPhoto(id) {
+      // Storage Rules can consult at most two Firestore documents. Missing or
+      // malformed access/index documents deny reads; only the default DB works.
+      let access = firestore.get(/databases/(default)/documents/site/access).data;
+      let index = firestore.get(/databases/(default)/documents/site/publishedAssets).data;
+      return access.keys().hasOnly(['schemaVersion', 'revision', 'constructionMode'])
+        && access.schemaVersion == 1 && access.revision is int && access.revision >= 1
+        && access.constructionMode == false
+        && index.keys().hasOnly(['schemaVersion', 'revision', 'ids'])
+        && index.schemaVersion == 1 && index.revision is int && index.revision >= 1
+        && index.ids is list && index.ids.size() <= 500 && id in index.ids
+        && resource.contentType in ['image/webp', 'font/woff', 'font/woff2', 'font/ttf', 'font/otf'];
+    }
+    match /photos/{filename} {
+      // IDs are extracted only after the exact immutable photo path is checked.
+      function id() { return filename.replace('\\.webp$', ''); }
+      allow get: if isOwner() || (filename.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\.webp$') && publiclyIndexedPhoto(id()));
+      allow create: if isOwner() && resource == null
+        && filename.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\.webp$')
+        && reservedUpload(id(), 'photo', 'image/webp', 12582912, 'inline');
+      allow list, update, delete: if false;
+    }
+    match /files/{filename} {
+      function id() { return filename.replace('\\.(pdf|bin)$', ''); }
+      allow get: if isOwner();
+      allow create: if isOwner() && resource == null
+        && ((filename.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\.pdf$')
+          && reservedUpload(id(), 'pdf', 'application/pdf', 500000000, 'attachment'))
+        || (filename.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\.bin$')
+          && reservedUpload(id(), 'file', 'application/octet-stream', 500000000, 'attachment')));
+      allow list, update, delete: if false;
+    }
+    match /fonts/{filename} {
+      function id() { return filename.replace('\\.font$', ''); }
+      function fontUpload() {
+        let file = firestore.get(/databases/(default)/documents/ownerFiles/$(id())).data;
+        return file.contentType in ['font/woff', 'font/woff2', 'font/ttf', 'font/otf']
+          && reservedUpload(id(), 'font', file.contentType, 4000000, 'inline');
+      }
+      allow get: if isOwner() || (filename.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\.font$') && publiclyIndexedPhoto(id()));
+      allow create: if isOwner() && resource == null
+        && filename.matches('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\.font$') && fontUpload();
+      allow list, update, delete: if false;
+    }
+    match /{path=**} { allow read, write: if false; }
+  }
+}

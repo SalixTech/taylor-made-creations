@@ -32,3 +32,7 @@ test('upload cancellation registry aborts only pending requests and ends busy st
  finishA();finishA();activity.cancelAll();assert.equal(first,0);assert.equal(second,1);finishB();assert.equal(changes.at(-1),false);
  h.currentContext={...activity,cancelAll:()=>{second++;}};h.render(OwnerUploadCancel,{className:'secondary'});h.tree.props.onClick();assert.equal(second,2);assert.equal(h.tree.props.disabled,undefined);
 });
+
+test('ordinary dialogs are stationary and only explicitly opted-in editor previews expose a move handle',()=>{
+ for(const draggable of [undefined,false,true]){const h=harness();const {Dialog}=h.load('src/owner/OwnerDialog.tsx');h.render(Dialog,{title:'Dialog',onClose(){},actions:'Done',draggable});const handles=h.all(n=>n.props?.['data-move-handle']!==undefined);assert.equal(handles.length,draggable===true?1:0);h.unmount();}
+});

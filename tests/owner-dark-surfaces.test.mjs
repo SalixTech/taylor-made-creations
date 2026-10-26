@@ -48,7 +48,7 @@ test('dark surfaces compile against the exact classes used by text blocks and ap
   for(const [module,key] of [[portal,'block'],[design,'appearance']]) {
     const base=module.rules.find(rule=>rule.selector===`.${module.classes[key]}`);
     assert.equal(property(base,'background'),'var(--owner-surface, #fff)');
-    assert.equal(resolve(property(base,'background')),'#241f24');
+    assert.equal(resolve(property(base,'background')),'#242426');
     assert.equal(resolve(property(base,'background'),{}),'#fff','light-mode fallback stays white');
     assert.ok(contrast(palette['--owner-ink'],resolve(property(base,'background')))>=4.5);
     assert.ok(contrast(palette['--owner-muted'],resolve(property(base,'background')))>=4.5);

@@ -30,3 +30,37 @@
 .listingBadges { display:flex; align-items:center; justify-content:flex-end; flex:1 1 220px; flex-wrap:wrap; gap:8px; min-width:0; }
 .listingControls { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; min-width:0; }
 @media(max-width:650px) { .listingActions,.listingBadges,.listingControls { justify-content:flex-start; } .listingBadges { flex-basis:100%; } }
+
+.settingsSave { margin-top:18px; padding-top:14px; border-top:1px solid var(--owner-line,#d8ccd0); }
+.settingsSaveButtons { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.settingsSaveButtons > button { width:auto!important; min-height:40px; }
+.socialEditor { display:grid; gap:16px; min-width:0; }
+.socialCard { padding:16px; border:1px solid var(--owner-line,#d8ccd0); border-radius:10px; background:var(--owner-raised,#faf8f9); }
+.galleryNumberActions { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-block:12px; }
+
+/* Compact contact rows retain the same drag handles and independent save actions. */
+.contactsSection { border:1px solid var(--owner-line,#e5e3e1); border-radius:10px; background:var(--owner-surface,#fff); padding:20px 24px; min-width:0; }
+.contactsSection > summary { cursor:pointer; font-size:16px; font-weight:700; color:var(--owner-ink,#393536); }
+.contactsContent { padding-top:16px; }
+.socialHeading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.socialFields { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.5fr); gap:12px; }
+.socialFields > label { margin-bottom:10px; }
+.socialCard { padding:12px 14px; }
+.socialCard > button { min-height:32px; }
+.listingFooter { display:flex; justify-content:flex-end; margin-top:18px; gap:10px; }
+@media (max-width:850px) { .socialFields { grid-template-columns:1fr 1fr; } .socialFields > label:last-child { grid-column:1 / -1; } }
+@media (max-width:550px) { .socialFields { grid-template-columns:1fr; } .contactsSection { padding:16px; } }
+
+/* Photo details stay in a compact dialog, leaving the gallery grid unchanged. */
+.galleryCard,.galleryPhotoEditor { min-width:0; }
+.galleryEditSummary { display:grid; grid-template-columns:120px minmax(0,1fr); align-items:start; gap:16px; }
+.galleryEditPreview { border-radius:8px; overflow:hidden; background:var(--owner-raised); aspect-ratio:1; }
+.galleryEditPreview img { display:block; width:100%; height:100%; object-fit:contain; }
+.galleryChangePhoto { margin-top:16px; border-top:1px solid var(--owner-line); padding-top:14px; }
+.galleryChangePhoto > summary { cursor:pointer; font-size:13px; color:var(--owner-ink); }
+.galleryChangePhoto[open] > summary { margin-bottom:14px; }
+.galleryImagePicker { min-width:0; }
+.galleryImagePicker > div { grid-template-columns:minmax(0,1fr); gap:12px; }
+.galleryImagePicker > div > div { min-width:0; }
+.galleryImagePicker > div > div:first-child { display:none; }
+@media(max-width:500px) { .galleryEditSummary { grid-template-columns:80px minmax(0,1fr); gap:12px; } }

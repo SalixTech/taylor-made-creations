@@ -17,7 +17,7 @@ test('builder ImagePicker delegates upload to staged library and only explicit U
   h.unmount();
   const second=harness(),assets=[];
   second.overrides['./asset-library-client']={usePrivateAssetLibrary:()=>({assets,add:value=>assets.push(value),loading:false,error:'',refresh(){}})};
-  const AssetLibrary=second.load('src/owner/AssetLibrary.tsx').AssetLibrary;
+  const AssetLibrary=second.load('src/owner/AssetLibrary.tsx').LegacyAssetLibrary;
   const render=()=>second.render(AssetLibrary,library.props);render();
   const upload=second.find(n=>typeof n.type==='function'&&n.type.name==='PhotoUpload');
   assert.equal(upload.props.staged,true);assert.equal(upload.props.multiple,true);
@@ -30,7 +30,7 @@ test('builder ImagePicker delegates upload to staged library and only explicit U
 test('staged library has no arbitrary count cap and failed library reads keep existing photo untouched',()=>{
   const h=harness(),choices=[],assets=Array.from({length:251},(_,n)=>({...photo,id:String(n),name:`Photo ${n}`}));
   h.overrides['./asset-library-client']={usePrivateAssetLibrary:()=>({assets,add(){},loading:false,error:'Upload server unavailable',refresh(){}})};
-  const Library=h.load('src/owner/AssetLibrary.tsx').AssetLibrary;h.render(Library,{selected:'/images/old.webp',onSelect:value=>choices.push(value)});
+  const Library=h.load('src/owner/AssetLibrary.tsx').LegacyAssetLibrary;h.render(Library,{selected:'/images/old.webp',onSelect:value=>choices.push(value)});
   assert.equal(h.all(n=>n.type==='li').length,251);assert.deepEqual(choices,[]);assert.match(content(h.tree),/Upload server unavailable/);h.unmount();
 });
 function libraryHarness(response){
@@ -48,23 +48,26 @@ test('private asset metadata is authenticated/no-store, clears immediately on se
   t.invalidate();t.render();assert.deepEqual(t.result.assets,[]);assert.match(t.result.error,/Sign in again/);t.h.unmount();
   const late=deferred(),u=libraryHarness(late.promise);u.render();await flush();u.invalidate();late.resolve(new Response(JSON.stringify({ok:true,photos:[photo]})));await flush();u.render();assert.deepEqual(u.result.assets,[]);u.h.unmount();
 });
-test('font upload requires rights confirmation and only changes draft after server confirmation; repeat/cancel is safe',async()=>{
+test('font upload is available without checkbox and only changes draft after server confirmation; repeat/cancel is safe',async()=>{
   const h=harness(),gate=deferred(),received=[];let calls=0,signal,begun=0,ended=0;
   h.currentContext={begin(){begun++;return()=>ended++;}};
-  h.overrides['./font-client']={FONT_UPLOAD_ACCEPT:'.woff2',uploadOwnerFont:async(file,rights,s)=>{calls++;assert.equal(rights,true);signal=s;return gate.promise;}};
+  h.overrides['./font-client']={FONT_UPLOAD_ACCEPT:'.woff2',uploadOwnerFont:async(file,s)=>{calls++;signal=s;return gate.promise;}};
   const FontUpload=h.load('src/owner/FontUpload.tsx').FontUpload,render=()=>h.render(FontUpload,{onUploaded:font=>received.push(font)});render();
-  assert.equal(h.find(n=>n.type==='input'&&n.props.type==='file').props.disabled,true);
-  h.find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}});render();
+  assert.equal(h.find(n=>n.type==='input'&&n.props.type==='file').props.disabled,false);
+  assert.equal(h.find(n=>n.type==='input'&&n.props.type==='checkbox'),undefined);
   const file=new File(['fixture'],'test.woff2');const choose=()=>h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[file]}});
   choose();choose();render();assert.equal(calls,1);assert.equal(begun,1);assert.deepEqual(received,[]);
   h.find(n=>n.type==='button'&&content(n)==='Stop upload').props.onClick();gate.resolve(font);await flush();render();
   assert.equal(signal.aborted,true);assert.deepEqual(received,[]);assert.equal(ended,1);assert.match(content(h.tree),/selected fonts have not changed/);h.unmount();
 });
-test('font library adds only reference metadata and never automatically selects a font or deletes earlier uploads',()=>{
+test('cloud font library adds only reference metadata and never automatically selects a font or deletes earlier uploads',()=>{
   const h=harness(),changed=[];
-  h.overrides['./asset-library-client']={usePrivateAssetLibrary:()=>({assets:[{...font,bytes:500,storage:'development-disk',private:'not for draft'}],add(){},loading:false,error:'',refresh(){}})};
+  const record={id,kind:'font',name:'Custom font.woff2',contentType:'font/woff2',status:'ready',parentId:'root',trashedAt:null};
+  h.overrides['./use-cloud-files']={useCloudFiles:()=>({files:[record,{...record,id:'22222222-2222-4222-8222-222222222222',trashedAt:'2026-10-26T00:00:00.000Z'}],folders:{schemaVersion:1,revision:0,folders:{}},loading:false,ready:true,error:'',refresh(){}})};
   const Library=h.load('src/owner/FontUpload.tsx').OwnerFontLibrary;h.render(Library,{fonts:[],onChange:value=>changed.push(value)});
-  h.find(n=>n.type==='button'&&content(n)==='Add to draft').props.onClick();assert.deepEqual(changed,[[font]]);assert.equal(h.all(n=>n.type==='button'&&/Remove|Delete/.test(content(n))).length,0);h.unmount();
+  assert.doesNotMatch(content(h.tree),/development.server|Previously uploaded on this server/);
+  assert.equal(h.all(n=>n.type==='button'&&content(n)==='Add to draft').length,1);
+  h.find(n=>n.type==='button'&&content(n)==='Add to draft').props.onClick();assert.equal(changed[0][0].id,id);assert.equal(changed[0][0].src,`/api/cloud-fonts/${id}`);assert.deepEqual(Object.keys(changed[0][0]).sort(),['format','id','name','src']);assert.equal(h.all(n=>n.type==='button'&&/Remove|Delete/.test(content(n))).length,0);h.unmount();
 });
 function loaderHarness(privateFonts,fetcher){
   const h=harness(),created=[],added=[],deleted=[],requests=[];let valid=true,authChanged,authCalls=0;
@@ -87,4 +90,13 @@ test('private font preview uses authorized in-memory bytes, removes faces on ses
 });
 test('private font preview cannot register late bytes after unmount',async()=>{
   const gate=deferred(),t=loaderHarness(true,()=>gate.promise);t.render();await flush();t.h.unmount();gate.resolve(new Response('private-font',{headers:{'content-type':'font/woff2'}}));await flush();assert.equal(t.created.length,0);assert.equal(t.added.length,0);
+});
+
+test('font library refresh is an accessible icon-only button and indicates refresh activity',()=>{
+  const h=harness();let calls=0;const library={files:[],folders:{schemaVersion:1,revision:0,folders:{}},loading:false,ready:true,error:'',refresh(){calls++;}};
+  h.overrides['./use-cloud-files']={useCloudFiles:()=>library};
+  const Library=h.load('src/owner/FontUpload.tsx').OwnerFontLibrary;const render=()=>h.render(Library,{fonts:[],onChange(){}});render();
+  const button=()=>h.find(n=>n.type==='button'&&n.props['aria-label']==='Refresh fonts');
+  assert.ok(button());assert.equal(content(button()),'');assert.equal(button().props.title,'Refresh fonts');assert.ok(h.find(n=>n.type==='svg'&&n.props['aria-hidden']==='true'));
+  button().props.onClick();assert.equal(calls,1);library.loading=true;render();assert.equal(button().props.disabled,true);assert.equal(button().props['aria-busy'],true);h.unmount();
 });

@@ -54,18 +54,17 @@ function routes({ verify = async () => ({ uid: auth.TAYLOR_OWNER_UID }), state =
   return { calls, upload: loader('src/app/api/taylor/fonts/route.ts'), read: loader('src/app/api/fonts/[id]/route.ts') };
 }
 const upload = headers => new Request('http://localhost/api/taylor/fonts', { method: 'POST', headers: { 'content-type': 'font/woff2', ...headers }, body: 'inert' });
-test('full notes: font upload requires owner, same-origin and explicit font-rights confirmation before body/storage', async () => {
+test('full notes: font upload requires owner and same-origin before body/storage without a rights checkbox', async () => {
   for (const status of [401, 403]) {
     const r = routes({ verify: async () => { throw new auth.TaylorApiError(status, 'Denied'); } });
-    assert.equal((await r.upload.POST(upload({ 'x-tmc-font-rights': 'confirmed' }))).status, status);
+    assert.equal((await r.upload.POST(upload({}))).status, status);
     assert.equal((await r.upload.GET(new Request('http://localhost/api/taylor/fonts'))).status, status);
     assert.deepEqual(r.calls, { read: 0, body: 0, write: 0, list: 0, public: 0 });
   }
   const r = routes();
-  assert.equal((await r.upload.POST(upload({}))).status, 400);
-  assert.equal((await r.upload.POST(upload({ 'x-tmc-font-rights': 'confirmed', origin: 'https://untrusted.example' }))).status, 403);
+  assert.equal((await r.upload.POST(upload({ origin: 'https://untrusted.example' }))).status, 403);
   assert.equal(r.calls.body, 0); assert.equal(r.calls.write, 0);
-  const response = await r.upload.POST(upload({ 'x-tmc-font-rights': 'confirmed', origin: 'http://localhost' }));
+  const response = await r.upload.POST(upload({ origin: 'http://localhost' }));
   assert.equal(response.status, 201); assert.match(response.headers.get('cache-control'), /private, no-store/); assert.equal(r.calls.write, 1);
 });
 test('full notes: public font access requires currently published used font, auth failure never falls back publicly', async () => {
@@ -83,7 +82,7 @@ test('full notes: public font access requires currently published used font, aut
   assert.equal((await denied.read.GET(fontRequest('Bearer wrong'), fontContext())).status, 403); assert.equal(denied.calls.public, 0); assert.equal(denied.calls.read, 0);
 });
 test('full notes: production font storage remains off and invalid IDs never touch disk', async () => {
-  const blocked = routes({ enabled: false }); assert.equal((await blocked.upload.POST(upload({ 'x-tmc-font-rights': 'confirmed' }))).status, 503); assert.equal(blocked.calls.body, 0);
+  const blocked = routes({ enabled: false }); assert.equal((await blocked.upload.POST(upload({}))).status, 503); assert.equal(blocked.calls.body, 0);
   assert.equal((await blocked.read.GET(fontRequest('Bearer fixture'), fontContext())).status, 503); assert.equal(blocked.calls.read, 0);
   const r = routes(); for (const id of ['../escape', 'not-an-id', `${fontId}.woff2`, '']) assert.equal((await r.read.GET(fontRequest('Bearer fixture', id), fontContext(id))).status, 404);
   assert.equal(r.calls.read, 0);

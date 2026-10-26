@@ -21,3 +21,9 @@ export function withCurrentTermsConsent<T extends { tos: string; tosAgreed: bool
   if (currentIdentity !== null && acceptedIdentity === currentIdentity) return draft;
   return { ...draft, tos: draft.tos === "Yes" ? "" : draft.tos, tosAgreed: false };
 }
+
+/** Private form rehearsal uses only the terms shown from the authenticated draft. */
+export function previewTermsIdentity(content: import("../owner/model").OwnerContent): string | null {
+  const page = content.pages.find(page => page.builtinKey === "terms" && !page.trashedAt && page.availability !== "hidden");
+  return page?.blocks.length ? JSON.stringify({ title: page.title, blocks: page.blocks }) : null;
+}

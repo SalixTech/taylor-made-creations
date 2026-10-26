@@ -66,7 +66,7 @@ test('compiled toolbar buttons keep rounded borders, non-glowing fills, primary/
     for (const variant of ['primary', 'secondary']) {
       const button = element('button', { class: `${buttonClasses.button} ${buttonClasses[variant]} ${buttonClasses.compact}`, 'data-owner-button': '', 'aria-pressed': 'false' }, group);
       const idle = css(button); fills.push(idle['background-color']);
-      assert.equal(idle['border-radius'], '7px'); assert.equal(idle['min-height'], width <= 550 ? '42px' : '36px');
+      assert.equal(idle['border-radius'], '10px'); assert.equal(idle['min-height'], width <= 550 ? '42px' : '36px');
       assert.equal(idle['text-decoration'], 'none'); assert.equal(idle['box-shadow'] ?? 'none', 'none'); assert.ok(contrast(idle.color, idle['background-color']) >= 4.5);
       button.states.add('hover'); assert.equal(css(button)['text-decoration'], 'none'); button.states.delete('hover');
       button.attrs['aria-pressed'] = 'true'; const selected = css(button); assert.notEqual(selected['background-color'], idle['background-color']); assert.match(selected['box-shadow'], /^inset/);

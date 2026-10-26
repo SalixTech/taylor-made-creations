@@ -109,6 +109,10 @@ export function usePublicServerState(serverState: PublicSiteState) {
   // it. Only a newer access revision immediately outranks shared client state;
   // an unreadable/unversioned navigation still closes via the effect above.
   if (serverState.status === "locked" && serverState.accessRevision !== undefined && serverState.accessRevision > (state.accessRevision ?? 0)) return serverState;
+  // A soft navigation can bring a newer publication than the retained layout.
+  // Use it immediately, rather than briefly calling a valid new product missing
+  // while the effect above synchronizes the provider. Never outrank a newer lock.
+  if (state.status === "published" && serverState.status === "published" && validAccessRevision(serverState.accessRevision) && serverState.accessRevision >= (state.accessRevision ?? 0) && serverState.snapshot.revision > state.snapshot.revision) return serverState;
   return state;
 }
 export function usePublicOwnerContent() {

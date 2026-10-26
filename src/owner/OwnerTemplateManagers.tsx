@@ -2,7 +2,12 @@
 
 import { useRef, useState } from "react";
 import { COMMISSION_STATUSES, getPremadeTags, parsePremadeTags, MAX_PREMADE_TAGS, MAX_PREMADE_TAG_LENGTH, newOwnerId, type GalleryItem, type OwnerContent, type OwnerPremade } from "./model";
-import { Card, Field, Icon, ImagePicker, MoveButtons, OwnerImage, OwnerSelect, Toggle } from "./OwnerFields";
+import { Card, Dialog, Field, Icon, ImagePicker, MoveButtons, OwnerImage, OwnerSelect, Toggle } from "./OwnerFields";
+import CommissionForm from "@/components/CommissionForm";
+import { OwnerPriceReorderList } from "./OwnerPriceReorderList";
+import { reorderById } from "./builder-interactions";
+import { OwnerSocialLinksEditor } from "./OwnerSocialLinksEditor";
+import { SettingsCardActions, type SettingsCardSaveProps } from "./SettingsCardActions";
 import { PhotoUpload } from "./PhotoUpload";
 import { PremadePhotoEditor } from "./PremadePhotoEditor";
 import { getPremadeCoverPhoto, getPremadePhotos } from "./premade-gallery";
@@ -23,6 +28,8 @@ export type PremadesManagerProps = ManagerProps & {
   onUpdateLiveShop: () => void;
   canSavePremadeDraft?: boolean;
   onSavePremadeDraft?: (item: OwnerPremade) => Promise<boolean>;
+  onDeletePremadeDraft?: (id: string) => Promise<boolean>;
+  canDeletePremadeDraft?: boolean;
   canPublishPremade?: boolean;
   onPublishPremade?: (item: OwnerPremade) => void;
 };
@@ -36,6 +43,7 @@ function move<T extends { id: string }>(items: T[], id: string, direction: -1 | 
 export function PhotoGalleryManager({ content, onEdit, onRemove, onSavePhotos }: ManagerProps & { onSavePhotos?: () => void }) {
   const [editing, setEditing] = useState<string | null>(null);
   const top = useRef<HTMLDivElement>(null);
+  const editedPhoto = content.gallery.find(photo => photo.id === editing);
   function editPhoto(id: string, patch: Partial<GalleryItem>) {
     onEdit(draft => { const item = draft.gallery.find(photo => photo.id === id); if (item) Object.assign(item, patch); });
   }
@@ -46,43 +54,62 @@ export function PhotoGalleryManager({ content, onEdit, onRemove, onSavePhotos }:
   }
   return <div className={styles.manager} data-template-manager="photos">
     <div ref={top} className={styles.galleryTop}>
-      <Card title="Add to your gallery" description="New photos go to the top. Use the arrows on each card to arrange them in the order you want.">
+      <Card title="Add to your gallery" description="New photos go to the top. Drag a card to arrange your photos. Numbers follow the new order unless you set an override.">
         <PhotoUpload multiple label="Upload gallery photos" onUploaded={photos => addPhotos(photos.map(({ media, name }) => ({ id: newOwnerId("photo"), name, src: media.src, alt: name, width: media.width, height: media.height, visible: true })))} />
         <button type="button" className={ui.secondary} onClick={() => addPhotos([{ id: newOwnerId("photo"), name: "New photo", src: "/images/home-collage.webp", alt: "Taylor Made Creations fursuit work", width: 1996, height: 960, visible: true }], true)}>＋ Add an existing photo</button>
       </Card>
     </div>
     <div className={ui.sectionActions}><p className={ui.help}>{content.gallery.length} photos · {content.gallery.filter(photo => photo.visible).length} shown in your draft gallery</p><button type="button" className={ui.primary} disabled={!onSavePhotos} onClick={onSavePhotos}>Save photos</button></div>
-    <div className={ui.photoGrid}>
-      {content.gallery.map((photo, index) => <Card key={photo.id}>
-        <div className={ui.photoThumb}><OwnerImage src={photo.src} alt={photo.alt} /></div>
+    <div className={styles.galleryNumberActions}><p className={ui.help}>Blank gallery numbers update automatically when you move a photo.</p><button type="button" className={ui.secondary} disabled={!content.gallery.some(photo => photo.displayNumber?.trim())} onClick={() => onRemove("Use automatic gallery numbers?", "This clears manual number overrides. Photos and their order stay unchanged.", () => onEdit(draft => { draft.gallery.forEach(photo => { delete photo.displayNumber; }); }))}>Use automatic numbers</button></div>
+    <OwnerPriceReorderList items={content.gallery} label="Gallery photos" layout="grid" disabled={editing !== null} itemLabel={photo => photo.name || "photo"} onReorder={(source, target, after) => onEdit(draft => { reorderById(draft.gallery, source, target, after); })} onStep={(id, direction) => onEdit(draft => move(draft.gallery, id, direction))}>{(photo, handle) => <div className={styles.galleryCard} data-gallery-photo-open={editing === photo.id}><Card key={photo.id}>
+        <div className={`${ui.photoThumb} ${styles.galleryThumbnail}`}><OwnerImage src={photo.src} alt={photo.alt} /></div>
         <div className={ui.rowHeading}><h3>{photo.name || "Untitled photo"}</h3><span className={`${ui.badge} ${photo.visible ? ui.badgeVisible : ""}`}>{photo.visible ? "In draft gallery" : "Hidden in draft"}</span></div>
-        <p className={styles.itemMeta}>Position {index + 1}{photo.displayNumber?.trim() ? ` · Gallery number ${photo.displayNumber}` : " · Automatic gallery number"}</p>
+        <p className={styles.itemMeta}>Position {content.gallery.findIndex(item => item.id === photo.id) + 1}{photo.displayNumber?.trim() ? ` · Gallery number ${photo.displayNumber}` : " · Automatic gallery number"}</p>
         <div className={ui.rowEnd}>
-          <MoveButtons label={photo.name || "photo"} index={index} length={content.gallery.length} onMove={direction => onEdit(draft => move(draft.gallery, photo.id, direction))} />
-          <button type="button" className={ui.secondary} aria-expanded={editing === photo.id} onClick={() => setEditing(editing === photo.id ? null : photo.id)}>{editing === photo.id ? "Close details" : "Edit photo"}</button>
+          {handle}
+          <button type="button" className={ui.secondary} aria-haspopup="dialog" onClick={() => setEditing(photo.id)}>Edit photo</button>
           <button type="button" className={ui.dangerLink} onClick={() => onRemove(`Remove “${photo.name}”?`, "This removes the photo from your gallery draft. It does not delete the original image file or change the live website.", () => { onEdit(draft => { draft.gallery = draft.gallery.filter(item => item.id !== photo.id); }); if (editing === photo.id) setEditing(null); })}>Remove</button>
         </div>
-        {editing === photo.id && <div className={ui.expanded}>
-          <Field label="Photo name" value={photo.name} onChange={value => editPhoto(photo.id, { name: value })} />
-          <Field label="Gallery number (optional)" value={photo.displayNumber ?? ""} onChange={value => editPhoto(photo.id, { displayNumber: value })} hint="Leave blank to number photos automatically. This changes the displayed number, not the photo’s order." />
-          <ImagePicker key={photo.id} src={photo.src} alt={photo.alt} onSource={value => editPhoto(photo.id, { src: value })} onAlt={value => editPhoto(photo.id, { alt: value })} />
-          {onSavePhotos && <button type="button" className={ui.primary} onClick={onSavePhotos}>Save Photo</button>}
-          <Toggle label="Show this photo in the gallery" checked={photo.visible} onChange={value => editPhoto(photo.id, { visible: value })} hint="Hidden photos stay here for you to edit. Publish when your gallery is ready for visitors." />
-        </div>}
-      </Card>)}
-    </div>
+      </Card></div>}</OwnerPriceReorderList>
+    {editedPhoto && <Dialog title="Edit photo" onClose={() => setEditing(null)} actions={<><button type="button" className={ui.secondary} onClick={() => setEditing(null)}>Done</button>{onSavePhotos && <button type="button" className={ui.primary} onClick={() => { setEditing(null); onSavePhotos(); }}>Save Photo</button>}</>}>
+      <div className={styles.galleryPhotoEditor} data-gallery-photo-editor={editedPhoto.id}>
+        <div className={styles.galleryEditSummary}>
+          <div className={styles.galleryEditPreview}><OwnerImage src={editedPhoto.src} alt={editedPhoto.alt} /></div>
+          <div><Field label="Photo name" value={editedPhoto.name} onChange={value => editPhoto(editedPhoto.id, { name: value })} />
+          <Field label="Gallery number (optional)" value={editedPhoto.displayNumber ?? ""} onChange={value => editPhoto(editedPhoto.id, { displayNumber: value })} hint="Leave blank for automatic numbering." /></div>
+        </div>
+        <Toggle label="Show this photo in the gallery" checked={editedPhoto.visible} onChange={value => editPhoto(editedPhoto.id, { visible: value })} />
+        <details className={styles.galleryChangePhoto}><summary>Change photo or description</summary><div className={styles.galleryImagePicker}><ImagePicker key={editedPhoto.id} src={editedPhoto.src} alt={editedPhoto.alt} onSource={value => editPhoto(editedPhoto.id, { src: value })} onAlt={value => editPhoto(editedPhoto.id, { alt: value })} /></div></details>
+      </div>
+    </Dialog>}
     {!content.gallery.length && <Card><div className={ui.empty}><h3>Time to show off your work.</h3><p>Upload your first photos or choose an existing photo above.</p></div></Card>}
   </div>;
 }
 
 /** Listings stay editable while the shop is hidden. Only the explicit shop action changes live visibility. */
-export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility, liveShopKnown, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, canPublishPremade = false, onPublishPremade, canSavePremadeDraft = false, onSavePremadeDraft }: PremadesManagerProps) {
+export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility, liveShopKnown, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, canPublishPremade = false, onPublishPremade, canSavePremadeDraft = false, onSavePremadeDraft, canDeletePremadeDraft = false, onDeletePremadeDraft }: PremadesManagerProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [tagInputs, setTagInputs] = useState<Record<string, string>>({});
   const savingListing = useRef(false);
   const [savingListingId, setSavingListingId] = useState<string | null>(null);
   const draftSection = useRef<HTMLDetailsElement>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const deleteLock = useRef(false);
+  async function deleteDraft() {
+    if (!deleteId || !canDeletePremadeDraft || !onDeletePremadeDraft || deleteLock.current) return;
+    const id = deleteId;
+    if (!content.premades.some(item => item.id === id && item.isDraft)) { setDeleteError("This draft is no longer available. Refresh its saved state before trying again."); return; }
+    deleteLock.current = true; setDeleting(true); setDeleteError("");
+    try {
+      if (await onDeletePremadeDraft(id)) { setDeleteId(null); if (editing === id) setEditing(null); }
+      else setDeleteError("The draft was not deleted. Your listing is still here.");
+    } catch { setDeleteError("Could not delete this draft. Please try again."); }
+    finally { deleteLock.current = false; setDeleting(false); }
+  }
+
   function editListing(id: string, patch: Partial<OwnerPremade>) {
     onEdit(draft => { const item = draft.premades.find(listing => listing.id === id); if (item) Object.assign(item, patch); });
   }
@@ -124,6 +151,7 @@ export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility,
         if (from >= 0 && to >= 0) [draft.premades[from], draft.premades[to]] = [draft.premades[to], draft.premades[from]];
       })} />}
       {editing === item.id && <button type="button" className={ui.secondary} {...listingSaveProps}>{listingSaveLabel}</button>}
+
       <button type="button" className={ui.secondary} aria-expanded={editing === item.id} onClick={() => setEditing(editing === item.id ? null : item.id)}>{editing === item.id ? "Close details" : "Edit listing"}</button></div>
     </div>}>
       {editing === item.id ? <>
@@ -149,9 +177,12 @@ export function PremadesManager({ content, onEdit, onRemove, liveShopVisibility,
         </div>
         {!item.isDraft && <button type="button" className={ui.secondary} {...listingSaveProps}>{listingSaveLabel}</button>}
       </>}
+      {item.isDraft && <div className={styles.listingFooter}><button type="button" className={ui.danger} disabled={!canDeletePremadeDraft || !onDeletePremadeDraft || deleting || savingListingId !== null} onClick={() => { setDeleteId(item.id); setDeleteError(""); }}>Delete draft</button></div>}
     </Card></div>;
   }
   return <div className={styles.manager} data-template-manager="premades">
+    {deleteId && <Dialog title="Delete this listing draft?" onClose={() => { if (!deleteLock.current) setDeleteId(null); }} actions={<><button type="button" className={ui.secondary} disabled={deleting} onClick={() => setDeleteId(null)}>Keep draft</button><button type="button" className={ui.danger} disabled={deleting || !canDeletePremadeDraft} onClick={() => void deleteDraft()}>{deleting ? "Deleting…" : "Delete draft"}</button></>}><p>Delete “{content.premades.find(item => item.id === deleteId)?.name || "this draft"}” from Draft listings? Its photos, other drafts, and any already-live version stay unchanged.</p>{deleteError && <p className={ui.error} role="alert">{deleteError}</p>}</Dialog>}
+
     <Card title="Premade shop visibility" description="Keep your listings ready here, even when the shop is hidden.">
       <Toggle label="Show the premade shop" checked={content.site.showPremades} onChange={value => onEdit(draft => { draft.site.showPremades = value; })} hint="This switch changes your draft. Hidden listings and photos stay saved." />
       <p className={ui.help}>Live shop: <strong>{!liveShopKnown ? liveShopReadError ? "Could not check" : "Checking…" : liveShopVisibility === null ? "Not published yet" : liveShopVisibility ? "On" : "Off"}</strong>. Your draft shop is {content.site.showPremades ? "on" : "off"}.</p>
@@ -185,23 +216,25 @@ export function HomePageManager({ content, onEdit }: ManagerProps) {
   </div>;
 }
 
-export function ContactSettingsManager({ content, onEdit, userEmail, onSync, constructionSettings }: ManagerProps & { userEmail: string; onSync: () => void; constructionSettings?: import("react").ReactNode }) {
+export function ContactSettingsManager({ content, onEdit, onRemove, userEmail, onSync, constructionSettings, onEditCommissionForm, ...saveProps }: ManagerProps & SettingsCardSaveProps & { userEmail: string; onSync: () => void; onEditCommissionForm?: () => void; constructionSettings?: import("react").ReactNode }) {
+  const [formPreviewOpen,setFormPreviewOpen]=useState(false);
   return <div className={styles.manager} data-template-manager="settings">
     {constructionSettings}
     <div className={ui.twoCol}>
-      <Card title="Your business"><Field label="Business name" value={content.site.name} onChange={value => onEdit(draft => { draft.site.name = value; })} hint="Shown in your website’s header and footer after publishing." /></Card>
+      <Card title="Your business"><Field label="Business name" value={content.site.name} onChange={value => onEdit(draft => { draft.site.name = value; })} hint="Shown in your website’s header and footer after publishing." /><SettingsCardActions card="business" {...saveProps} /></Card>
       <Card title="Commission availability">
-        <OwnerSelect label="Commission status" value={content.site.commissionStatus} onChange={value => onEdit(draft => { draft.site.commissionStatus = value as OwnerContent["site"]["commissionStatus"]; })} options={COMMISSION_STATUSES.map(status => ({ value: status, label: status }))} hint="Your live site changes only when you choose Publish live." />
+        <OwnerSelect label="Commission status" value={content.site.commissionStatus} onChange={value => onEdit(draft => { draft.site.commissionStatus = value as OwnerContent["site"]["commissionStatus"]; })} options={COMMISSION_STATUSES.map(status => ({ value: status, label: status }))} hint="Choose Save live on this card to update the website." />
         <Field label="A note for visitors" multiline value={content.site.statusNote} onChange={value => onEdit(draft => { draft.site.statusNote = value; })} placeholder="Let people know what to expect…" />
+        <SettingsCardActions card="availability" {...saveProps} />
       </Card>
     </div>
-    <Card title="Where people can find you" description="Leave an optional contact field empty to hide it from your contact page."><div className={ui.twoCol}>
-      <Field label="Telegram username" value={content.site.telegram} onChange={value => onEdit(draft => { draft.site.telegram = value.replace(/^@/, ""); })} hint="Just your username, without @ or a link." />
-      <Field label="Discord username" value={content.site.discord} onChange={value => onEdit(draft => { draft.site.discord = value; })} />
-      <Field label="Email address" type="email" value={content.site.email} onChange={value => onEdit(draft => { draft.site.email = value; })} />
-      <Field label="TikTok username" value={content.site.tiktok} onChange={value => onEdit(draft => { draft.site.tiktok = value.replace(/^@/, ""); })} hint="Just your username, without @ or a link." />
-      <Field label="Twitch username" value={content.site.twitch} onChange={value => onEdit(draft => { draft.site.twitch = value.replace(/^@/, ""); })} hint="Just your username, without @ or a link." />
-    </div></Card>
+    <Card title="Commission form" description="Edit questions, wording, answer options and order. Additional Parts is optional for every suit type except Parts.">
+      <Toggle label="Allow quantities for Additional Parts" checked={content.site.additionalPartsQuantities === true} onChange={value => onEdit(draft => { draft.site.additionalPartsQuantities = value; })} hint="Off adds one of each selected extra. On lets clients request multiple extras or spares. Save draft keeps this private; Save live applies this card to the website." />
+      <div className={ui.rowEnd}><button type="button" className={ui.secondary} disabled={!onEditCommissionForm} onClick={onEditCommissionForm}>Edit commission form</button><button type="button" className={ui.secondary} onClick={()=>setFormPreviewOpen(true)}>Preview commission form</button></div>
+      <SettingsCardActions card="commission-form" {...saveProps} />
+    </Card>
+    {formPreviewOpen&&<Dialog title="Commission form preview" wide maximizable onClose={()=>setFormPreviewOpen(false)} actions={<button type="button" className={ui.secondary} onClick={()=>setFormPreviewOpen(false)}>Close preview</button>}><p className={ui.help}>Try your unsaved questions and quantity setting here. This preview does not save a request, upload references, contact clients, or take a payment.</p><CommissionForm previewContent={content} additionalPartsQuantities={content.site.additionalPartsQuantities === true} configuration={content.commissionForm??{}}/></Dialog>}
+    <details className={styles.contactsSection} open><summary>Where people can find you</summary><div className={styles.contactsContent}><OwnerSocialLinksEditor content={content} onEdit={onEdit} onRemove={onRemove} /><SettingsCardActions card="contacts" {...saveProps} /></div></details>
     <Card title="This workspace">
       <p className={ui.help}>Signed in as <strong>{userEmail}</strong>.</p>
       <p className={ui.help}>Save draft stores changes privately in your owner account. Preview shows current edits without saving. Publish live updates published content but never turns Construction Mode off. Construction Mode and the premade shop have separate, explicit Update live actions. Saving needs an internet connection; an error leaves your edits on screen.</p>

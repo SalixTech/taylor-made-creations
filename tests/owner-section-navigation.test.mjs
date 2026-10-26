@@ -28,14 +28,14 @@ async function fixture({ section = 'overview', pageId, href } = {}) {
   return { h, render, link, builder, dialog, action, click, travel, edit, props, get saved() { return saved; }, get loads() { return loads; }, get saves() { return saves; }, set failSave(value) { failSave = value; }, set saveGate(value) { saveGate = value; } };
 }
 
-const sections = ['overview', 'pages', 'prices', 'photos', 'premades', 'home', 'requests', 'client-hub', 'file-hub', 'services', 'settings'];
-test('all 11 owner sections have unique real hrefs; /taylor opens Overview without writes', async () => {
+const sections = ['overview', 'pages', 'prices', 'photos', 'premades', 'home', 'requests', 'client-hub', 'file-hub', 'commission-form', 'inventory', 'services', 'settings'];
+test('all 13 owner sections have unique real hrefs; /taylor opens Overview without writes', async () => {
   const t = await fixture();
   assert.equal(t.builder(), undefined); assert.equal(t.link('overview').props['aria-current'], undefined); // brand link
   const nav = t.h.find(n => n.type === 'nav');
   assert.equal(nodes(nav).find(n => n.props.href === '/taylor/overview').props['aria-current'], 'page');
   for (const slug of sections) assert.ok(t.link(slug), slug);
-  assert.equal(new Set(sections).size, 11); assert.equal(t.loads, 1); assert.equal(t.saves, 0); t.h.unmount();
+  assert.equal(new Set(sections).size, 13); assert.equal(t.loads, 1); assert.equal(t.saves, 0); t.h.unmount();
 });
 
 test('every deep link passes its destination through the exact owner gate; invalid sections are 404s', async () => {
@@ -168,4 +168,20 @@ test('rapid and repeated Back requests cannot bypass a dirty navigation guard', 
   t.action('Keep editing').props.onClick(); t.render();
   await t.travel(-3); assert.equal(t.h.window.location.href, '/taylor/pages'); assert.ok(t.dialog());
   t.action('Keep editing').props.onClick(); t.render(); assert.equal(t.h.window.history.length, 4); assert.equal(t.saves, 0); t.h.unmount();
+});
+
+
+test('inventory unsaved dialog blocks section changes and sign-out without saving it as website content', async () => {
+  const t = await fixture({section:'inventory'});
+  const inventory = t.h.find(n => n.type?.name === 'OwnerInventory');
+  assert.ok(inventory);
+  inventory.props.onDirtyChange(true);
+  t.click('overview');
+  assert.equal(t.h.window.location.href.endsWith('/taylor/inventory'),true);
+  assert.match(content(t.h.tree),/Save or cancel your inventory edit/);
+  assert.equal(t.saves,0); assert.equal(t.dialog(),undefined);
+  const signout=t.h.find(n=>n.type==='button' && content(n)==='Sign out'); signout.props.onClick();t.render();
+  assert.match(content(t.h.tree),/inventory edit before signing out/);
+  inventory.props.onDirtyChange(false); t.click('overview');
+  assert.equal(t.h.window.location.href.endsWith('/taylor/overview'),true); t.h.unmount();
 });

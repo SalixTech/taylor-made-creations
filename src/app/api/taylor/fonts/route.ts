@@ -19,7 +19,6 @@ export async function POST(request: Request) {
     requireDevelopmentMedia();
     const origin = request.headers.get("origin");
     if (origin && origin !== new URL(request.url).origin) throw new TaylorApiError(403, "Upload fonts from Taylor’s Space on this site.");
-    if (request.headers.get("x-tmc-font-rights") !== "confirmed") throw new TaylorApiError(400, "Confirm that you have permission to use and embed this font on your website before uploading.");
     if (activeUploads >= 2) throw new TaylorApiError(429, "Two fonts are already being checked. Wait for them to finish, then try again.", 2);
     activeUploads++; acquired = true;
     const { bytes, contentType } = await readFontBody(request);

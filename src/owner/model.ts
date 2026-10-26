@@ -1,3 +1,4 @@
+import { validateCommissionFormConfig, projectCommissionFormConfig, type CommissionFormConfig } from "../components/commission-form-config";
 import { DESIGN_COLOR_FIELDS, DESIGN_SELECT_FIELDS, TEXT_FIELDS, IMAGE_FIELDS, LINK_FIELDS, STYLE_FIELDS, type SiteDesign, type ContentOverrides, type ElementAppearance } from "./site-design";
 
 /** Serializable, versioned public content only. Never store credentials or customer data here. */
@@ -52,6 +53,7 @@ export function parsePremadeTags(value: string): string[] {
 export function getPremadeTags(item: Pick<OwnerPremade, "badge" | "tags">): string[] {
   return item.tags !== undefined ? [...item.tags] : item.badge?.trim() ? [item.badge.trim()] : [];
 }
+export type OwnerSocialLink = { id: string; label: string; value: string; url?: string };
 export type OwnerFont = { id: string; name: string; src: string; format: "woff2" | "woff" | "ttf" | "otf" };
 export type OwnerContent = {
   schemaVersion: typeof OWNER_SCHEMA_VERSION;
@@ -59,7 +61,9 @@ export type OwnerContent = {
   design?: SiteDesign;
   fonts?: OwnerFont[];
   contentOverrides?: ContentOverrides;
-  site: { moreEnabled?: boolean; catalogMode?: boolean; name: string; commissionStatus: CommissionStatus; statusNote: string; showPremades: boolean; telegram: string; discord: string; email: string; tiktok: string; twitch: string };
+  /** Form structure and wording only. Client answers and consent are never stored here. */
+  commissionForm?: CommissionFormConfig;
+  site: { socialLinks?: OwnerSocialLink[]; moreEnabled?: boolean; catalogMode?: boolean; additionalPartsQuantities?: boolean; name: string; commissionStatus: CommissionStatus; statusNote: string; showPremades: boolean; telegram: string; discord: string; email: string; tiktok: string; twitch: string };
   home: { eyebrow: string; title: string; description: string; image: { src: string; alt: string }; caption: string };
   prices: { intro: string; groups: PriceGroup[]; parts: PriceLine[]; extras: PriceLine[] };
   gallery: GalleryItem[];
@@ -128,6 +132,7 @@ export function isSafeImageSource(src: string): boolean {
   if (!src || src.length > MAX_IMAGE_SOURCE_LENGTH) return false;
   if (/^data:image\/(?:png|jpeg|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(src)) return true;
   if (/^\/api\/media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(src)) return true;
+  if (/^\/api\/cloud-media\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(src)) return true;
   if (src.startsWith("/images/") && !src.includes("..") && !/[\\\u0000-\u0020?#%]/.test(src)) return true;
   try { const url = new URL(src); return /^https:\/\//i.test(src) && url.protocol === "https:" && !url.username && !url.password && !/[\\\u0000-\u0020]/.test(src); } catch { return false; }
 }
@@ -176,13 +181,16 @@ function validateContent(value: unknown, published = false): ValidationResult {
   };
   const appearance = (value: unknown, path: string) => {
     const entry = object(value, path);
-    exact(entry, ["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "fontId"], path);
+    exact(entry, ["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId"], path);
     for (const key of ["textColor", "backgroundColor"]) if (entry[key] !== undefined && (typeof entry[key] !== "string" || !/^#[0-9a-f]{6}$/i.test(entry[key] as string))) issue(`${path}.${key}`, "Choose a six-digit hex color.");
     const options: Record<string, readonly string[]> = { font: ["original", "sans", "serif", "rounded", "mono"], textSize: ["small", "standard", "large"], align: ["left", "center", "right"], headingAlign: ["left", "center", "right"], bodyAlign: ["left", "center", "right"], imageFit: ["contain", "cover"] };
     for (const [key, choices] of Object.entries(options)) if (entry[key] !== undefined && (typeof entry[key] !== "string" || !choices.includes(entry[key] as string))) issue(`${path}.${key}`, "Choose one of the supported appearance options.");
     for (const key of ["imagePositionX", "imagePositionY"]) if (entry[key] !== undefined) number(entry[key], `${path}.${key}`, 100);
     if (entry.fontSize !== undefined) bounded(entry.fontSize, `${path}.fontSize`, 8, 144);
     if (entry.widthPercent !== undefined) bounded(entry.widthPercent, `${path}.widthPercent`, 10, 100);
+    if (entry.imageWidthPercent !== undefined) bounded(entry.imageWidthPercent, `${path}.imageWidthPercent`, 5, 100);
+    if (entry.imageAspectLocked !== undefined && typeof entry.imageAspectLocked !== "boolean") issue(`${path}.imageAspectLocked`, "Choose whether to lock image proportions.");
+    if (entry.imageHeightPx !== undefined) bounded(entry.imageHeightPx, `${path}.imageHeightPx`, 16, 2000);
     if (entry.heightPercent !== undefined) bounded(entry.heightPercent, `${path}.heightPercent`, 10, 200);
     if (entry.fontId !== undefined && (typeof entry.fontId !== "string" || !Array.isArray(root.fonts) || !root.fonts.some(font => font && typeof font === "object" && font.id === entry.fontId))) issue(`${path}.fontId`, "Choose a font uploaded to this draft.");
   };
@@ -190,13 +198,14 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) issue(path, `Use a number between ${min} and ${max}.`);
   };
   const root = object(value, "content");
-  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts"], "content");
+  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm"], "content");
+  if (root.commissionForm !== undefined) issues.push(...validateCommissionFormConfig(root.commissionForm).issues);
   if (root.schemaVersion !== OWNER_SCHEMA_VERSION) issue("schemaVersion", "This content version is not supported.");
   if (root.fonts !== undefined) list(root.fonts, "fonts", MAX_CONTENT_BYTES).forEach((value, index) => {
     const path = `fonts[${index}]`; const font = object(value, path);
     exact(font, ["id", "name", "src", "format"], path); id(font.id, `${path}.id`, "fonts"); text(font.name, `${path}.name`, 100);
     if (!["woff", "woff2", "ttf", "otf"].includes(font.format as string)) issue(`${path}.format`, "Choose a WOFF, WOFF2, TTF or OTF font.");
-    if (typeof font.src !== "string" || !/^\/api\/fonts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(font.src)) issue(`${path}.src`, "Choose a font from the authorized font uploader.");
+    if (typeof font.src !== "string" || !/^\/api\/(?:cloud-fonts|fonts)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(font.src)) issue(`${path}.src`, "Choose a font from the authorized font uploader.");
   });
   if (root.design !== undefined) {
     const design = object(root.design, "design");
@@ -238,14 +247,23 @@ function validateContent(value: unknown, published = false): ValidationResult {
   }
 
   const site = object(root.site, "site");
-  exact(site, ["name", "commissionStatus", "statusNote", "showPremades", "telegram", "discord", "email", "tiktok", "twitch", "moreEnabled", "catalogMode"], "site");
+  exact(site, ["name", "commissionStatus", "statusNote", "showPremades", "telegram", "discord", "email", "tiktok", "twitch", "moreEnabled", "catalogMode", "additionalPartsQuantities", "socialLinks"], "site");
   text(site.name, "site.name", 120); text(site.statusNote, "site.statusNote", 1000, false);
   if (!COMMISSION_STATUSES.includes(site.commissionStatus as CommissionStatus)) issue("site.commissionStatus", "Choose Opening Soon!, Closed, Open! or Waitlist.");
   bool(site.showPremades, "site.showPremades");
-  for (const key of ["moreEnabled", "catalogMode"]) if (site[key] !== undefined) bool(site[key], `site.${key}`);
+  for (const key of ["moreEnabled", "catalogMode", "additionalPartsQuantities"]) if (site[key] !== undefined) bool(site[key], `site.${key}`);
   for (const key of ["telegram", "discord", "email", "tiktok", "twitch"]) text(site[key], `site.${key}`, 254, false);
   for (const key of ["telegram", "tiktok", "twitch"]) if (typeof site[key] === "string" && site[key] && !/^[A-Za-z0-9_.]{1,64}$/.test(site[key] as string)) issue(`site.${key}`, "Enter a username without @, spaces or a URL.");
   if (typeof site.email === "string" && site.email && !EMAIL_PATTERN.test(site.email)) issue("site.email", "Enter a valid email address, without an email link query or encoded headers.");
+  if (site.socialLinks !== undefined) list(site.socialLinks, "site.socialLinks", 50).forEach((value, index) => {
+    const path = `site.socialLinks[${index}]`, entry = object(value, path);
+    exact(entry, ["id", "label", "value", "url"], path); id(entry.id, `${path}.id`, "socialLinks");
+    text(entry.label, `${path}.label`, 80); text(entry.value, `${path}.value`, 254);
+    if (entry.url !== undefined) {
+      countText(entry.url);
+      if (typeof entry.url !== "string" || entry.url.length > 2000 || (entry.url !== "" && (!/^(https:\/\/|mailto:)/i.test(entry.url) || !isSafeLink(entry.url)))) issue(`${path}.url`, "Use a secure HTTPS address or a plain email link, or leave this blank for text only.");
+    }
+  });
   const home = object(root.home, "home");
   exact(home, ["eyebrow", "title", "description", "image", "caption"], "home");
   text(home.eyebrow, "home.eyebrow", 150, false); text(home.title, "home.title", 200);
@@ -502,11 +520,11 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
     if (src.startsWith("data:")) throw new OwnerValidationError([{ path, message: "Upload this photo to authorized image storage before publishing. Browser-local photos cannot be written to the public content document." }]);
     return src;
   };
-  const publicAppearance = (appearance: ElementAppearance): ElementAppearance => Object.fromEntries(["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "fontId"].filter(key => Object.hasOwn(appearance, key)).map(key => [key, appearance[key as keyof ElementAppearance]]));
+  const publicAppearance = (appearance: ElementAppearance): ElementAppearance => Object.fromEntries(["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId"].filter(key => Object.hasOwn(appearance, key)).map(key => [key, appearance[key as keyof ElementAppearance]]));
   const { site, home, prices } = content;
   const snapshot: PublicOwnerContent = {
     schemaVersion: 1,
-    site: { name: site.name, commissionStatus: site.commissionStatus, statusNote: site.statusNote, showPremades: site.showPremades, telegram: site.telegram, discord: site.discord, email: site.email, tiktok: site.tiktok, twitch: site.twitch, ...(site.moreEnabled !== undefined ? { moreEnabled: site.moreEnabled } : {}), ...(site.catalogMode !== undefined ? { catalogMode: site.catalogMode } : {}) },
+    site: { ...(site.socialLinks !== undefined ? { socialLinks: site.socialLinks.map(link => ({ id: link.id, label: link.label, value: link.value, ...(link.url !== undefined ? { url: link.url } : {}) })) } : {}), name: site.name, commissionStatus: site.commissionStatus, statusNote: site.statusNote, showPremades: site.showPremades, telegram: site.telegram, discord: site.discord, email: site.email, tiktok: site.tiktok, twitch: site.twitch, ...(site.moreEnabled !== undefined ? { moreEnabled: site.moreEnabled } : {}), ...(site.catalogMode !== undefined ? { catalogMode: site.catalogMode } : {}), ...(site.additionalPartsQuantities !== undefined ? { additionalPartsQuantities: site.additionalPartsQuantities } : {}) },
     home: { eyebrow: home.eyebrow, title: home.title, description: home.description, image: { src: publicImage(home.image.src, "home.image.src"), alt: home.image.alt }, caption: home.caption },
     prices: {
       intro: prices.intro,
@@ -532,6 +550,7 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
       }),
     })),
   };
+  if (content.commissionForm !== undefined && content.pages.some(page => page.builtinKey === "commissions" && isPageAvailable(content, page))) snapshot.commissionForm = projectCommissionFormConfig(content.commissionForm);
   if (content.fonts !== undefined) snapshot.fonts = content.fonts.map(font => ({ id: font.id, name: font.name, src: font.src, format: font.format }));
   if (content.design !== undefined) {
     snapshot.design = {};

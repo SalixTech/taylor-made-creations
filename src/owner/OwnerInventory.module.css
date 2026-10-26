@@ -1,0 +1,84 @@
+.root { color:var(--owner-ink,#342a2c); }
+.summary { display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px; }
+.summary>div,.summary>button { display:flex;align-items:center;gap:12px;padding:14px 18px;background:var(--owner-card,#fff);border:1px solid var(--owner-line,#ded3d5);border-radius:12px;color:inherit;font:inherit; }
+.summary button { cursor:pointer; }
+.summary strong { font-size:24px; }.summary span { font-size:13px; }
+.toolbar { display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0; }
+.filters { display:grid;grid-template-columns:2fr repeat(3,1fr);gap:14px;margin-top:20px;align-items:end; }
+.filters label,.form label,.categoryName { display:grid;gap:7px;font-size:13px;min-width:0; }
+.filters input,.form input,.form textarea,.categoryName input { width:100%;min-width:0;border:1px solid var(--owner-line,#d9ced2);background:var(--owner-input-bg,var(--owner-card,#fff));color:var(--owner-ink,#342a2c);border-radius:9px;padding:10px 12px;font:inherit;box-sizing:border-box; }
+.filters input:focus-visible,.form input:focus-visible,.form textarea:focus-visible { outline:2px solid var(--owner-wine,#800014);outline-offset:2px; }
+.hint { color:var(--owner-muted,#6d6064);font-size:12px;line-height:1.6; }
+.grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,290px),1fr));gap:16px; }
+.card { background:var(--owner-card,#fff);border:1px solid var(--owner-line,#ded3d5);border-radius:14px;padding:18px;min-width:0; }.card p { margin:9px 0; }.card h3 { margin:0;overflow-wrap:anywhere;font-size:17px; }.cardTop { display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;justify-content:space-between; }
+.out,.low,.available,.archived { padding:5px 9px;border-radius:7px;font-size:11px;font-weight:600;display:inline-block; }.out { background:#fee2e2;color:#9d1724; }.low { background:#fff0bd;color:#674c00; }.available { background:#d9f4e1;color:#155b2e; }.archived { background:#e7e4e6;color:#51454b; }
+.quantity { font-size:28px; }.quantity span { font-size:14px; }.code { font-family:monospace;font-size:13px;overflow-wrap:anywhere; }
+.tags { display:flex;flex-wrap:wrap;gap:6px;margin:12px 0; }.tags span { border:1px solid var(--owner-line,#ded3d5);padding:3px 7px;border-radius:6px;font-size:11px; }
+.empty { border:1px dashed var(--owner-line,#ded3d5);padding:28px;border-radius:12px;text-align:center; }
+.error { color:var(--owner-error,#a30e2a);border:1px solid currentColor;border-radius:8px;padding:12px;line-height:1.5; }
+.form { border:0;padding:0;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:16px;min-width:0; }.full { grid-column:1/-1; }.form .check { display:flex;align-items:center;gap:8px; }.form .check input { width:18px;height:18px; }.form:disabled { opacity:.7;pointer-events:none; }
+.barcodeInput { display:flex;gap:8px; }.barcode { display:block;width:100%;max-width:500px;max-height:150px;background:#fff;border-radius:4px;margin:16px auto; }
+.history,.categories { margin:16px 0; }.history summary,.categories summary { cursor:pointer; }.history p { font-size:12px;line-height:1.6; }.categoryName { margin:12px 0; }
+@media(max-width:800px) { .filters { grid-template-columns:1fr 1fr; } }
+@media(max-width:500px) { .filters,.form { grid-template-columns:1fr; }.summary { gap:8px; }.summary>div,.summary>button { padding:10px; }.barcodeInput { flex-wrap:wrap; } }
+:global([data-owner-portal][data-color-mode="dark"]) .card .out { background:#531d29!important;color:#ffd6dd!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .card .low { background:#4c3c15!important;color:#ffe8ab!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .card .available { background:#16432c!important;color:#bdf5d2!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .card .archived { background:#39363c!important;color:#e7dfe8!important; }
+
+/* Keep the inventory workspace transparent; only actual cards have surfaces. */
+.root { background: transparent; min-width: 0; }
+.barcodeInput { align-items: center; min-width: 0; }
+.barcodeInput input { flex: 1 1 0; width: 0; min-width: 0; }
+.barcodeInput button { flex: 0 0 auto; min-width: max-content; white-space: nowrap; }
+.createChoice { padding: 16px; border: 1px solid var(--owner-line, #ded3d5); border-radius: 12px; margin: 16px 0; background: var(--owner-card, #fff); }
+.createChoice label { display: grid; gap: 8px; }
+.createChoice input { width: 100%; min-width: 0; color: var(--owner-ink); background: var(--owner-input, var(--owner-card, #fff)); }
+
+/* Inventory controls use their own compact rhythm, not page-level field margins. */
+.filters > label,.filters > div,.form > label,.form > div { margin:0; align-self:start; }
+.filters > label,.filters > div { display:grid; grid-template-rows:20px 40px; gap:6px; }
+.filters label,.filters input,.filters [role="combobox"],.form label,.form input,.form textarea,.form [role="combobox"] { margin:0; }
+.filters input,.filters [role="combobox"] { min-height:40px; height:40px; }
+.form { gap:12px 16px; align-items:start; }
+.form > label,.form > div { display:grid; gap:5px; font-size:13px; line-height:1.35; }
+.form input:not([type="checkbox"]),.form [role="combobox"] { min-height:38px; height:38px; padding:8px 10px; font-size:13px; }
+.form textarea { min-height:56px; padding:8px 10px; resize:vertical; }
+.form small { margin:0; line-height:1.35; }
+.form .check { grid-column:1/-1; margin:0; }
+.form .check input { margin:0; padding:0; }
+.form .barcodeInput button { min-height:38px; padding:8px 12px; font-size:13px; }
+.fieldError { color:var(--owner-error,#a30e2a); font-size:12px; }
+.form [aria-invalid="true"] { border-color:var(--owner-error,#a30e2a); }
+.error { margin:0 0 12px; font-size:13px; }
+.error strong { display:block; margin-bottom:3px; }
+.printRow { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.printRow button { min-height:36px; padding:7px 12px; font-size:13px; }
+.barcodePreview { margin-top:8px; font-size:13px; }
+.barcodePreview summary { cursor:pointer; }
+:global(dialog):has(.form) { width:min(920px,calc(100vw - 32px)); }
+:global(dialog):has(.form) > div:first-child { padding:16px 20px 0; }
+:global(dialog):has(.form) > div:nth-child(2) { padding:14px 20px; }
+:global(dialog):has(.form) > div:last-child { padding:12px 20px; }
+@media(min-width:760px) {
+  .form { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .form > label:first-child,.form > label:nth-child(4),.form > label:nth-child(7),.form > label:nth-child(8),.form .full { grid-column:span 2; }
+}
+@media(max-width:500px) { .form .full { grid-column:1/-1; } }
+
+/* Inventory selectors are centered without moving their shared chevron out of its rail. */
+.filters :is(button,input)[role="combobox"],.form :is(button,input)[role="combobox"] { text-align:center; padding-left:36px; padding-right:36px; }
+.form input[type="number"] { text-align:center; }
+.filters [role="combobox"] + span,.form [role="combobox"] + span { top:50%; margin:0!important; line-height:1; }
+.spinner { display:inline-block; width:14px; height:14px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:inventory-spin .7s linear infinite; }
+@keyframes inventory-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .spinner { animation:none; } }
+.form .archiveRow { display:flex; align-items:center; gap:8px; grid-column:1/-1; }
+.archiveRow .check { display:flex; align-items:center; gap:8px; }
+.helpWrap { position:relative; display:inline-flex; }
+.helpButton { width:20px; height:20px; min-height:20px; padding:0; border:1px solid var(--owner-muted,#6d6064); border-radius:50%; color:var(--owner-muted,#6d6064); background:transparent; display:grid; place-items:center; font:inherit; font-size:12px; line-height:1; cursor:help; }
+.helpText { display:none; position:absolute; z-index:4; left:0; bottom:calc(100% + 8px); width:min(290px,70vw); box-sizing:border-box; border:1px solid var(--owner-line,#ded3d5); border-radius:9px; padding:11px 13px; background:var(--owner-card,#fff); color:var(--owner-ink,#342a2c); box-shadow:0 5px 20px #0002; font-size:12px; line-height:1.5; }
+.helpWrap:hover .helpText,.helpWrap:focus-within .helpText,.helpText[data-open=true] { display:block; }
+
+/* Actions sit directly on the workspace, not in an extra dark-mode strip. */
+:global([data-owner-portal][data-color-mode]) .root .toolbar { background-color:transparent!important; border:0; box-shadow:none; }

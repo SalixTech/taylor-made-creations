@@ -16,6 +16,10 @@ import { DESIGN_SELECT_FIELDS, IMAGE_FIELDS, LINK_FIELDS, TEXT_FIELDS } from "./
 import ui from "./OwnerPortal.module.css";
 import styles from "./OwnerVisualBuilder.module.css";
 import buttons from "./OwnerButton.module.css";
+import { OwnerLinkedTextField } from "./OwnerLinkedTextField";
+import { OwnerCanvasImageTools } from "./OwnerCanvasImageTools";
+import type { ElementAppearance } from "./appearance";
+import { useMovablePanel } from "./use-movable-panel";
 
 type Props = {
   content: OwnerContent;
@@ -25,6 +29,7 @@ type Props = {
   onManagePages: () => void;
   onAddPage: () => void;
   onPrices: () => void;
+  onEditCommissionForm?: () => void;
   onRemove: (title: string, description: string, remove: () => void) => void;
   liveShopVisibility: boolean | null;
   liveShopKnown?: boolean;
@@ -41,7 +46,7 @@ const selectionLabels: Record<string, string> = { site: "Header & footer", desig
 function move<T extends { id: string }>(items: T[], id: string, direction: -1 | 1) { const from = items.findIndex(item => item.id === id); const to = from + direction; if (from >= 0 && to >= 0 && to < items.length) [items[from], items[to]] = [items[to], items[from]]; }
 
 /** The public renderer IS the canvas. Only the selected piece gets editing controls. */
-export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onManagePages, onAddPage, onPrices, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange }: Props) {
+export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onManagePages, onAddPage, onPrices, onEditCommissionForm, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange }: Props) {
   const panelId = useId();
   const navigationTarget = useRef<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -53,12 +58,22 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const canvasRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
+  const movable = useMovablePanel(panelRef, !selected);
   const lastTarget = useRef<HTMLElement | null>(null);
   const activePages = content.pages.filter(item => !item.trashedAt).sort((a, b) => a.order - b.order);
   const photo = content.gallery.find(item => selected === `gallery:${item.id}`);
   const premade = content.premades.find(item => selected === `premade:${item.id}`);
   const block = page.blocks.find(item => selected === `block:${item.id}`);
   const templateField = [...TEXT_FIELDS, ...IMAGE_FIELDS, ...LINK_FIELDS].find(field => selected?.endsWith(`:${field.key}`));
+  const imageStyleKey = selected === "home-image" ? "home.image" : selected?.startsWith("template-image:") ? selected.slice(15) : null;
+  const imageBlock = block && (block.type === "image" || block.type === "feature") ? block : null;
+  const selectedImageAppearance = imageStyleKey ? content.contentOverrides?.styles?.[imageStyleKey] : imageBlock?.appearance;
+  function changeImageAppearance(value: ElementAppearance) {
+    onEdit(draft => {
+      if (imageStyleKey) { draft.contentOverrides ??= {}; draft.contentOverrides.styles ??= {}; draft.contentOverrides.styles[imageStyleKey] = value; }
+      else if (imageBlock) { const item = draft.pages.find(item => item.id === page.id)?.blocks.find(item => item.id === imageBlock.id); if (item) item.appearance = value; }
+    });
+  }
   const selectedTitle = templateField?.label ?? (photo ? "Edit photo" : premade ? "Edit premade" : block ? blockLabels[block.type] : selectionLabels[selected ?? ""] ?? "Edit section");
 
   useEffect(() => {
@@ -126,7 +141,7 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   }
   function canvasBlock(event: DragEvent<HTMLDivElement>) { const node = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-owner-edit^='block:']") : null; return node && canvasRef.current?.contains(node) ? node : null; }
   function canvasNav(event: DragEvent<HTMLDivElement>) { const node = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-owner-nav-page]") : null; return node && canvasRef.current?.contains(node) ? node : null; }
-  function beginBlockDrag(event: DragEvent<HTMLDivElement>) { if (browsing || uploadBusy) return; const nav = canvasNav(event); if (nav?.dataset.ownerNavPage && activePages.some(item => item.id === nav.dataset.ownerNavPage)) { draggingBlock.current = null; draggingNav.current = nav.dataset.ownerNavPage; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", nav.dataset.ownerNavPage); event.dataTransfer.setDragImage?.(nav, 16, 16); nav.dataset.ownerDragging = "true"; setSelected(null); return; } const node = canvasBlock(event); if (!node) return; draggingNav.current = null; const id = node.dataset.ownerEdit?.slice(6); if (!id || !page.blocks.some(item => item.id === id)) return; draggingBlock.current = { id, pageId: page.id }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", id); event.dataTransfer.setDragImage?.(node, Math.max(0, event.clientX - node.getBoundingClientRect().left), Math.max(0, event.clientY - node.getBoundingClientRect().top)); node.dataset.ownerDragging = "true"; setSelected(null); }
+  function beginBlockDrag(event: DragEvent<HTMLDivElement>) { if (event.target instanceof HTMLElement && event.target.closest("[data-owner-canvas-controls]")) { event.preventDefault(); return; } if (browsing || uploadBusy) return; const nav = canvasNav(event); if (nav?.dataset.ownerNavPage && activePages.some(item => item.id === nav.dataset.ownerNavPage)) { draggingBlock.current = null; draggingNav.current = nav.dataset.ownerNavPage; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", nav.dataset.ownerNavPage); event.dataTransfer.setDragImage?.(nav, 16, 16); nav.dataset.ownerDragging = "true"; setSelected(null); return; } const node = canvasBlock(event); if (!node) return; draggingNav.current = null; const id = node.dataset.ownerEdit?.slice(6); if (!id || !page.blocks.some(item => item.id === id)) return; draggingBlock.current = { id, pageId: page.id }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", id); event.dataTransfer.setDragImage?.(node, Math.max(0, event.clientX - node.getBoundingClientRect().left), Math.max(0, event.clientY - node.getBoundingClientRect().top)); node.dataset.ownerDragging = "true"; setSelected(null); }
   function overBlock(event: DragEvent<HTMLDivElement>) { if (browsing || uploadBusy) return; if (draggingNav.current) { const nav = canvasNav(event); if (nav) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item => delete item.dataset.ownerDrop); nav.dataset.ownerDrop = "true"; } return; } if (draggingBlock.current?.pageId !== page.id) return; const node = canvasBlock(event); if (!node) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item => delete item.dataset.ownerDrop); node.dataset.ownerDrop = "true"; }
   function endBlockDrag() { if (draggingNav.current || draggingBlock.current) dragClickGuard.current = true; canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-dragging]").forEach(item => delete item.dataset.ownerDragging); draggingNav.current = null; draggingBlock.current = null; canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item => delete item.dataset.ownerDrop); }
   function dropBlock(event: DragEvent<HTMLDivElement>) { if (!browsing && !uploadBusy && draggingNav.current) { const nav = canvasNav(event); const sourceId = draggingNav.current; if (nav?.dataset.ownerNavPage) { event.preventDefault(); event.stopPropagation(); const targetId = nav.dataset.ownerNavPage; const rect = nav.getBoundingClientRect(); const after = event.clientX > rect.left + rect.width / 2; onEdit(draft => { const active = draft.pages.filter(item => !item.trashedAt).sort((a, b) => a.order - b.order); const slots = active.map(item => item.order); if (reorderById(active, sourceId, targetId, after)) active.forEach((item, index) => { item.order = slots[index]; }); }); setAnnouncement("Navigation order updated in your draft."); } endBlockDrag(); return; } const source = draggingBlock.current; const node = canvasBlock(event); if (browsing || uploadBusy || source?.pageId !== page.id || !node) { endBlockDrag(); return; } event.preventDefault(); event.stopPropagation(); const targetId = node.dataset.ownerEdit!.slice(6); const rect = node.getBoundingClientRect(); const after = event.clientY > rect.top + rect.height / 2; editPage(target => { reorderById(target.blocks, source.id, targetId, after); }); endBlockDrag(); setSelected(`block:${source.id}`); setAnnouncement("Section order updated in your draft."); }
@@ -163,26 +178,27 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
     <OwnerSelect label="Home introduction layout" value={content.design?.homeIntro ?? "title-only"} options={DESIGN_SELECT_FIELDS.find(field => field.key === "homeIntro")!.options} onChange={value => onEdit(draft => { draft.design = { ...draft.design, homeIntro: value === "full" ? "full" : "title-only" }; })} hint="The original layout shows just the title. Choose the full introduction to show your eyebrow, description and buttons." />
     <Field label="Welcome eyebrow" value={content.home.eyebrow} onChange={value => onEdit(draft => { draft.home.eyebrow = value; })} />
     <OwnerElementAppearance content={content} styleKey="home.eyebrow" onEdit={onEdit} />
-    <Field label="Welcome description" multiline value={content.home.description} onChange={value => onEdit(draft => { draft.home.description = value; })} />
+    <OwnerLinkedTextField label="Welcome description" multiline value={content.home.description} onChange={value => onEdit(draft => { draft.home.description = value; })} />
     <OwnerElementAppearance content={content} styleKey="home.description" onEdit={onEdit} />
   </>;
   if (selected === "home-copy") controls = homeCopyControls;
   if (selected === "page-content") controls = <>
     {page.builtinKey === "home" ? homeCopyControls : <Field label="Page title" value={page.title} onChange={value => editPage(target => { target.title = value; })} required />}
     {page.builtinKey !== "home" && pageTitleAppearance}
-    {page.builtinKey === "prices" && <><Field label="Prices introduction" value={content.prices.intro} multiline onChange={value => onEdit(draft => { draft.prices.intro = value; })} /><OwnerElementAppearance content={content} styleKey="prices.intro" onEdit={onEdit} /></>}
+    {page.builtinKey === "prices" && <><OwnerLinkedTextField label="Prices introduction" value={content.prices.intro} multiline onChange={value => onEdit(draft => { draft.prices.intro = value; })} /><OwnerElementAppearance content={content} styleKey="prices.intro" onEdit={onEdit} /></>}
     {page.builtinKey && <OwnerTemplateEditor key={`template-${page.id}`} content={content} onEdit={onEdit} group={page.builtinKey} />}
     <div className={styles.sectionDirectory}><h3>Sections on this page</h3>{page.blocks.length ? page.blocks.map((item, index) => <button key={item.id} type="button" onClick={() => choose(`block:${item.id}`)}><span>{index + 1}. {blockLabels[item.type]}</span><span aria-hidden="true">→</span></button>) : <p className={ui.help}>Add a section to include more words, photos, buttons or questions and answers.</p>}<button type="button" onClick={() => choose("sections")}>＋ Add a section</button></div>
   </>;
   if (selected === "home-image") controls = <>
     <ImagePicker key="home-image" src={content.home.image.src} alt={content.home.image.alt} onSource={value => onEdit(draft => { draft.home.image.src = value; })} onAlt={value => onEdit(draft => { draft.home.image.alt = value; })} />
     <OwnerElementAppearance content={content} styleKey="home.image" onEdit={onEdit} />
-    <Field label="Caption beneath the main photo" value={content.home.caption} onChange={value => onEdit(draft => { draft.home.caption = value; })} />
+    <OwnerLinkedTextField label="Caption beneath the main photo" value={content.home.caption} onChange={value => onEdit(draft => { draft.home.caption = value; })} />
     <OwnerElementAppearance content={content} styleKey="home.caption" onEdit={onEdit} />
+    <OwnerTemplateEditor content={content} onEdit={onEdit} target="template-text:home.photoCredit" />
   </>;
   if (selected === "status") controls = <>
     <OwnerSelect label="Commission status" value={content.site.commissionStatus} options={COMMISSION_STATUSES.map(value => ({ value, label: value }))} onChange={value => onEdit(draft => { draft.site.commissionStatus = value as OwnerContent["site"]["commissionStatus"]; })} />
-    <Field label="A note for visitors" multiline value={content.site.statusNote} onChange={value => onEdit(draft => { draft.site.statusNote = value; })} />
+    <OwnerLinkedTextField label="A note for visitors" multiline value={content.site.statusNote} onChange={value => onEdit(draft => { draft.site.statusNote = value; })} />
   </>;
   if (selected === "contact") controls = <>{([ ["telegram", "Telegram username"], ["discord", "Discord username"], ["email", "Email address"], ["tiktok", "TikTok username"], ["twitch", "Twitch username"] ] as const).map(([key, label]) => <Field key={key} label={label} type={key === "email" ? "email" : "text"} value={content.site[key]} onChange={value => onEdit(draft => { draft.site[key] = key === "email" || key === "discord" ? value : value.replace(/^@/, ""); })} hint={key === "email" || key === "discord" ? "Leave blank to hide this contact method." : "Just your username, without @ or a link. Leave blank to hide it."} />)}</>;
   if (selected === "page") controls = <>
@@ -215,7 +231,7 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
     controls = <>
       <Field label="Listing name" value={premade.name} onChange={value => onEdit(draft => { const item = draft.premades.find(item => item.id === premade.id); if (item) item.name = value; })} />
       <Field label="Price (USD, optional)" type="number" value={premade.price ?? ""} onChange={value => onEdit(draft => { const item = draft.premades.find(item => item.id === premade.id); if (item) item.price = value === "" ? null : Number(value); })} />
-      <Field label="Description" multiline value={premade.description} onChange={value => onEdit(draft => { const item = draft.premades.find(item => item.id === premade.id); if (item) item.description = value; })} />
+      <OwnerLinkedTextField label="Description" multiline value={premade.description} onChange={value => onEdit(draft => { const item = draft.premades.find(item => item.id === premade.id); if (item) item.description = value; })} />
       <PremadePhotoEditor key={premade.id} item={premade} onChange={patch => onEdit(draft => { const item = draft.premades.find(item => item.id === premade.id); if (item) Object.assign(item, patch); })} />
       <Toggle label="Show this listing" checked={premade.visible} onChange={value => onEdit(draft => { const item = draft.premades.find(item => item.id === premade.id); if (item) item.visible = value; })} hint="Hidden listings are only shown in this builder. The shop switch must also be on for visitors to see it." />
       <div className={styles.itemActions}><span>Listing {index + 1} of {content.premades.length}</span><MoveButtons label={premade.name} index={index} length={content.premades.length} onMove={direction => onEdit(draft => move(draft.premades, premade.id, direction))} /></div>
@@ -228,7 +244,7 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   return <section className={styles.builder} aria-label="Visual website builder" data-builder-mode={browsing ? "view" : "edit"}>
     <div className={styles.toolbar}>
       <div className={styles.pagePicker}><OwnerSelect label={browsing ? "Viewing page" : "Editing page"} value={page.id} options={activePages.map(item => ({ value: item.id, label: item.title }))} onChange={id => { const target = activePages.find(item => item.id === id); if (target && !uploadBusy) { closePanel(); onPageChange(target); } }} /></div>
-      <div className={styles.viewTools}><div className={styles.modeSwitch} aria-label="Builder mode"><button type="button" aria-pressed={!browsing} disabled={uploadBusy} onClick={() => changeMode(false)}>Edit website</button><button type="button" aria-pressed={browsing} disabled={uploadBusy} onClick={() => changeMode(true)}>{browsing ? "View website" : "Exit edit mode"}</button></div><div className={styles.deviceSwitch} aria-label="Preview width"><button type="button" aria-label="Desktop view" title="Desktop view" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")}>▱</button><button type="button" aria-label="Mobile view" title="Mobile view" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")}>▯</button></div></div>
+      <div className={styles.viewTools}><div className={styles.modeSwitch} aria-label="Builder mode"><button type="button" aria-pressed={!browsing} disabled={uploadBusy} onClick={() => changeMode(false)}>Edit website</button><button type="button" aria-pressed={browsing} disabled={uploadBusy} onClick={() => changeMode(true)}>{browsing ? "View website" : "Exit edit mode"}</button></div><div className={styles.deviceSwitch} aria-label="Preview width"><button type="button" aria-label="Desktop view" title="Desktop view" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")}><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="13" rx="2" /><path d="M12 16v5m-4 0h8" /></svg></button><button type="button" aria-label="Mobile view" title="Mobile view" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")}><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="6" y="2" width="12" height="20" rx="2" /><path d="M10 5h4m-3 14h2" /></svg></button></div></div>
     </div>
     <div className={styles.actionbar}>
       <p>{uploadBusy ? "Uploading your photo… finish or cancel it before changing sections." : browsing ? "Viewing your private draft, including unsaved changes. Choose Edit website to make changes. Nothing is saved or published by switching modes." : "Click to edit. Drag sections or top bar items to reorder; arrow buttons are available in their editors."}</p>
@@ -247,11 +263,12 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
     {!browsing && <OwnerHeaderEditor content={content} onEdit={onEdit} open={navigationOpen} onOpenChange={changeNavigationOpen} disabled={uploadBusy} />}
     <div className={styles.stage} data-device={device}>
       <div ref={canvasRef} className={`${styles.canvas} ${!browsing ? styles.editing : ""}`} onPointerDownCapture={() => { dragClickGuard.current = false; }} onClickCapture={capture} onKeyDownCapture={capture} onDragStartCapture={beginBlockDrag} onDragOver={overBlock} onDrop={dropBlock} onDragEnd={endBlockDrag}>
-        <SiteContentFrame content={content} page={page} mode="editor" editable={!browsing} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
-        {!browsing && block && <OwnerCanvasSectionTools key={block.id} canvasRef={canvasRef} page={page} block={block} disabled={uploadBusy} onEdit={editPage} onAnnouncement={setAnnouncement} />}
+        <SiteContentFrame content={content} page={page} mode="editor" editable={!browsing} onEditCommissionForm={onEditCommissionForm} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
+        {!browsing && selected && (imageStyleKey || imageBlock) && <OwnerCanvasImageTools key={`${page.id}:${selected}`} canvasRef={canvasRef} target={selected} value={selectedImageAppearance} disabled={uploadBusy} onChange={changeImageAppearance} />}
+        {!browsing && block && !imageBlock && <OwnerCanvasSectionTools key={block.id} canvasRef={canvasRef} page={page} block={block} disabled={uploadBusy} onEdit={editPage} onAnnouncement={setAnnouncement} />}
       </div>
-      {!browsing && selected && controls && <aside id={panelId} ref={panelRef} className={styles.panel} aria-label={selectedTitle} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); closePanel(); } }}>
-        <div className={styles.panelHeader}><div><span>{selected === "design" ? "APPLIES ACROSS YOUR WEBSITE" : selected === "site" ? "HEADER, FOOTER & BRANDING" : "EDITING YOUR DRAFT"}</span><h2>{selectedTitle}</h2></div><button type="button" aria-label="Close section editor" disabled={uploadBusy} onClick={closePanel}>×</button></div>
+      {!browsing && selected && controls && <aside id={panelId} ref={panelRef} className={styles.panel} style={movable.style} data-moving={movable.moving} aria-label={selectedTitle} onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); closePanel(); } }}>
+        <div className={styles.panelHeader} {...movable.handleProps}><div><span>{selected === "design" ? "APPLIES ACROSS YOUR WEBSITE" : selected === "site" ? "HEADER, FOOTER & BRANDING" : "EDITING YOUR DRAFT"}</span><h2>{selectedTitle}</h2></div><button type="button" aria-label="Close section editor" disabled={uploadBusy} onClick={closePanel}><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
         <div className={styles.panelNav}><button type="button" aria-pressed={selected === "page-content"} disabled={uploadBusy} onClick={() => choose("page-content")}>Page content</button><button type="button" aria-pressed={selected === "design"} disabled={uploadBusy} onClick={() => choose("design")}>Design</button><button type="button" aria-pressed={selected === "site"} disabled={uploadBusy} onClick={() => choose("site")}>Header & footer</button></div><div className={styles.panelContent} data-owner-fields>{controls}</div>
         <div className={styles.panelFooter}><span>{uploadBusy ? "Finish or cancel your upload before closing." : "Changes appear on your page as you type."}</span><button type="button" className={ui.primary} disabled={uploadBusy} onClick={closePanel}>Done</button></div>
       </aside>}

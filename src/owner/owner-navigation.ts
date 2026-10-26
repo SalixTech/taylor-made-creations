@@ -2,7 +2,7 @@
 export const OWNER_SECTION_SLUGS = {
   overview: "overview", pages: "pages", prices: "prices", photos: "photos",
   premades: "premades", home: "home", requests: "requests", clients: "client-hub",
-  files: "file-hub", services: "services", settings: "settings",
+  commissionForm: "commission-form", files: "file-hub", inventory: "inventory", services: "services", settings: "settings",
 } as const;
 export type OwnerSection = keyof typeof OWNER_SECTION_SLUGS;
 export type OwnerDestination = { section: OwnerSection; pageId?: string };

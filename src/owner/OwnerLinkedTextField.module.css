@@ -1,0 +1,4 @@
+.linkEditor { margin:8px 0 14px; padding:14px; border:1px solid var(--owner-line,#ded6d9); border-radius:8px; background:var(--owner-surface,#fff); }
+.linkEditor label { margin:0 0 12px; }
+.linkEditor > div { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+.linkEditor p { font-size:12px; color:var(--owner-ink,#302c2c); }

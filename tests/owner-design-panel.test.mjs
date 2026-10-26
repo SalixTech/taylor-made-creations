@@ -11,7 +11,7 @@ function setup(component, props = {}) {
   let content = h.load('src/owner/defaults.ts').createDefaultOwnerContent();
   const input = { content, ...props, onEdit(change) { const next = structuredClone(content); change(next); content = next; input.content = content; } };
   const render = () => h.render(Component, input);
-  const field = label => h.find(n => n.type?.name === 'Field' && n.props.label === label);
+  const field = label => h.find(n => ['Field','OwnerLinkedTextField'].includes(n.type?.name) && n.props.label === label);
   const button = label => h.find(n => n.type === 'button' && visibleText(n) === label);
   render();
   return { h, catalog, model, input, render, field, button, get content() { return content; } };
@@ -149,7 +149,7 @@ test('FAQ question edits follow stable identity rather than a stale list index',
   const t = blocksSetup();
   const faq = t.page.blocks[1]; const id = faq.items[0].id;
   t.props.onEdit(page => { page.blocks[1].items.push({ id: 'another-question', question: 'Another?', answer: 'Another answer' }); }); t.render();
-  const question = t.h.find(n => n.type?.name === 'Field' && n.props.label === 'Question 1');
+  const question = t.h.find(n => ['Field','OwnerLinkedTextField'].includes(n.type?.name) && n.props.label === 'Question 1');
   t.props.onEdit(page => { page.blocks[1].items.reverse(); });
   question.props.onChange('Changed original question'); t.render();
   assert.equal(t.page.blocks[1].items.find(item => item.id === id).question, 'Changed original question');

@@ -19,9 +19,11 @@
   border-radius:var(--owner-button-radius);
   background-color:var(--action-bg);
   color:var(--action-ink);
-  font:inherit;
+  font-family:var(--owner-button-font-family);
   font-size:12px;
-  font-weight:600;
+  font-weight:var(--owner-button-font-weight);
+  font-synthesis:none;
+  text-shadow:none;
   line-height:1.5;
   text-align:center;
   text-decoration:none;

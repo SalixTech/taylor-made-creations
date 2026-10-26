@@ -4,15 +4,16 @@ import {useEffect,useRef} from 'react';
 import terms from '@/data/terms-of-service.json';
 import styles from './TermsAgreement.module.css';
 import { usePublicSiteState, usePublicOwnerContent } from './PublicSiteContext';
-import { currentTermsIdentity } from "@/content/terms-identity";
+import { currentTermsIdentity, previewTermsIdentity } from "@/content/terms-identity";
 import { SiteContentBlocks } from './SiteContent';
 import { lockPageScroll } from './modal-scroll-lock';
 
-export default function TermsAgreement({onAgree,onDismiss}:{onAgree:()=>void;onDismiss:()=>void}) {
+export default function TermsAgreement({onAgree,onDismiss,previewContent}:{onAgree:()=>void;onDismiss:()=>void;previewContent?:import("@/owner/model").OwnerContent}) {
   const publication = usePublicSiteState();
-  const content = usePublicOwnerContent();
-  const page = content?.pages.find(page => page.builtinKey === "terms" && !page.trashedAt);
-  const canAgree = currentTermsIdentity(publication) !== null;
+  const publishedContent = usePublicOwnerContent();
+  const content = previewContent ?? publishedContent;
+  const page = content?.pages.find(page => page.builtinKey === "terms" && !page.trashedAt && page.availability !== "hidden");
+  const canAgree = (previewContent ? previewTermsIdentity(previewContent) : currentTermsIdentity(publication)) !== null;
   const dialogRef=useRef<HTMLDialogElement>(null);
   const headingRef=useRef<HTMLHeadingElement>(null);
 
@@ -36,7 +37,7 @@ export default function TermsAgreement({onAgree,onDismiss}:{onAgree:()=>void;onD
     </header>
     <div className={styles.content} tabIndex={0} aria-label="Full terms of service">
       <p className={styles.intro}>Please read the terms below before agreeing to continue with your request.</p>
-      {publication.status === "error" ? <p role="alert">The current terms could not be loaded. Please try again before agreeing.</p> : content ? (page?.blocks.length ? <SiteContentBlocks content={content} blocks={page.blocks} presentation="terms" /> : <p role="alert">The terms are currently unavailable. Please contact Taylor before continuing.</p>) : <>{terms.sections.map(({id,heading,items})=><section key={id} aria-labelledby={`commission-terms-${id}`}>
+      {!previewContent && publication.status === "error" ? <p role="alert">The current terms could not be loaded. Please try again before agreeing.</p> : content ? (page?.blocks.length ? <SiteContentBlocks content={content} blocks={page.blocks} presentation="terms" mode={previewContent ? "private-preview" : "public"} /> : <p role="alert">The terms are currently unavailable. Please contact Taylor before continuing.</p>) : <>{terms.sections.map(({id,heading,items})=><section key={id} aria-labelledby={`commission-terms-${id}`}>
         <h3 id={`commission-terms-${id}`}>{heading}</h3>
         <ul>{items.map(item=><li key={item}>{item}</li>)}</ul>
       </section>)}

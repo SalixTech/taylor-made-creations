@@ -1,11 +1,15 @@
 "use client";
 
+import CommissionForm from "./CommissionForm";
+import { Dialog as OwnerDialog } from "@/owner/OwnerDialog";
 import Image from "next/image";
 import Link from "next/link";
 import { createContext, useContext, useState, type ReactNode, type CSSProperties } from "react";
 import { FursuitGallery } from "@/components/FursuitGallery";
 import { PremadeGallery } from "@/components/PremadeGallery";
 import { useOwnerMediaSource } from "@/owner/media-client";
+import { parseInlineLinks, templateSupportsInlineLinks } from "@/owner/inline-links";
+import { getOwnerSocialLinks } from "@/owner/social-links";
 import { Brand, BrandMark } from "@/components/Brand";
 import { PremadeTags, PremadePurchaseInfo, PremadeListingLink } from "./PremadeProduct";
 import { premadeHref, thirdPartyListingUrl } from "./storefront-model";
@@ -18,10 +22,10 @@ import { DropdownChevron } from "./DropdownChevron";
 import { getHeaderNavigation } from "@/owner/header-navigation";
 import { getPreviewPage, OWNER_PREVIEW_ROOT, resolveSiteDestination } from "@/owner/preview-model";
 import styles from "@/owner/OwnerSitePreview.module.css";
-import { getTemplateText, getTemplateImage, getTemplateLink, getSiteThemeStyle, getSiteThemeAttributes, getElementAppearanceStyle, getElementAppearanceAttributes, getImageAppearanceStyle, type ElementAppearance } from "@/owner/site-design";
+import { getTemplateText, getTemplateImage, getTemplateLink, getSiteThemeStyle, getSiteThemeAttributes, getElementAppearanceStyle, getElementAppearanceAttributes, getImageAppearanceStyle, getImageFrameStyle, type ElementAppearance } from "@/owner/site-design";
 
 export type SiteRenderMode = "public" | "private-preview" | "editor";
-type RenderOptions = { mode: SiteRenderMode; editable?: boolean; onNavigate?: (page: OwnerPage) => void };
+type RenderOptions = { onEditCommissionForm?: () => void; mode: SiteRenderMode; editable?: boolean; onNavigate?: (page: OwnerPage) => void };
 const RenderContext = createContext<RenderOptions>({ mode: "private-preview" });
 function useDestination(content: OwnerContent, href: string) {
   const { mode } = useContext(RenderContext);
@@ -43,6 +47,10 @@ function ContentLink({ content, href, children, className, editTarget, appearanc
   }}>{children}</Link>;
 }
 
+function InlineLinkedText({ content, text }: { content: OwnerContent; text: string }) {
+  return <>{parseInlineLinks(text).map((part, index) => part.href ? <ContentLink key={index} content={content} href={part.href} className="inline-content-link">{part.text}</ContentLink> : part.text)}</>;
+}
+
 const money = (value: number) => `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
 function editorTarget(editable: boolean | undefined, target: string, label: string) {
@@ -55,7 +63,7 @@ function appearanceProps(appearance?: ElementAppearance) {
 
 function TemplateText({ content, field, variables }: { content: OwnerContent; field: string; variables?: Record<string, string> }) {
   const { mode, editable } = useContext(RenderContext);
-  return <span {...editorTarget(mode === "editor" && editable, `template-text:${field}`, "page text")} {...appearanceProps(content.contentOverrides?.styles?.[field])}>{getTemplateText(content, field, variables)}</span>;
+  return <span {...editorTarget(mode === "editor" && editable, `template-text:${field}`, "page text")} {...appearanceProps(content.contentOverrides?.styles?.[field])}>{templateSupportsInlineLinks(field) ? <InlineLinkedText content={content} text={getTemplateText(content, field, variables)} /> : getTemplateText(content, field, variables)}</span>;
 }
 function TemplateLink({ content, field, className = "text-link", children }: { content: OwnerContent; field: string; className?: string; children?: ReactNode }) {
   const link = getTemplateLink(content, field);
@@ -79,7 +87,7 @@ function PreviewImage({ src, alt, hero = false, imageStyle, appearance, layoutAp
   if (!isSafeImageSource(src) || failed || media.error) return <div className={styles.unavailable} role="status">This photo could not be displayed. {alt}</div>;
   if (!media.src) return <div className={styles.unavailable} role="status">Loading photo…</div>;
   const imageAppearance = appearance && !layoutAppearance ? { ...appearance, widthPercent: undefined, heightPercent: undefined } : appearance;
-  return <div className={`${styles.image} ${hero ? styles.hero : ""}`} {...appearanceProps(imageAppearance)}>
+  return <div data-owner-image-frame className={`${styles.image} ${hero ? styles.hero : ""}`} {...appearanceProps(imageAppearance)} style={{ ...getElementAppearanceStyle(imageAppearance), ...getImageFrameStyle(appearance) }}>
     <Image src={media.src} alt={alt} fill unoptimized loading={hero ? "eager" : "lazy"} fetchPriority={hero ? "high" : undefined} style={{ ...imageStyle, ...getImageAppearanceStyle(appearance) }} sizes={hero ? "(max-width:1140px) 95vw, 1084px" : "(max-width:650px) 94vw, 700px"} onError={() => setFailed(true)} />
   </div>;
 }
@@ -93,26 +101,26 @@ export function ContentBlocks({ blocks, content, presentation }: { blocks: reado
     if (block.type === "divider") return <hr key={block.id} {...edit} className={styles.divider} />;
     if (block.type === "spacer") return <div key={block.id} {...edit} aria-hidden={mode === "editor" && editable ? undefined : true} style={{ ...getElementAppearanceStyle(block.appearance), height: block.size === "small" ? 16 : block.size === "large" ? 64 : 32 }} />;
     if (block.type === "list") { const List = block.style === "numbered" ? "ol" : "ul"; return <List key={block.id} {...edit} className={styles.contentList}>{block.items.map((item, index) => <li key={index}>{item}</li>)}</List>; }
-    if (block.type === "faq") return <section key={block.id} {...edit} className={styles.faq}>{block.items.map(item => <details key={item.id} open={mode === "editor" && editable ? true : undefined}><summary onClick={mode === "editor" && editable ? event => event.preventDefault() : undefined}>{item.question}</summary><p>{item.answer}</p></details>)}</section>;
-    if (block.type === "feature") return <section key={block.id} {...edit} className={`${styles.feature} ${block.imageSide === "right" ? styles.imageRight : ""}`}><PreviewImage key={block.src} src={block.src} alt={block.alt} appearance={block.appearance} layoutAppearance={false} /><div>{block.heading && <h2>{block.heading}</h2>}<p>{block.body}</p></div></section>;
+    if (block.type === "faq") return <section key={block.id} {...edit} className={styles.faq}>{block.items.map(item => <details key={item.id} open={mode === "editor" && editable ? true : undefined}><summary onClick={mode === "editor" && editable ? event => event.preventDefault() : undefined}>{item.question}</summary><p><InlineLinkedText content={content} text={item.answer} /></p></details>)}</section>;
+    if (block.type === "feature") return <section key={block.id} {...edit} className={`${styles.feature} ${block.imageSide === "right" ? styles.imageRight : ""}`}><PreviewImage key={block.src} src={block.src} alt={block.alt} appearance={block.appearance} layoutAppearance={false} /><div>{block.heading && <h2>{block.heading}</h2>}<p><InlineLinkedText content={content} text={block.body} /></p></div></section>;
     if (block.type === "text" && presentation === "terms") {
-      if (block.id === "terms-agreement") return <p key={block.id} {...edit} className={termStyles.agreement}>{block.body}</p>;
+      if (block.id === "terms-agreement") return <p key={block.id} {...edit} className={termStyles.agreement}><InlineLinkedText content={content} text={block.body} /></p>;
       return <section key={block.id} {...edit} id={`block-${block.id}`} className={termStyles.section}>
         {block.heading && <h2>{block.heading}</h2>}
-        {block.body && <ul>{block.body.split(/\n\s*\n/).map((paragraph, index) => <li key={index}>{paragraph}</li>)}</ul>}
+        {block.body && <ul>{block.body.split(/\n\s*\n/).map((paragraph, index) => <li key={index}><InlineLinkedText content={content} text={paragraph} /></li>)}</ul>}
       </section>;
     }
     if (block.type === "text" && presentation === "care") return <section key={block.id} {...edit} id={`block-${block.id}`} className={styles.careBlock}>
       {block.heading && <h2>{block.heading}</h2>}
-      {block.body.split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+      {block.body.split(/\n\s*\n/).filter(Boolean).map((paragraph, index) => <p key={index}><InlineLinkedText content={content} text={paragraph} /></p>)}
     </section>;
     if (block.type === "text") return <section key={block.id} {...edit} id={`block-${block.id}`} className={styles.block}>
       {block.heading && <h2>{block.heading}</h2>}
-      {block.body && <p>{block.body}</p>}
+      {block.body && <p><InlineLinkedText content={content} text={block.body} /></p>}
     </section>;
     if (block.type === "image") return <figure key={block.id} {...edit} className={styles.block}>
       <PreviewImage key={block.src} src={block.src} alt={block.alt} appearance={block.appearance} layoutAppearance={false} />
-      {block.caption && <figcaption>{block.caption}</figcaption>}
+      {block.caption && <figcaption><InlineLinkedText content={content} text={block.caption} /></figcaption>}
     </figure>;
     if (block.type === "link") return <div key={block.id} {...edit} className={styles.block}><ContentLink content={content} href={block.href} className="text-link">{block.label} →</ContentLink></div>;
     return null;
@@ -121,13 +129,14 @@ export function ContentBlocks({ blocks, content, presentation }: { blocks: reado
 
 function HomePreview({ content, page }: { content: OwnerContent; page: OwnerPage }) {
   const { home } = content;
+  const photoCredit = getTemplateText(content, "home.photoCredit");
   const { mode, editable } = useContext(RenderContext);
   return <>
-    <section className="home-intro" {...editorTarget(mode === "editor" && editable, "home-copy", "home page introduction")}><p className="eyebrow" {...appearanceProps(content.contentOverrides?.styles?.["home.eyebrow"])}>{home.eyebrow}</p><h1><span className="original-style-title" {...appearanceProps(content.contentOverrides?.styles?.["home.title"])}>{home.title}</span></h1><p {...appearanceProps(content.contentOverrides?.styles?.["home.description"])}>{home.description}</p>
+    <section className="home-intro" {...editorTarget(mode === "editor" && editable, "home-copy", "home page introduction")}><p className="eyebrow" {...appearanceProps(content.contentOverrides?.styles?.["home.eyebrow"])}>{home.eyebrow}</p><h1><span className="original-style-title" {...appearanceProps(content.contentOverrides?.styles?.["home.title"])}>{home.title}</span></h1><p {...appearanceProps(content.contentOverrides?.styles?.["home.description"])}><InlineLinkedText content={content} text={home.description} /></p>
       <div className="actions"><TemplateLink content={content} field="home.galleryButton" className="button" /><TemplateLink content={content} field="home.pricesButton" /></div>
     </section>
     <section className="home-art" aria-label={`${content.site.name} fursuit collage`} {...editorTarget(mode === "editor" && editable, "home-image", "home page photo and caption")}><PreviewImage key={home.image.src} src={home.image.src} alt={home.image.alt} hero appearance={content.contentOverrides?.styles?.["home.image"]} />
-      <div className="image-caption"><span {...appearanceProps(content.contentOverrides?.styles?.["home.caption"])}>{home.caption}</span><span>{content.site.name.toUpperCase()}</span></div>
+      {(home.caption.trim() || photoCredit.trim()) && <div className="image-caption">{home.caption.trim() && <span {...appearanceProps(content.contentOverrides?.styles?.["home.caption"])}><InlineLinkedText content={content} text={home.caption} /></span>}{photoCredit.trim() && <span className="image-caption-credit"><TemplateText content={content} field="home.photoCredit" /></span>}</div>}
     </section>
     <section className="commission-strip"><div><p className="eyebrow"><TemplateText content={content} field="home.stripEyebrow" /></p><h2><TemplateText content={content} field="home.stripTitle" /></h2><p><TemplateText content={content} field="home.stripBody" /></p></div><TemplateLink content={content} field="home.commissionsButton" className="button outline" /></section>
     <section className="home-links"><TemplateLink content={content} field="home.pricesCard" className=""><span><TemplateText content={content} field="home.pricesEyebrow" /></span><h3>{getTemplateLink(content, "home.pricesCard").label}</h3><p><TemplateText content={content} field="home.pricesBody" /></p></TemplateLink><TemplateLink content={content} field="home.careCard" className=""><span><TemplateText content={content} field="home.careEyebrow" /></span><h3>{getTemplateLink(content, "home.careCard").label}</h3><p><TemplateText content={content} field="home.careBody" /></p></TemplateLink></section>
@@ -138,7 +147,7 @@ function HomePreview({ content, page }: { content: OwnerContent; page: OwnerPage
 function PricesPreview({ content, page }: { content: OwnerContent; page: OwnerPage }) {
   const { mode, editable } = useContext(RenderContext);
   const examplesPage = content.pages.find(item => item.builtinKey === "examples" && !item.trashedAt);
-  return <div className="page-shell"><Intro content={content} page={page} eyebrow={<TemplateText content={content} field="prices.eyebrow" />} title={page.title} editTarget="prices"><p {...appearanceProps(content.contentOverrides?.styles?.["prices.intro"])}>{content.prices.intro}</p></Intro>
+  return <div className="page-shell"><Intro content={content} page={page} eyebrow={<TemplateText content={content} field="prices.eyebrow" />} title={page.title} editTarget="prices"><p {...appearanceProps(content.contentOverrides?.styles?.["prices.intro"])}><InlineLinkedText content={content} text={content.prices.intro} /></p></Intro>
     <div className="price-grid" {...editorTarget(mode === "editor" && editable, "prices", "prices and options")}>{content.prices.groups.map((group, index) => <section className="price-card" key={group.id}>
       <span className="eyebrow">{String(index + 1).padStart(2, "0")}</span><h2>{group.title}</h2><p>{group.note}</p>
       {examplesPage && <ContentLink content={content} className="text-link example-link" href={`/${examplesPage.slug}#${encodeURIComponent(group.title.toLowerCase())}`}><TemplateText content={content} field="prices.exampleLabel" variables={{ category: group.title.toLowerCase() }} /></ContentLink>}
@@ -161,13 +170,16 @@ function GalleryPreview({ content, page }: { content: OwnerContent; page: OwnerP
 }
 
 function CommissionsPreview({ content, page }: { content: OwnerContent; page: OwnerPage }) {
-  const { mode, editable } = useContext(RenderContext);
+  const { mode, editable, onEditCommissionForm } = useContext(RenderContext);
+  const [formOpen, setFormOpen] = useState(false);
+  const formAction = (field: "commissions.requestButton" | "commissions.formButton", className: string) => mode === "editor" ? <button type="button" className={className} onClick={() => setFormOpen(true)}><TemplateText content={content} field={field} /></button> : <Link className={className} href={`${mode === "public" ? "" : OWNER_PREVIEW_ROOT}/${encodeURIComponent(page.slug)}/request`}><TemplateText content={content} field={field} /></Link>;
   return <div className="page-shell"><Intro content={content} page={page} eyebrow={<TemplateText content={content} field="commissions.eyebrow" />} title={page.title}><p><TemplateText content={content} field="commissions.intro" /></p></Intro>
-    <section className="status-panel" aria-labelledby="owner-preview-status-label" {...editorTarget(mode === "editor" && editable, "status", "commission status")}><div className="status-summary"><span id="owner-preview-status-label" className="status-label"><TemplateText content={content} field="commissions.statusLabel" /></span><h2 className={content.site.commissionStatus === "Closed" ? "status-closed" : content.site.commissionStatus === "Waitlist" ? styles.waitlist : "status-available"}>{content.site.commissionStatus}</h2></div><p className="status-copy">{content.site.statusNote}</p>
-      {content.site.commissionStatus === "Open!" && (mode === "public" ? <Link className="button status-action" href={`/${page.slug}/request`}><TemplateText content={content} field="commissions.requestButton" /></Link> : <button className="button status-action" type="button" disabled title="Use the public site to try the commission form"><TemplateText content={content} field="commissions.requestButton" /></button>)}
+    <section className="status-panel" aria-labelledby="owner-preview-status-label" {...editorTarget(mode === "editor" && editable, "status", "commission status")}><div className="status-summary"><span id="owner-preview-status-label" className="status-label"><TemplateText content={content} field="commissions.statusLabel" /></span><h2 className={content.site.commissionStatus === "Closed" ? "status-closed" : content.site.commissionStatus === "Waitlist" ? styles.waitlist : "status-available"}>{content.site.commissionStatus}</h2></div><p className="status-copy"><InlineLinkedText content={content} text={content.site.statusNote} /></p>
+      {content.site.commissionStatus === "Open!" && formAction("commissions.requestButton", "button status-action")}
     </section>
     <div className="two-columns"><section><h2><TemplateText content={content} field="commissions.stepsTitle" /></h2><ol className="steps"><li><h3><TemplateText content={content} field="commissions.stepOneTitle" /></h3><p><TemplateText content={content} field="commissions.stepOneBody" /></p></li><li><h3><TemplateText content={content} field="commissions.stepTwoTitle" /></h3><p><TemplateText content={content} field="commissions.stepTwoBody" /></p><TemplateLink content={content} field="commissions.pricesLink" /></li><li><h3><TemplateText content={content} field="commissions.stepThreeTitle" /></h3><p><TemplateText content={content} field="commissions.stepThreeBody" /></p><TemplateLink content={content} field="commissions.termsLink" /></li></ol></section>
-      <section className="form-preview"><span className="eyebrow"><TemplateText content={content} field="commissions.formEyebrow" /></span><h2><TemplateText content={content} field="commissions.formTitle" /></h2><p><TemplateText content={content} field="commissions.formBody" /></p>{mode === "public" ? <Link className="button" href={`/${page.slug}/request`}><TemplateText content={content} field="commissions.formButton" /></Link> : <><button className="button" type="button" disabled>{content.contentOverrides?.text?.["commissions.formButton"] !== undefined || content.contentOverrides?.styles?.["commissions.formButton"] ? <TemplateText content={content} field="commissions.formButton" /> : "Requests are not connected"}</button><small>This owner preview cannot submit a commission or take a payment.</small></>}</section></div>
+      <section className="form-preview">{mode !== "public" && (onEditCommissionForm ? <button type="button" className="button outline" onClick={onEditCommissionForm}>Edit commission form</button> : mode === "private-preview" ? <Link className="button outline" href="/taylor/commission-form">Edit commission form</Link> : null)}<span className="eyebrow"><TemplateText content={content} field="commissions.formEyebrow" /></span><h2><TemplateText content={content} field="commissions.formTitle" /></h2><p><TemplateText content={content} field="commissions.formBody" /></p>{formAction("commissions.formButton", "button")}</section></div>
+    {formOpen && <OwnerDialog title="Commission form preview" wide maximizable onClose={() => setFormOpen(false)} actions={<button type="button" className="button" onClick={() => setFormOpen(false)}>Close preview</button>}><CommissionForm previewContent={content} additionalPartsQuantities={content.site.additionalPartsQuantities === true} configuration={content.commissionForm ?? {}} /></OwnerDialog>}
     <ContentBlocks blocks={page.blocks} content={content} />
   </div>;
 }
@@ -191,19 +203,13 @@ function PremadesPreview({ content, page }: { content: OwnerContent; page: Owner
 function ContactPreview({ content, page }: { content: OwnerContent; page: OwnerPage }) {
   const { mode, editable } = useContext(RenderContext);
   const { site } = content;
-  const contacts = [
-    { id: "telegram", label: getTemplateText(content, "contact.telegramLabel"), value: site.telegram ? `@${site.telegram}` : "", href: `https://t.me/${encodeURIComponent(site.telegram)}` },
-    { id: "discord", label: getTemplateText(content, "contact.discordLabel"), value: site.discord, href: null },
-    { id: "tiktok", label: getTemplateText(content, "contact.tiktokLabel"), value: site.tiktok ? `@${site.tiktok}` : "", href: `https://www.tiktok.com/@${encodeURIComponent(site.tiktok)}` },
-    { id: "twitch", label: getTemplateText(content, "contact.twitchLabel"), value: site.twitch, href: `https://www.twitch.tv/${encodeURIComponent(site.twitch)}` },
-    { id: "email", label: getTemplateText(content, "contact.emailLabel"), value: site.email, href: `mailto:${site.email}` },
-  ];
+  const contacts = getOwnerSocialLinks(content);
   return <div className="page-shell"><Intro content={content} page={page} eyebrow={<TemplateText content={content} field="contact.eyebrow" />} title={page.title}><p><TemplateText content={content} field="contact.intro" /></p></Intro>
     <div className="two-columns"><section className="contact-details" {...editorTarget(mode === "editor" && editable, "contact", "contact details")}><h2><TemplateText content={content} field="contact.detailsTitle" /></h2>{site.telegram && <p><TemplateText content={content} field="contact.detailsBody" /></p>}
       {contacts.filter(contact => contact.value).map(contact => {
-        const destination = contact.href ? resolveSiteDestination(content, contact.href, mode === "public" ? "public" : "preview") : null;
-        return destination ? <a key={contact.id} className="contact-row" href={destination.href} target={contact.id === "email" ? undefined : "_blank"} rel="noopener noreferrer"><span><TemplateText content={content} field={`contact.${contact.id}Label`} /></span><strong>{contact.value} {contact.id === "email" ? "" : "↗"}</strong></a>
-          : <div className="contact-row" key={contact.id}><span><TemplateText content={content} field={`contact.${contact.id}Label`} /></span><strong>{contact.value}</strong></div>;
+        const destination = contact.url ? resolveSiteDestination(content, contact.url, mode === "public" ? "public" : "preview") : null;
+        return destination ? <a key={contact.id} className="contact-row" href={destination.href} target={contact.url?.startsWith("mailto:") ? undefined : "_blank"} rel="noopener noreferrer"><span>{site.socialLinks === undefined ? <TemplateText content={content} field={`contact.${contact.id}Label`} /> : contact.label}</span><strong>{contact.value} {contact.url?.startsWith("mailto:") ? "" : "↗"}</strong></a>
+          : <div className="contact-row" key={contact.id}><span>{site.socialLinks === undefined ? <TemplateText content={content} field={`contact.${contact.id}Label`} /> : contact.label}</span><strong>{contact.value}</strong></div>;
       })}
       {!contacts.some(contact => contact.value) && <p>No contact methods are currently available.</p>}
     </section><section className="form-preview"><h2><TemplateText content={content} field="contact.formTitle" /></h2><p>The message form is not connected. Please use the contact details shown to get in touch.</p><fieldset disabled><label><TemplateText content={content} field="contact.nameLabel" /><input placeholder={getTemplateText(content, "contact.namePlaceholder")} {...appearanceProps(content.contentOverrides?.styles?.["contact.namePlaceholder"]) } /></label><label><TemplateText content={content} field="contact.emailFieldLabel" /><input type="email" placeholder={getTemplateText(content, "contact.emailPlaceholder")} {...appearanceProps(content.contentOverrides?.styles?.["contact.emailPlaceholder"]) } /></label><label><TemplateText content={content} field="contact.messageLabel" /><textarea rows={5} placeholder={getTemplateText(content, "contact.messagePlaceholder")} {...appearanceProps(content.contentOverrides?.styles?.["contact.messagePlaceholder"]) } /></label><button disabled className="button" type="button">Messaging not connected</button></fieldset></section></div>
@@ -234,19 +240,19 @@ function ContentPageBody({ content, page }: { content: OwnerContent; page: Owner
   }
 }
 
-export interface ContentPageProps { content: OwnerContent; page: OwnerPage; mode?: SiteRenderMode; editable?: boolean; onNavigate?: (page: OwnerPage) => void }
+export interface ContentPageProps { children?: ReactNode; onEditCommissionForm?: () => void; content: OwnerContent; page: OwnerPage; mode?: SiteRenderMode; editable?: boolean; onNavigate?: (page: OwnerPage) => void }
 /** No persistence or requests: always renders exactly the supplied content, including unsaved edits. */
 export function ContentPage({ content, page, mode = "private-preview", editable = false, onNavigate }: ContentPageProps) {
   return <RenderContext value={{ mode, editable, onNavigate }}><ContentPageBody content={content} page={page} /></RenderContext>;
 }
-export function SiteContentFrame({ content, page, mode = "private-preview", editable = false, onNavigate }: ContentPageProps) {
+export function SiteContentFrame({ content, page, mode = "private-preview", editable = false, onNavigate, children, onEditCommissionForm }: ContentPageProps) {
   const root = mode === "public" ? "/" : OWNER_PREVIEW_ROOT;
   const navigation = getHeaderNavigation(content);
   const dropdown = useNavigationDisclosure(`${mode}:${page.id}:${editable}`);
-  return <RenderContext value={{ mode, editable, onNavigate }}><div className={`selected-design ${mode === "editor" ? styles.editorFrame : ""}`} data-site-render-mode={mode} {...getSiteThemeAttributes(content)} style={getSiteThemeStyle(content)}>
+  return <RenderContext value={{ mode, editable, onNavigate, onEditCommissionForm }}><div className={`selected-design ${mode === "editor" ? styles.editorFrame : ""}`} data-site-render-mode={mode} {...getSiteThemeAttributes(content)} style={getSiteThemeStyle(content)}>
     <SiteFontLoader fonts={content.fonts} privateFonts={mode !== "public"} />
     <header className={`site-header ${styles.siteHeader}`} {...editorTarget(mode === "editor" && editable, "site", "site header and navigation")}><div className="header-inner"><div onClick={event => { if (mode === "editor") { event.preventDefault(); const home = getPreviewPage(content, []); if (home) onNavigate?.(home); } }}><Brand href={root} name={content.site.name} logo={getTemplateImage(content, "site.logo")} privateMedia={mode !== "public"} appearance={content.contentOverrides?.styles?.["site.brand"]} logoAppearance={content.contentOverrides?.styles?.["site.logo"]} editable={mode === "editor" && editable} /></div><div className={`header-right ${styles.menu}`}><span className="small-label"><TemplateText content={content} field="site.headerTagline" /></span><nav aria-label="Site preview navigation">{navigation.main.map(item => <ContentLink key={item.id} content={content} navPageId={item.pageId} href={item.href}>{item.label}</ContentLink>)}{content.site.moreEnabled && navigation.more.length > 0 && <details ref={dropdown} className="nav-more" onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); } }} onClick={event => { if (event.target instanceof HTMLElement && event.target.closest("a")) event.currentTarget.removeAttribute("open"); }}><summary>More <DropdownChevron className="nav-more-chevron" /></summary><div className="nav-more-menu">{navigation.more.map(item => <ContentLink key={item.id} content={content} navPageId={item.pageId} href={item.href}>{item.label}</ContentLink>)}</div></details>}</nav></div></div></header>
-    <ContentPageBody content={content} page={page} />
+    {children ?? <ContentPageBody content={content} page={page} />}
     <footer className={styles.siteFooter}><div className="footer-top"><div onClick={event => { if (mode === "editor") { event.preventDefault(); const home = getPreviewPage(content, []); if (home) onNavigate?.(home); } }}><Brand footer href={root} name={content.site.name} logo={getTemplateImage(content, "site.logo")} privateMedia={mode !== "public"} appearance={content.contentOverrides?.styles?.["site.brand"]} logoAppearance={content.contentOverrides?.styles?.["site.logo"]} editable={mode === "editor" && editable} /></div><span><TemplateText content={content} field="site.footerTagline" /></span></div><div className="footer-bottom"><span><CopyrightRange /> <span {...editorTarget(mode === "editor" && editable, "site", "business name")}>{content.site.name}</span>. All rights reserved.</span><div><TemplateLink content={content} field="site.footerTerms" className="" /><TemplateLink content={content} field="site.footerContact" className="" /></div></div></footer>
   </div></RenderContext>;
 }

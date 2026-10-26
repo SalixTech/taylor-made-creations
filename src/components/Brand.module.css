@@ -1,4 +1,4 @@
 .wordmarkBrand { width: 280px; max-width: 100%; min-width: 0; flex-shrink: 1; }
 /* White artwork stays readable on both editable header and footer surfaces. */
-.wordmarkPlate { display: block; width: 100%; padding: 12px 14px; border-radius: 8px; background: #800014; }
+.wordmarkPlate { display: block; overflow:hidden; width: 100%; padding: 12px 14px; border-radius: 8px; background: #800014; }
 .wordmarkImage { display: block; width: 100%; height: auto; object-fit: contain; }

@@ -37,8 +37,8 @@ test('premades off disables its direct preview and unknown/nested routes stay un
 
 test('internal links are rewritten without escaping to public or administrative routes',()=>{
   const content=d.createDefaultOwnerContent();
-  for(const [source,href] of [['/','/taylor/preview'],['/contact','/taylor/preview/contact'],['/gallery/','/taylor/preview/gallery'],['/examples?view=all#heads','/taylor/preview/examples?view=all#heads'],['/taylor/preview/prices','/taylor/preview/prices'],['/taylor/preview','/taylor/preview']])assert.deepEqual(p.resolvePreviewDestination(content,source),{href,kind:'page'});
-  for(const href of ['/owner','/api/private','/commissions/request','/no-page','//evil.test','/\\evil.test','javascript:alert(1)','data:text/html,<script>','http://evil.test','/contact%2f..%2fowner','/images/logo.png'])assert.equal(p.resolvePreviewDestination(content,href),null,href);
+  for(const [source,href] of [['/','/taylor/preview'],['/contact','/taylor/preview/contact'],['/gallery/','/taylor/preview/gallery'],['/examples?view=all#heads','/taylor/preview/examples?view=all#heads'],['/taylor/preview/prices','/taylor/preview/prices'],['/taylor/preview','/taylor/preview'],['/commissions/request','/taylor/preview/commissions/request']])assert.deepEqual(p.resolvePreviewDestination(content,source),{href,kind:'page'});
+  for(const href of ['/owner','/api/private','/commissions/request/extra','/no-page','//evil.test','/\\evil.test','javascript:alert(1)','data:text/html,<script>','http://evil.test','/contact%2f..%2fowner','/images/logo.png'])assert.equal(p.resolvePreviewDestination(content,href),null,href);
 });
 
 test('safe external links, anchors and the supplied care PDF remain explicit non-page destinations',()=>{

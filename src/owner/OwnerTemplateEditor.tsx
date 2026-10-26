@@ -5,6 +5,8 @@ import type { OwnerContent } from "./model";
 import { IMAGE_FIELDS, LINK_FIELDS, TEXT_FIELDS, getTemplateLink } from "./site-design";
 import { Field, ImagePicker } from "./OwnerFields";
 import { OwnerElementAppearance } from "./OwnerAppearancePanel";
+import { OwnerLinkedTextField } from "./OwnerLinkedTextField";
+import { templateSupportsInlineLinks } from "./inline-links";
 import ui from "./OwnerPortal.module.css";
 import styles from "./OwnerDesignPanel.module.css";
 
@@ -35,11 +37,12 @@ export function OwnerTemplateEditor({ content, onEdit, group, target }: Props) {
       <p className={styles.catalogSummary}>{total} {total === 1 ? "detail" : "details"}{query && <button className={styles.reset} type="button" onClick={() => setQuery("")}>Clear search</button>}</p>
     </>}
     <div className={styles.templateList}>
-      {textFields.map(field => <section key={field.key} className={styles.templateField}>
-        <Field label={field.label} value={content.contentOverrides?.text?.[field.key] ?? field.defaultValue} multiline={field.defaultValue.length > 80 || /description|paragraph|intro|note|message|copy|body/i.test(field.label)} onChange={value => onEdit(draft => { draft.contentOverrides = { ...draft.contentOverrides, text: { ...draft.contentOverrides?.text, [field.key]: value } }; })} />
+      {textFields.map(field => { const TextField = templateSupportsInlineLinks(field.key) ? OwnerLinkedTextField : Field; return <section key={field.key} className={styles.templateField}>
+        <TextField label={field.label} value={content.contentOverrides?.text?.[field.key] ?? field.defaultValue} multiline={field.defaultValue.length > 80 || /description|paragraph|intro|note|message|copy|body/i.test(field.label)} hint={field.optional ? "Leave blank to hide this text. The photo description for screen readers stays unchanged." : undefined} onChange={value => onEdit(draft => { draft.contentOverrides = { ...draft.contentOverrides, text: { ...draft.contentOverrides?.text, [field.key]: value } }; })} />
+        {field.optional && (content.contentOverrides?.text?.[field.key] ?? field.defaultValue).trim() && <button type="button" className={styles.reset} aria-label={`Hide ${field.label.toLowerCase()}`} onClick={() => onEdit(draft => { draft.contentOverrides = { ...draft.contentOverrides, text: { ...draft.contentOverrides?.text, [field.key]: "" } }; })}>Hide text</button>}
         <OwnerElementAppearance content={content} styleKey={field.key} onEdit={onEdit} />
         {content.contentOverrides?.text?.[field.key] !== undefined && <button type="button" className={styles.reset} aria-label={`Reset ${field.label.toLowerCase()}`} onClick={() => onEdit(draft => { if (draft.contentOverrides?.text) delete draft.contentOverrides.text[field.key]; })}>Reset to original text</button>}
-      </section>)}
+      </section>; })}
       {imageFields.map(field => {
         const image = content.contentOverrides?.images?.[field.key] ?? field.defaultValue;
         return <section key={field.key} className={styles.templateField}>

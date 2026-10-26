@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {emptyDraft,eligible,transition,validate,referenceError,reviewRows,suitTypes,imageSignatureMatches,hasTermsAgreement,checkReferenceSelection} from '../src/components/commission-model.ts';
+import { sourceLoader } from './scout-source-loader.mjs';
+const {emptyDraft,eligible,transition,validate,referenceError,reviewRows,suitTypes,imageSignatureMatches,hasTermsAgreement,checkReferenceSelection} = sourceLoader()('src/components/commission-model.ts');
 const image={name:'two-views.png',type:'image/png',size:1024};
 const valid={...emptyDraft,email:'test@example.com',tos:'Yes',tosAgreed:true,usa:'No',country:'CA',character:'Fox',species:'Fox',suit:'Head only'};
 test('one sheet, international shipping, optional contact and history are valid',()=>assert.deepEqual(validate(valid,[image]),{}));
@@ -103,4 +104,20 @@ test('unreadable selection leaves accepted files intact and allows a later retry
   assert.equal(result.status,'checked');
   assert.equal(result.files.length,2);
   assert.match(result.errors[0],/could not be checked/);
+});
+
+test('all owner-configurable requirements may be optional while provided values retain validation',()=>{
+ const configuration={fields:Object.fromEntries(['email','telegram','discord','tos','usa','country','character','species','references','suit','parts','head','hands','tailSize','tail','pockets','feet','sandals','additionalParts','previous','previousCharacter','discovery','friendName','personName','discoveryOther','additional'].map(key=>[key,{required:false}]))};
+ assert.deepEqual(validate({...emptyDraft},[],{configuration}),{});
+ assert.ok(validate({...emptyDraft,email:'invalid'},[],{configuration}).email);
+ assert.ok(validate({...emptyDraft,usa:'invalid'},[],{configuration}).usa);
+ assert.ok(validate({...emptyDraft,suit:'invalid'},[],{configuration}).suit);
+ assert.ok(validate({...emptyDraft,tos:'Yes',tosAgreed:false},[],{configuration}).tos);
+ assert.ok(validate({...emptyDraft},[{name:'bad.svg',size:10,type:'image/svg+xml'}],{configuration}).references);
+ assert.deepEqual(validate({...emptyDraft,tos:'No'},[],{configuration}),{});
+});
+test('conditional extras can be required but do not block when hidden',()=>{
+ const configuration={fields:{head:{required:true},hands:{required:true},sandals:{required:true},additionalParts:{required:true}}};
+ const errors=validate(valid,[image],{configuration});assert.ok(errors.head);assert.ok(errors.additionalParts);assert.equal(errors.hands,undefined);assert.equal(errors.sandals,undefined);
+ const parts=validate({...valid,suit:'Parts',parts:['Hand paws']},[image],{configuration});assert.equal(parts.head,undefined);assert.equal(parts.additionalParts,undefined);assert.ok(parts.hands);
 });

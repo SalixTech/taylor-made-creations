@@ -43,10 +43,11 @@ test('hex typing never commits malformed intermediate colors', () => {
   input().props.onChange({target:{value:'nothex'}}); render(); input().props.onBlur(); render(); assert.equal(input().props.value,'#AABBCC');
 });
 function navigationSetup(){
-  const h=harness(); h.overrides['./PhotoUpload']={PhotoUpload:'PhotoUpload'};
+  const h=harness(); let pendingHold; h.globals.setTimeout=fn=>{pendingHold=fn;return 1;};h.globals.clearTimeout=()=>{pendingHold=null;}; h.overrides['./PhotoUpload']={PhotoUpload:'PhotoUpload'};
+  h.overrides['./navigation-drag']={...h.load('src/owner/navigation-drag.ts'),createNavigationDragGhost(){return {move(){},remove(){}};}};
   const {OwnerHeaderEditor}=h.load('src/owner/OwnerHeaderEditor.tsx'); let value=h.load('src/owner/defaults.ts').createDefaultOwnerContent();
   const props={content:value,open:true,onOpenChange(){},onEdit(change){value=structuredClone(value);change(value);props.content=value;}};
-  const render=()=>h.render(OwnerHeaderEditor,props); render(); return {h,props,render,get value(){return value;}};
+  const render=()=>h.render(OwnerHeaderEditor,props); render(); return {h,props,render,hold(){const fn=pendingHold;pendingHold=null;fn?.();},get value(){return value;}};
 }
 test('inline navigation edits labels and enables More only in the draft',()=>{
   const t=navigationSetup(); const first=t.value.pages[0];
@@ -60,12 +61,25 @@ test('navigation keyboard move resolves current order using a stable page identi
   t.props.onEdit(draft=>{const pages=draft.pages.filter(p=>!p.trashedAt);pages.reverse().forEach((page,index)=>{page.order=index;});});
   move(-1); const order=t.value.pages.filter(p=>!p.trashedAt).sort((a,b)=>a.order-b.order); assert.equal(order.at(-2).id,first);
 });
-test('navigation drag accepts only a drag started inside this editor',()=>{
-  const t=navigationSetup(); const original=t.value.pages.map(p=>[p.id,p.order]); let prevented=0;
-  const rows=()=>t.h.all(n=>n.props.onDrop); const event={preventDefault(){prevented++;},dataTransfer:{setData(){}}};
-  rows()[2].props.onDrop(event); assert.deepEqual(t.value.pages.map(p=>[p.id,p.order]),original);assert.equal(prevented,0);
-  t.h.all(n=>n.props.onDragStart)[0].props.onDragStart(event); rows()[2].props.onDrop(event);
-  const order=t.value.pages.filter(p=>!p.trashedAt).sort((a,b)=>a.order-b.order);assert.equal(order[1].id,original[0][0]);assert.equal(prevented,1);
+test('navigation drag rejects foreign/native drops and accepts only its own active pointer and local target',()=>{
+  const t=navigationSetup(); const original=t.value.pages.map(p=>[p.id,p.order]);
+  const rows=t.h.all(n=>n.props['data-nav-card']);
+  assert.ok(rows.every(row=>!row.props.onDrop), 'external native drops cannot commit menu changes');
+  const cards=rows.map(row=>({dataset:{navCard:row.props['data-nav-card']},getBoundingClientRect:()=>({left:0,top:0,width:200,height:300}),closest(){return this;},focus(){},setPointerCapture(){},hasPointerCapture(){return false;}}));
+  const list=t.h.find(n=>n.props.className==='navRows').props.ref.current;
+  list.contains=node=>cards.includes(node);list.querySelectorAll=()=>cards;
+  const foreign={dataset:{navCard:cards[2].dataset.navCard},getBoundingClientRect:cards[2].getBoundingClientRect,closest(){return this;}};
+  let target=cards[2];t.h.document.elementFromPoint=()=>target;
+  const event=(pointerId=1)=>({button:0,pointerId,clientX:10,clientY:10,currentTarget:cards[0],target:{closest:()=>null},preventDefault(){},stopPropagation(){},dataTransfer:{getData(){return cards[0].dataset.navCard;}}});
+  rows[0].props.onPointerMove({...event(),clientX:30});rows[0].props.onPointerUp(event());
+  assert.deepEqual(t.value.pages.map(p=>[p.id,p.order]),original,'no local start rejects forged pointer/drop payload');
+  rows[0].props.onPointerDown(event());t.hold();rows[0].props.onPointerMove(event(2));rows[0].props.onPointerUp(event(2));
+  assert.deepEqual(t.value.pages.map(p=>[p.id,p.order]),original,'foreign pointer cannot commit');
+  target=foreign;rows[0].props.onPointerMove({...event(),clientX:30});rows[0].props.onPointerUp(event());
+  assert.deepEqual(t.value.pages.map(p=>[p.id,p.order]),original,'matching page ID outside editor cannot commit');
+  target=cards[2];rows[0].props.onPointerDown(event());t.hold();rows[0].props.onPointerMove({...event(),clientX:30});rows[0].props.onPointerUp(event());
+  const order=t.value.pages.filter(p=>!p.trashedAt).sort((a,b)=>a.order-b.order);
+  assert.equal(order[1].id,original[0][0]);t.h.unmount();
 });
 test('menu placement keeps hidden and unlisted meanings separate and home accessible',()=>{
   const h=harness();h.overrides['./PhotoUpload']={PhotoUpload:'PhotoUpload'};const {OwnerPageNavigation}=h.load('src/owner/OwnerHeaderEditor.tsx');

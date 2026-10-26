@@ -79,7 +79,7 @@ test('More rotates only while open and uses compact, theme-safe surfaces and vis
     assert.equal(css(t.arrow).transform, undefined); assert.equal(css(t.menu).display, 'none');
     t.details.attrs.open = ''; assert.equal(css(t.arrow).transform, 'rotate(180deg)'); assert.equal(css(t.menu).display, 'flex');
     assert.equal(css(t.menu)['border-radius'], '7px'); assert.equal(css(t.menu)['box-shadow'], '0 4px 12px #0002');
-    assert.equal(css(t.menu)['background-color'], dark ? '#241f24' : '#fff');
+    assert.equal(css(t.menu)['background-color'], dark ? '#242426' : '#fff');
     assert.equal(css(t.link).color, dark ? '#f4edf0' : '#302c2c');
     assert.ok(contrast(css(t.link).color, css(t.menu)['background-color']) > 7);
     assert.equal(css(t.summary).color, dark ? '#f4edf0' : '#fff');

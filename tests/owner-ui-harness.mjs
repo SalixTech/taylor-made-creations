@@ -10,6 +10,12 @@ function content(n) { if (n == null || typeof n === 'boolean') return ''; if (Ar
 class FakeHTMLElement {}
 function harness() {
   const h = {hooks: [], cursor: 0, pending: [], pathname: '/premades', tree: null, refs: new Map(), byId: new Map(), cache: new Map(), overrides: {}, globals: {}, focusLog: [], currentContext: null, process: { env: { ...process.env } }};
+  // Default cloud adapters are explicit no-network failures. Feature tests replace
+  // these with focused fixtures; importing a UI must never initialize live Firebase.
+  const cloudUnavailable = async () => { throw new Error('Cloud files are not configured in this UI fixture.'); };
+  h.overrides['./inventory-client'] = { readInventory: cloudUnavailable, saveInventoryCategories: cloudUnavailable, saveInventoryItem: cloudUnavailable };
+  h.overrides['./cloud-files-client'] = { CLOUD_FILES_EVENT: 'cloud-files', readCloudFiles: cloudUnavailable, checkCloudStorage: cloudUnavailable, uploadCloudFile: cloudUnavailable, changeCloudFile: cloudUnavailable, changeCloudFolder: cloudUnavailable, confirmCloudUpload: cloudUnavailable, downloadCloudFile: cloudUnavailable };
+  h.overrides['./use-cloud-files'] = { useCloudFiles: () => ({ files: [], folders: { schemaVersion: 1, revision: 0, folders: {} }, loading: false, ready: false, error: 'Cloud files are not configured in this UI fixture.', refresh: cloudUnavailable }) };
   const entries = [{ state: {}, url: '' }]; let historyIndex = 0;
   const history = {
     get state() { return entries[historyIndex].state; },

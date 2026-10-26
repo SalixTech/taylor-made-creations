@@ -1,5 +1,4 @@
 import { apiErrorResponse, privateJson, verifyTaylorOwner } from "@/server/taylor-auth";
-import { developmentMediaEnabled } from "@/server/dev-media";
 import { helpConfiguration } from "@/server/taylor-help";
 
 export const runtime = "nodejs";
@@ -9,6 +8,6 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     await verifyTaylorOwner(request);
-    return privateJson({ ok: true, checkedAt: new Date().toISOString(), auth: "verified", email: helpConfiguration(), files: developmentMediaEnabled() ? "development-disk" : "home-storage-not-connected" });
+    return privateJson({ ok: true, checkedAt: new Date().toISOString(), auth: "verified", email: helpConfiguration(), files: "checked-in-browser" });
   } catch (error) { return apiErrorResponse(error); }
 }

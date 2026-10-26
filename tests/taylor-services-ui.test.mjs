@@ -15,6 +15,7 @@ function setup(t, component, options = {}) {
     serviceReadError(error, feature) { return error?.code === 'permission-denied' ? `${feature} is not connected for this account yet. Check deployed Firestore rules.` : error.message; },
     async responseObject(response) { const result = await response.json(); if (!response.ok || result.ok !== true) throw new Error(result.message || 'Not confirmed'); return result; },
   };
+  h.overrides['./cloud-files-client'] = { async checkCloudStorage() { if (options.storageCheck) return options.storageCheck(); throw new Error('Storage read was not accepted.'); } };
   h.overrides['./firebase-store'] = { OWNER_CLOUD_DOCUMENT: 'ownerWorkspace/current' };
   h.overrides['firebase/firestore/lite'] = {
     doc(_db, path) { assert.equal(path, 'ownerWorkspace/current'); return path; },
@@ -36,7 +37,7 @@ test('service refresh checks real mocked auth/read evidence and never sends a te
   assert.equal(view.requests[0].init.method, undefined);
   assert.equal(view.requests[0].init.headers.Authorization, 'Bearer mock-id-token');
   assert.match(content(view.h.tree), /Session verified/); assert.match(content(view.h.tree), /Read confirmed/);
-  assert.match(content(view.h.tree), /Storage setup needed/); assert.match(content(view.h.tree), /Setup needed/);
+  assert.match(content(view.h.tree), /Needs attention/); assert.match(content(view.h.tree), /Setup needed/);
   assert.doesNotMatch(content(view.h.tree), /Operational|All systems/);
 });
 
@@ -118,12 +119,12 @@ test('help refuses malformed success receipts', async t => {
 });
 
 
-test('development storage configuration does not claim a completed upload or connected home backup', async t => {
-  const view = setup(t, 'TaylorServices', { fetch: async () => Response.json({ ok: true, auth: 'verified', files: 'development-disk', email: { configured: false } }) });
+test('cloud read checks do not claim a completed upload or connected backup', async t => {
+  const view = setup(t, 'TaylorServices', { storageCheck: async () => 'Firestore file-list read and Storage read probe succeeded. Upload writing is confirmed only after a successful upload. Backups are not configured by this patch.', fetch: async () => Response.json({ ok: true, auth: 'verified', files: 'development-disk', email: { configured: false } }) });
   view.render(); await flush(); view.render();
-  assert.match(content(view.h.tree), /Local uploads configured/);
-  assert.match(content(view.h.tree), /A successful upload verifies writing/);
-  assert.match(content(view.h.tree), /home drive and Google Drive backup are not connected/);
+  assert.match(content(view.h.tree), /Read checks passed/);
+  assert.match(content(view.h.tree), /Upload writing is confirmed only after a successful upload/);
+  assert.match(content(view.h.tree), /Backups are not configured/);
   assert.equal(view.requests.length, 1);
   assert.equal(view.requests[0].init.method, undefined);
 });
@@ -136,4 +137,14 @@ test('help feedback goes to the workspace callback instead of stretching the sid
   assert.deepEqual(feedback, [{kind:'error',message:'Help email is not connected yet.'}]);
   assert.doesNotMatch(content(view.h.tree), /Help email is not connected yet/);
   assert.equal(view.h.all(node => node.props?.role === 'alert').length, 0);
+});
+
+test('browser sign-in and private database can pass while server verification explicitly fails', async t => {
+  const view = setup(t, 'TaylorServices', { fetch: async () => Response.json({ ok: false, code: 'verification-unavailable', message: 'Server verification is unavailable.' }, { status: 503 }) });
+  view.render(); await flush(); view.render();
+  assert.match(content(view.h.tree), /Owner sign-inSigned in/);
+  assert.match(content(view.h.tree), /Server verificationCould not verify/);
+  assert.match(content(view.h.tree), /Cloud workspaceRead confirmed/);
+  assert.doesNotMatch(content(view.h.tree), /Session verified/);
+  assert.match(content(view.h.tree), /Email configuration could not be checked while server verification is unavailable/);
 });

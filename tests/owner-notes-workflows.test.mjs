@@ -52,12 +52,12 @@ test('Home template preview cannot inherit stale TOS builder selection',()=>{
   assert.equal(resolve(pages,'home',tos.id,'home').builtinKey,'home');assert.equal(resolve(pages,'photos',tos.id,'gallery').builtinKey,'gallery');
   assert.equal(resolve(pages,'pages','missing').builtinKey,'home');h.unmount();
 });
-test('owner and public color preferences are independent, persistent and fail safely without storage',()=>{
+test('owner and public color preferences are shared, persistent and fail safely without storage',()=>{
   const h=harness(), values=new Map();h.window.localStorage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v)};
   const theme=h.load('src/components/ColorMode.tsx');assert.equal(theme.readColorMode('owner'),'dark');assert.equal(theme.readColorMode('public'),'light');
   theme.setColorMode('owner','light');assert.equal(theme.readColorMode('owner'),'light');assert.equal(theme.readColorMode('public'),'light');
-  theme.setColorMode('public','dark');assert.equal(theme.readColorMode('owner'),'light');assert.equal(theme.readColorMode('public'),'dark');
-  assert.equal(values.get('tmc-owner-color-mode'),'light');assert.equal(values.get('tmc-public-color-mode'),'dark');
+  theme.setColorMode('public','dark');assert.equal(theme.readColorMode('owner'),'dark');assert.equal(theme.readColorMode('public'),'dark');
+  assert.equal(values.get('tmc-color-mode'),'dark');
   h.window.localStorage={getItem(){throw Error('blocked');},setItem(){throw Error('blocked');}};theme.setColorMode('owner','light');assert.equal(theme.readColorMode('owner'),'light');
   assert.equal(theme.defaultColorMode('owner'),'dark');assert.equal(theme.defaultColorMode('public'),'light');h.unmount();
 });
@@ -72,17 +72,20 @@ test('theme CSS isolates owner previews and checks dark text/control contrast',a
   assert.match(css,/scrollbar-color:transparent transparent/);assert.match(css,/prefers-reduced-motion:reduce/);assert.doesNotMatch(css,/scrollbar-width:none|overflow\s*:\s*hidden/);
   const luminance=hex=>{const rgb=hex.replace('#','').match(/../g).map(s=>parseInt(s,16)/255).map(c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4);return .2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];};
   const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
-  for(const [fg,bg] of [['#f5eff1','#241f24'],['#c6b8be','#241f24'],['#f5eff1','#30272e'],['#ffffff','#970d2a'],['#ffc0cc','#241f24'],['#f4edf0','#18151a']])assert.ok(contrast(fg,bg)>=4.5,`${fg} on ${bg} must be AA readable`);
+  for(const [fg,bg] of [['#f5eff1','#242426'],['#c6b8be','#242426'],['#f5eff1','#30272e'],['#ffffff','#800014'],['#ffc0cc','#242426'],['#f4edf0','#18181b']])assert.ok(contrast(fg,bg)>=4.5,`${fg} on ${bg} must be AA readable`);
 });
 
 test('SSR theme toggles use deterministic owner-dark/public-light snapshots even with browser choices',async()=>{
   const {readFileSync}=await import('node:fs');const ts=(await import('typescript')).default;const {createRequire}=await import('node:module');const require=createRequire(import.meta.url);
   const source=readFileSync(new URL('../src/components/ColorMode.tsx',import.meta.url),'utf8');
   const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
-  const exports={};new Function('require','exports','window',code)(require,exports,{localStorage:{getItem:key=>key.includes('owner')?'light':'dark'}});
+  const positionSource=readFileSync(new URL('../src/components/theme-toggle-position.ts',import.meta.url),'utf8');
+  const positionCode=ts.transpileModule(positionSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+  const positionExports={};new Function('require','exports',positionCode)(require,positionExports);
+  const exports={};new Function('require','exports','window',code)(name => name === './theme-toggle-position' ? positionExports : require(name),exports,{localStorage:{getItem:key=>key.includes('owner')?'light':'dark'}});
   const React=require('react'),{renderToString}=require('react-dom/server');
   const owner=renderToString(React.createElement(exports.ColorModeToggle,{scope:'owner'})),publicHtml=renderToString(React.createElement(exports.ColorModeToggle,{scope:'public'}));
-  assert.match(owner,/aria-pressed="true"/);assert.match(owner,/>Dark</);assert.match(publicHtml,/aria-pressed="false"/);assert.match(publicHtml,/>Light</);
+  assert.match(owner,/aria-pressed="true"/);assert.match(owner,/title="Use light mode on this browser only"/);assert.match(owner,/<svg/);assert.doesNotMatch(owner,/>Dark</);assert.match(publicHtml,/aria-pressed="false"/);assert.match(publicHtml,/title="Use dark mode on this browser only"/);assert.match(publicHtml,/<svg/);assert.doesNotMatch(publicHtml,/>Light</);
   assert.doesNotMatch(source,/matchMedia|\.site\s*=|\.design\s*=|saveDraft|publishLive/);
 });
 
@@ -107,11 +110,11 @@ test('actual public dark selectors override baseline home heading, white cards, 
   const heading=publicRules.find(rule=>rule.selector.includes(':is(.home-intro h1,.status-panel h2)'));
   expectImportant(heading,'color','#f4edf0');assert.match(heading.selector,/\[data-element-text-color\]/);assert.doesNotMatch(heading.selector,/data-element-appearance|data-element-font/);
   const surfaces=publicRules.find(rule=>rule.selector.includes(':is(.price-card,.form-preview,.status-panel,.empty-state,.notice,.page-shell)'));
-  expectImportant(surfaces,'background-color','#241f24');assert.match(surfaces.selector,/\[data-element-background\]/);assert.doesNotMatch(surfaces.selector,/data-element-appearance|data-element-font/);
-  expectImportant(publicRules.find(rule=>rule.selector.includes(' .page-shell:not(')),'background-color','#18151a');
+  expectImportant(surfaces,'background-color','#242426');assert.match(surfaces.selector,/\[data-element-background\]/);assert.doesNotMatch(surfaces.selector,/data-element-appearance|data-element-font/);
+  expectImportant(publicRules.find(rule=>rule.selector.includes(' .page-shell:not(')),'background-color','#18181b');
   const buttonBackground=publicRules.find(rule=>rule.selector.includes('.button:not(.outline):not(:disabled)')&&declaration(rule,'background'));
   const buttonText=publicRules.find(rule=>rule.selector.includes('.button:not(.outline):not(:disabled)')&&declaration(rule,'color'));
-  expectImportant(buttonBackground,'background','#970d2a');expectImportant(buttonText,'color','#fff');
+  expectImportant(buttonBackground,'background','#800014');expectImportant(buttonText,'color','#fff');
   assert.match(buttonBackground.selector,/data-element-background/);assert.match(buttonText.selector,/data-element-text-color/);
   assert.doesNotMatch(buttonBackground.selector+buttonText.selector,/data-element-appearance|data-element-font/);
 });

@@ -1,6 +1,8 @@
+import { applySettingsCard } from "./settings-cards";
+import { decodeCloudFile, publishedCloudAssetIds, cloudReferencedAssetIds } from "./cloud-files-model";
 import { doc, getDoc, getDocs, collection, runTransaction, type Firestore } from "firebase/firestore/lite";
 import type { Auth } from "firebase/auth";
-import { assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assertOwnerDraftId, MAX_NAMED_DRAFTS, assertPublishedOwnerSnapshot, createPublishedOwnerSnapshot, createPublishedPremadeSnapshot, OwnerValidationError, type OwnerContent, type OwnerPremade, type OwnerWorkspace, type OwnerNamedDraft, type PublishedOwnerSnapshot } from "./model";
+import { publicContentToOwnerContent, assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assertOwnerDraftId, MAX_NAMED_DRAFTS, assertPublishedOwnerSnapshot, createPublishedOwnerSnapshot, createPublishedPremadeSnapshot, OwnerValidationError, type OwnerContent, type OwnerPremade, type OwnerWorkspace, type OwnerNamedDraft, type PublishedOwnerSnapshot } from "./model";
 import { createInitialOwnerWorkspace } from "./defaults";
 import { createOwnerStore, OwnerStorageError, type OwnerStore } from "./storage";
 import { SITE_ACCESS_DOCUMENT, decodeSiteAccess, defaultSiteAccess, type SiteAccess } from "./site-access";
@@ -155,6 +157,26 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
     }
     return { indexReference, index, drafts };
   };
+  const ensurePrivateAssetsReady = async (transaction: Parameters<Parameters<typeof runTransaction>[1]>[0], next: unknown, previous?: unknown) => {
+    const previousIds = new Set(previous ? cloudReferencedAssetIds(previous) : []);
+    for (const id of cloudReferencedAssetIds(next)) {
+      // Existing references are protected by cleanup's transaction read of this
+      // private document. Only newly introduced references need another lookup.
+      if (previousIds.has(id)) continue;
+      const snapshot = await transaction.get(doc(db, "ownerFiles", id)); requireOwner();
+      if (!snapshot.exists() || decodeCloudFile(snapshot.data(), id).status !== "ready") throw new OwnerStorageError("write", "A selected cloud file is missing, uploading, or being deleted. Choose an available file before saving.");
+    }
+  };
+  const preparePhotoIndex = async (transaction: Parameters<Parameters<typeof runTransaction>[1]>[0], publication: EncodedPublishedOwnerSnapshot) => {
+    const ids = publishedCloudAssetIds(decodePublishedOwnerSnapshot(publication).content);
+    for (const id of ids) {
+      const photo = await transaction.get(doc(db, "ownerFiles", id)); requireOwner();
+      if (!photo.exists()) throw new OwnerStorageError("write", "A selected cloud photo is missing. Refresh File Hub before publishing.");
+      const file = decodeCloudFile(photo.data(), id);
+      if (!["photo", "font"].includes(file.kind) || file.status !== "ready") throw new OwnerStorageError("write", "A selected cloud image or font is unavailable, still uploading, or being deleted. Recover or replace it in File Hub before publishing.");
+    }
+    return { schemaVersion: 1, revision: publication.revision, ids };
+  };
   const store = createOwnerStore({
     namedDrafts: {
       async readTrashed() {
@@ -203,6 +225,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
             const encoded = changed ? encodeOwnerNamedDraft(changed) : encodeOwnerNamedDraft(previous!);
             const registry: OwnerDraftIndex = { schemaVersion: 1, revision: (index?.revision ?? 0) + 1, drafts: Object.fromEntries(next.drafts.map(draft => [draft.id, draft.revision])), changedDraftId: id };
             decodeOwnerDraftIndex(registry);
+            if (changed) await ensurePrivateAssetsReady(transaction, changed, previous);
             requireOwner();
             if (changed) transaction.set(draftReference, encoded);
             else { transaction.set(archiveReference, encoded); transaction.delete(draftReference); }
@@ -253,6 +276,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
           // createOwnerStore applies the expected revision check here, atomically.
           const next = transform(current);
           const encoded = encodeOwnerWorkspace(next);
+          await ensurePrivateAssetsReady(transaction, next, current);
           requireOwner();
           transaction.set(reference, encoded);
           return next;
@@ -340,7 +364,10 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
           // Deliberately start from the existing PUBLIC content, not draft or preview.
           const nextPublished: PublishedOwnerSnapshot = { ...published, revision: next.revision, publishedAt: timestamp, content: { ...published.content, site: { ...published.content.site, showPremades } } };
           const privateDocument = encodeOwnerWorkspace(next), publicDocument = encodePublishedOwnerSnapshot(nextPublished);
+          const photoIndex = await preparePhotoIndex(transaction, publicDocument);
+          await ensurePrivateAssetsReady(transaction, next, current);
           requireOwner(); transaction.set(reference, privateDocument); transaction.set(publicReference, publicDocument);
+          transaction.set(doc(db, "site/publishedAssets"), photoIndex);
           return structuredClone(next);
         });
         requireOwner(); notify(); return workspace;
@@ -359,6 +386,40 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
         }
         throw cloudError(error, "write");
       }
+    },
+    async publishSettingsCardLive(content, card, expectedRevision) {
+      const selected = structuredClone(content);
+      try {
+        await confirmOwner();
+        const saved = await runTransaction(db, async transaction => {
+          requireOwner();
+          const privateSnapshot = await transaction.get(reference); requireOwner();
+          const current = privateSnapshot.exists() ? decodeOwnerWorkspace(privateSnapshot.data()) : createInitialOwnerWorkspace();
+          if (!Number.isSafeInteger(expectedRevision) || current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "This workspace changed before the settings update. Reload before trying again.");
+          const publicReference = doc(db, PUBLIC_CLOUD_DOCUMENT);
+          const publicSnapshot = await transaction.get(publicReference); requireOwner();
+          if (!publicSnapshot.exists()) throw new OwnerStorageError("not-published", "Publish the site once before saving an individual settings card live. Unrelated draft changes have not been published.");
+          const published = decodePublishedOwnerSnapshot(publicSnapshot.data());
+          if (published.revision > current.revision) throw new OwnerStorageError("corrupt", "The published revision is ahead of the workspace. Nothing has been overwritten.");
+          const timestamp = new Date().toISOString();
+          const next: OwnerWorkspace = { ...current, draft: applySettingsCard(current.draft, selected, card), revision: current.revision + 1, updatedAt: timestamp };
+          const live = applySettingsCard(publicContentToOwnerContent(published.content), selected, card);
+          const privateDocument = encodeOwnerWorkspace(next);
+          // Keep the existing public projection intact, including already-public
+          // listings retained while the shop is switched off. Settings never
+          // re-project unrelated pages, photos, inventory, or fonts.
+          const publicContent = { ...published.content, site: live.site };
+          if (live.commissionForm === undefined) delete publicContent.commissionForm;
+          else publicContent.commissionForm = live.commissionForm;
+          const publicDocument = encodePublishedOwnerSnapshot({ ...published, revision: next.revision, publishedAt: timestamp, content: publicContent });
+          const photoIndex = await preparePhotoIndex(transaction, publicDocument);
+          await ensurePrivateAssetsReady(transaction, next, current);
+          requireOwner(); transaction.set(reference, privateDocument); transaction.set(publicReference, publicDocument);
+          transaction.set(doc(db, "site/publishedAssets"), photoIndex);
+          return structuredClone(next);
+        });
+        requireOwner(); notify(); return saved;
+      } catch (error) { throw cloudError(error, "write"); }
     },
     async publishPremadeLive(item, expectedRevision) {
       // Capture the item only, before any network await. Unrelated form data is
@@ -385,7 +446,10 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
           // selected listing changes; shop visibility remains its published value.
           const privateDocument = encodeOwnerWorkspace(next);
           const publicDocument = encodePublishedOwnerSnapshot(createPublishedPremadeSnapshot(published, selected, next.revision, timestamp));
+          const photoIndex = await preparePhotoIndex(transaction, publicDocument);
+          await ensurePrivateAssetsReady(transaction, next, current);
           requireOwner(); transaction.set(reference, privateDocument); transaction.set(publicReference, publicDocument);
+          transaction.set(doc(db, "site/publishedAssets"), photoIndex);
           return structuredClone(next);
         });
         requireOwner(); notify(); return workspace;
@@ -424,9 +488,12 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
           // commit neither document, including revision retries and authorization loss.
           const privateDocument = encodeOwnerWorkspace(next);
           const publicDocument = encodePublishedOwnerSnapshot(createPublishedOwnerSnapshot(next.draft, next.revision, timestamp));
+          const photoIndex = await preparePhotoIndex(transaction, publicDocument);
+          await ensurePrivateAssetsReady(transaction, next, current);
           requireOwner();
           transaction.set(reference, privateDocument);
           transaction.set(publicReference, publicDocument);
+          transaction.set(doc(db, "site/publishedAssets"), photoIndex);
           return structuredClone(next);
         });
         requireOwner();

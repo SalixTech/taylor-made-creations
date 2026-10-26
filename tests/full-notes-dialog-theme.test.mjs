@@ -31,18 +31,18 @@ test('full notes: Manage pages/long filename dialog retains complete title, acce
   const css = readFileSync(new URL('../src/owner/OwnerDialog.module.css', import.meta.url), 'utf8');
   assert.match(css, /max-width:calc\(100vw - 24px\)/); assert.match(css, /h2[^}]*min-width:0[^}]*overflow-wrap:anywhere/); assert.match(css, /overflow-x:hidden/); assert.match(css, /min-height:0[^}]*overflow-y:auto/);
 });
-test('full notes: public theme defaults light and Taylor theme defaults dark with independent persistent choices', () => {
+test('full notes: public theme defaults light and Taylor theme defaults dark with shared persistent choices', () => {
   const h = harness(), values = new Map(); h.window.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
   const theme = h.load('src/components/ColorMode.tsx');
   assert.equal(theme.readColorMode('owner'), 'dark'); assert.equal(theme.readColorMode('public'), 'light');
   theme.setColorMode('owner', 'light'); assert.equal(theme.readColorMode('owner'), 'light'); assert.equal(theme.readColorMode('public'), 'light');
-  theme.setColorMode('public', 'dark'); assert.equal(theme.readColorMode('owner'), 'light'); assert.equal(theme.readColorMode('public'), 'dark');
-  assert.deepEqual([...values], [['tmc-owner-color-mode', 'light'], ['tmc-public-color-mode', 'dark']]);
-  h.render(theme.ColorModeToggle, { scope: 'public' }); assert.equal(h.tree.props['aria-pressed'], true); h.tree.props.onClick(); h.render(theme.ColorModeToggle, { scope: 'public' }); assert.equal(h.tree.props['aria-pressed'], false);
+  theme.setColorMode('public', 'dark'); assert.equal(theme.readColorMode('owner'), 'dark'); assert.equal(theme.readColorMode('public'), 'dark');
+  assert.deepEqual([...values], [['tmc-color-mode', 'dark']]);
+  h.render(theme.ColorModeToggle, { scope: 'public' }); assert.equal(h.find(n=>n.props?.['data-theme-toggle']!==undefined).props['aria-pressed'], true); h.find(n=>n.props?.['data-theme-toggle']!==undefined).props.onClick(); h.render(theme.ColorModeToggle, { scope: 'public' }); assert.equal(h.find(n=>n.props?.['data-theme-toggle']!==undefined).props['aria-pressed'], false);
   h.unmount();
 });
 test('full notes: dark-mode switches still work for this visit if browser storage is disabled', () => {
   const h = harness(); h.window.localStorage = { getItem() { throw Error('blocked'); }, setItem() { throw Error('blocked'); } };
   const theme = h.load('src/components/ColorMode.tsx'); theme.setColorMode('owner', 'light'); theme.setColorMode('public', 'dark');
-  assert.equal(theme.readColorMode('owner'), 'light'); assert.equal(theme.readColorMode('public'), 'dark');
+  assert.equal(theme.readColorMode('owner'), 'dark'); assert.equal(theme.readColorMode('public'), 'dark');
 });

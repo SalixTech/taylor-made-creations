@@ -1,29 +1,34 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useThemeTogglePosition } from "./theme-toggle-position";
 
 type Scope = "owner" | "public";
 type Mode = "light" | "dark";
 const listeners = new Set<() => void>();
-const volatile: Partial<Record<Scope, Mode>> = {};
+let volatile: Mode | undefined;
+export const SHARED_COLOR_MODE_KEY = "tmc-color-mode";
 const key = (scope: Scope) => `tmc-${scope}-color-mode`;
 export const defaultColorMode = (scope: Scope): Mode => scope === "owner" ? "dark" : "light";
 export function readColorMode(scope: Scope): Mode {
   if (typeof window === "undefined") return defaultColorMode(scope);
   // Storage may be disabled in a private browser. A choice still works this visit.
-  if (volatile[scope]) return volatile[scope]!;
-  try { const value = window.localStorage.getItem(key(scope)); return value === "dark" || value === "light" ? value : defaultColorMode(scope); }
+  if (volatile) return volatile;
+  try { const shared = window.localStorage.getItem(SHARED_COLOR_MODE_KEY);
+    if (shared === "dark" || shared === "light") return shared;
+    // Preserve legacy scoped choices until the next explicit toggle unifies them.
+    const value = window.localStorage.getItem(key(scope)); return value === "dark" || value === "light" ? value : defaultColorMode(scope); }
   catch { return defaultColorMode(scope); }
 }
 function subscribe(listener: () => void) {
   listeners.add(listener);
-  const onStorage = (event: StorageEvent) => { if (event.key === null || event.key === key("owner") || event.key === key("public")) { delete volatile.owner; delete volatile.public; listener(); } };
+  const onStorage = (event: StorageEvent) => { if (event.key === null || event.key === SHARED_COLOR_MODE_KEY || event.key === key("owner") || event.key === key("public")) { volatile = undefined; listener(); } };
   window.addEventListener("storage", onStorage);
   return () => { listeners.delete(listener); window.removeEventListener("storage", onStorage); };
 }
-export function setColorMode(scope: Scope, mode: Mode) {
-  try { window.localStorage.setItem(key(scope), mode); delete volatile[scope]; }
-  catch { volatile[scope] = mode; }
+export function setColorMode(_scope: Scope, mode: Mode) {
+  try { window.localStorage.setItem(SHARED_COLOR_MODE_KEY, mode); volatile = undefined; }
+  catch { volatile = mode; }
   listeners.forEach(listener => listener());
 }
 /** Deterministic SSR defaults; browser preferences update after hydration.
@@ -33,7 +38,11 @@ export function useColorMode(scope: Scope): Mode {
 }
 export function ColorModeToggle({ scope }: { scope: Scope }) {
   const mode = useColorMode(scope);
-  return <button type="button" className="color-mode-toggle" aria-pressed={mode === "dark"} aria-label={`${scope === "owner" ? "Taylor’s Space" : "Website"} dark mode`} title={`Use ${mode === "dark" ? "light" : "dark"} mode on this browser only`} onClick={() => setColorMode(scope, mode === "dark" ? "light" : "dark")}><span aria-hidden="true">{mode === "dark" ? "☾" : "☼"}</span><span>{mode === "dark" ? "Dark" : "Light"}</span></button>;
+  const defaultAnchor = useRef<HTMLSpanElement>(null);
+  const movement = useThemeTogglePosition(defaultAnchor);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const resetPosition = movement.position ? { left: Math.max(0, Math.min(window.innerWidth - 28, movement.position.x + 28)), top: Math.max(0, movement.position.y - 12) } : undefined;
+  return <><span ref={defaultAnchor} className="color-mode-default-anchor" aria-hidden="true" /><button ref={toggle} type="button" className="color-mode-toggle" data-theme-toggle data-theme-mode={mode} data-dragging={movement.dragging || undefined} style={movement.position ? { left: movement.position.x, top: movement.position.y, right: "auto", bottom: "auto" } : undefined} onPointerDown={movement.onPointerDown} onKeyDown={movement.onKeyDown} aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown Alt+Home" aria-pressed={mode === "dark"} aria-label={`${scope === "owner" ? "Taylor’s Space" : "Website"} dark mode. Drag to move, or use Alt and arrow keys. Alt and Home resets position. Escape cancels dragging.`} title={`Use ${mode === "dark" ? "light" : "dark"} mode on this browser only`} onClick={() => { if (!movement.consumeDragClick()) setColorMode(scope, mode === "dark" ? "light" : "dark"); }}><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{mode === "light" ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></> : <path d="M20.5 13a8.5 8.5 0 0 1-9.5-9.5A8.5 8.5 0 1 0 20.5 13Z" />}</svg></button>{movement.position && <button type="button" className="color-mode-reset" data-owner-button data-theme-reset data-theme-mode={mode} style={resetPosition} aria-label="Reset theme button position" title="Return theme button to its default position" onPointerDown={event => event.stopPropagation()} onClick={event => { event.preventDefault(); event.stopPropagation(); movement.resetPosition(); toggle.current?.focus({ preventScroll: true }); }}><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m4 4 8 8M12 4l-8 8" /></svg></button>}</>;
 }
 
 /** Cosmetic scrollbar fading never changes overflow, scroll position, or tab order. */

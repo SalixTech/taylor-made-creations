@@ -1,55 +1,64 @@
 /* Personal display preferences only. These rules never modify the owner's
    saved palette, and Taylor's design canvases are explicitly excluded. */
-.color-mode-toggle { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:40px; padding:8px 12px; border:1px solid currentColor; border-radius:7px; background:transparent; color:inherit; font:inherit; font-size:12px; cursor:pointer; white-space:nowrap; }
-.color-mode-toggle:focus-visible { outline:3px solid #d35f76; outline-offset:3px; }
-.color-mode-toggle > span:first-child { font-size:18px; line-height:1; }
+/* One compact, viewport-anchored personal preference control, outside page flow. */
+.color-mode-toggle { position:fixed; right:max(18px,env(safe-area-inset-right)); bottom:max(18px,env(safe-area-inset-bottom)); z-index:60; display:grid; place-items:center; width:44px; height:44px; min-width:44px; min-height:44px; padding:0; border:1px solid #800014; border-radius:50%; background:#fff; color:#800014; box-shadow:0 3px 12px #0002; cursor:pointer; }
+.color-mode-toggle:hover { background:#f6eeee; }
+.color-mode-toggle:focus-visible { outline:3px solid #cf233e; outline-offset:3px; }
+.color-mode-toggle svg { display:block; flex:none; }
+[data-owner-portal][data-color-mode="dark"] .color-mode-toggle { background:#28282c; color:#fff; border-color:#9c2639; }
 
-[data-owner-portal][data-color-mode="dark"] { --owner-wine:#f3a8b6; --owner-ink:#f5eff1; --owner-muted:#c6b8be; --owner-line:#55434c; --owner-surface:#241f24; --owner-card:var(--owner-surface); --owner-raised:#30272e; color-scheme:dark; color:var(--owner-ink); background:#18151a;
+
+[data-owner-portal][data-color-mode="dark"] { --owner-wine:#f4f1f2; --owner-ink:#f5eff1; --owner-muted:#c6c5c9; --owner-line:#505055; --owner-surface:#242426; --owner-card:var(--owner-surface); --owner-raised:#303034; --owner-badge-bg:#39393e; --owner-badge-ink:#f5eff1; --owner-badge-visible-bg:#24422f; --owner-badge-visible-line:#60876c; --owner-badge-visible-ink:#dcf5e2; color-scheme:dark; color:var(--owner-ink); background:#18181b;
   --owner-button-secondary-bg:var(--owner-raised);
-  --owner-button-secondary-line:#947887;
-  --owner-button-secondary-hover:#48313e;
-  --owner-button-secondary-active:#543b49;
-  --owner-button-primary-bg:#970d2a;
-  --owner-button-primary-line:#db6c84;
-  --owner-button-primary-hover:#b11739;
-  --owner-button-primary-active:#7f0b24;
+  --owner-button-secondary-ink:#e5e7eb;
+  --owner-button-primary-ink:#f5f5f5;
+  --owner-control-line:#85858c;
+  --owner-control-focus:#a1a1aa;
+  --owner-control-error:#d46c80;
+  --owner-button-secondary-line:#85858c;
+  --owner-button-secondary-hover:#3a3033;
+  --owner-button-secondary-active:#4b3036;
+  --owner-button-primary-bg:#800014;
+  --owner-button-primary-line:#b13c4e;
+  --owner-button-primary-hover:#99001c;
+  --owner-button-primary-active:#670010;
   --owner-button-danger-bg:#9f293f;
   --owner-button-danger-line:#eb8da1;
   --owner-button-danger-hover:#b5334b;
   --owner-button-danger-active:#842237;
-  --owner-button-selected-bg:#48313e;
-  --owner-button-selected-hover:#5b3d4d;
-  --owner-button-selected-active:#6e475b;
+  --owner-button-selected-bg:#3a3033;
+  --owner-button-selected-hover:#4b3036;
+  --owner-button-selected-active:#59303a;
   --owner-button-selected-ink:var(--owner-ink);
   --owner-button-selected-line:var(--owner-wine);
   --owner-button-disabled-bg:var(--owner-raised);
   --owner-button-disabled-ink:var(--owner-muted);
   --owner-button-disabled-line:var(--owner-line); }
 [data-owner-portal][data-color-mode="light"] { color-scheme:light; }
-body:has([data-owner-portal][data-color-mode="dark"]) { background:#18151a; }
+body:has([data-owner-portal][data-color-mode="dark"]) { background:#18181b; }
 /* The data-site-render-mode boundary includes every live design preview. */
 [data-owner-portal][data-color-mode="dark"] :is(h1,h2,h3,h4,p,small,label,strong,span,em,summary,li,a,legend):not(:where([data-site-render-mode],[data-site-render-mode] *,[data-owner-button] *)) { color:var(--owner-ink)!important; }
 [data-owner-portal][data-color-mode="dark"] :is(p,small,[class*="help"],[class*="Meta"],[class*="eyebrow"],[class*="bottomNote"]):not(:where([data-site-render-mode],[data-site-render-mode] *,[data-owner-button] *)) { color:var(--owner-muted)!important; }
-[data-owner-portal][data-color-mode="dark"] :is(section,dialog,[role="listbox"],[class*="sidebar"],[class*="topbar"],[class*="card"],[class*="Card"],[class*="builder"],[class*="panel"],[class*="Panel"],[class*="toolbar"],[class*="contextbar"],[class*="dialogActions"],[class*="softNote"],[class*="draftCreate"],[class*="blockPalette"],[class*="artWindow"],[class*="previewHeader"],[class*="request"],[class*="inboxNotice"],[class*="service"],[class*="priceRow"],[class*="stage"],[class*="palette"],[class*="Palette"],[class*="headerEditor"],[class*="navRow"],[class*="navLabel"],[class*="numberEntry"],[class*="hexField"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { background-color:var(--owner-surface)!important; border-color:var(--owner-line)!important; color:var(--owner-ink)!important; }
-[data-owner-portal][data-color-mode="dark"] :is(button,input,textarea,select,[role="combobox"],[role="option"],[class*="segmented"],[class*="Switch"],[class*="badge"],[class*="Badge"]):not(:where([data-site-render-mode],[data-site-render-mode] *)):not([style*="background"]):not(:where([data-owner-button])) { color:var(--owner-ink)!important; background-color:var(--owner-raised)!important; border-color:var(--owner-line)!important; }
+[data-owner-portal][data-color-mode="dark"] :is(dialog,[role="listbox"],[class*="sidebar"],[class*="topbar"],[class*="card"],[class*="Card"],[class*="builder"],[class*="panel"],[class*="Panel"],[class*="toolbar"],[class*="contextbar"],[class*="dialogActions"],[class*="softNote"],[class*="draftCreate"],[class*="blockPalette"],[class*="artWindow"],[class*="previewHeader"],[class*="request"],[class*="inboxNotice"],[class*="service"],[class*="priceRow"],[class*="stage"],[class*="palette"],[class*="Palette"],[class*="headerEditor"],[class*="navRow"],[class*="navLabel"],[class*="numberEntry"],[class*="hexField"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { background-color:var(--owner-surface)!important; border-color:var(--owner-line)!important; color:var(--owner-ink)!important; }
+[data-owner-portal][data-color-mode="dark"] :is(button,input,textarea,select,[role="combobox"],[role="option"],[class*="segmented"],[class*="Switch"]):not(:where([data-site-render-mode],[data-site-render-mode] *)):not([style*="background"]):not(:where([data-owner-button],[data-theme-toggle],[data-service-status])) { color:var(--owner-ink)!important; background-color:var(--owner-raised)!important; border-color:var(--owner-line)!important; }
 [data-owner-portal][data-color-mode="dark"] input[type="color"]:not(:where([data-site-render-mode] *)) { padding:3px!important; }
 [data-owner-portal][data-color-mode="dark"] :is(input,textarea)::placeholder { color:#b4a3ac; opacity:1; }
-[data-owner-portal][data-color-mode="dark"] :is(button:hover,button[aria-current="page"],[role="option"][aria-selected="true"]):not(:disabled):not(:where([data-site-render-mode],[data-site-render-mode] *)):not(:where([data-owner-button])) { background-color:#48313e!important; border-color:#d7879b!important; }
-[data-owner-portal][data-color-mode="dark"] :is([class*="primary"],[class*="danger"],[class*="applyShop"]):not(:where([data-site-render-mode],[data-site-render-mode] *)):not(:where([data-owner-button])) { background-color:#970d2a!important; color:#fff!important; border-color:#db6c84!important; }
-[data-owner-portal][data-color-mode="dark"] :is(a,[class*="textButton"],[class*="dangerLink"],[class*="required"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:#ffc0cc!important; }
-[data-owner-portal][data-color-mode="dark"] :is(button,input,textarea,select,a,summary,[tabindex]):focus-visible:not(:where([data-site-render-mode],[data-site-render-mode] *)):not(:where([data-owner-button])) { outline:3px solid #ffb8ca!important; outline-offset:3px; }
+[data-owner-portal][data-color-mode="dark"] :is(button:hover,button[aria-current="page"],[role="option"][aria-selected="true"]):not(:disabled):not(:where([data-site-render-mode],[data-site-render-mode] *)):not(:where([data-owner-button],[data-theme-toggle],[data-service-status])) { background-color:#3a3033!important; border-color:#c8334e!important; }
+[data-owner-portal][data-color-mode="dark"] :is([class*="primary"],[class*="danger"],[class*="applyShop"]):not(:where([data-site-render-mode],[data-site-render-mode] *)):not(:where([data-owner-button],[data-theme-toggle],[data-service-status])) { background-color:#800014!important; color:#fff!important; border-color:#b13c4e!important; }
+[data-owner-portal][data-color-mode="dark"] :is(a,[class*="textButton"],[class*="dangerLink"],[class*="required"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:#f4eff1!important; }
+[data-owner-portal][data-color-mode="dark"] :is(button,input,textarea,select,a,summary,[tabindex]):focus-visible:not(:where([data-site-render-mode],[data-site-render-mode] *)):not(:where([data-owner-button],[data-theme-toggle],[data-service-status])) { outline:3px solid #e63950!important; outline-offset:3px; }
 [data-owner-portal][data-color-mode="dark"] :is([class*="error"],[class*="Error"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:#ffd3dc!important; background-color:#49222d!important; border-color:#a85b6d!important; }
 [data-owner-portal][data-color-mode="dark"] :is([class*="successNotice"],[class*="notice"],[class*="good"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:#cdf0d5!important; background-color:#203b2b!important; border-color:#537c61!important; }
 [data-owner-portal][data-color-mode="dark"] [class*="switch"]:not(:where([data-site-render-mode] *)) { background-color:#685963!important; }
-[data-owner-portal][data-color-mode="dark"] input:checked + [class*="switch"]:not(:where([data-site-render-mode] *)) { background-color:#c8516c!important; }
+[data-owner-portal][data-color-mode="dark"] input:checked + [class*="switch"]:not(:where([data-site-render-mode] *)) { background-color:#800014!important; }
 [data-owner-portal][data-color-mode="dark"] [data-site-render-mode] { color-scheme:light; }
 
 /* Public dark mode is opt-in; default/light mode leaves creative colors intact.
    An explicit per-element appearance is kept, rather than overwriting its palette. */
-[data-theme-scope="public"][data-color-mode="dark"] { color-scheme:dark; --ink:#f4edf0; --muted:#c5b7be; --paper:#18151a; --line:#55434c; --wine:#f4b1c1; --site-background:#18151a; --site-text:#f4edf0; --site-accent:#f4b1c1; background:#18151a!important; color:#f4edf0; }
-[data-theme-scope="public"][data-color-mode="dark"] :is(.site-header,footer,.preview-banner,[class*="cartPanel"],[role="listbox"]):not(:where([data-owner-portal],[data-owner-portal] *)) { background:#241f24!important; color:#f4edf0!important; border-color:#55434c!important; }
-[data-theme-scope="public"][data-color-mode="dark"] :is(input,textarea,select,[role="combobox"],[role="option"]):not(:where([data-owner-portal],[data-owner-portal] *)) { background:#30272e!important; color:#f4edf0!important; border-color:#806773!important; }
-[data-theme-scope="public"][data-color-mode="dark"] .color-mode-toggle { background:#30272e; color:#fff; }
+[data-theme-scope="public"][data-color-mode="dark"] { color-scheme:dark; --ink:#f4edf0; --muted:#c5c5c9; --paper:#18181b; --line:#505055; --wine:#e63950; --site-background:#18181b; --site-text:#f4edf0; --site-accent:#e63950; background:#18181b!important; color:#f4edf0; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(footer,.preview-banner,[class*="cartPanel"],[role="listbox"]):not(:where([data-owner-portal],[data-owner-portal] *)) { background:#242426!important; color:#f4edf0!important; border-color:#505055!important; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(input,textarea,select,[role="combobox"],[role="option"]):not(:where([data-owner-portal],[data-owner-portal] *)) { background:#303034!important; color:#f4edf0!important; border-color:#85858c!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .color-mode-toggle { background:#303034; color:#fff; }
 
 /* Keep the collapsed 6px size while idle, hovering, dragging, or scrolling.
    Interaction changes only the thumb color, never the scrollbar dimensions.
@@ -73,20 +82,20 @@ html[data-scroll-active="true"]::-webkit-scrollbar-thumb,html[data-scroll-active
 /* Override only display tokens in the opted-in frame. Inline saved design
    tokens remain in the DOM and return unchanged when light mode is selected. */
 [data-theme-scope="public"][data-color-mode="dark"],
-[data-theme-scope="public"][data-color-mode="dark"] [data-site-render-mode="public"] { --cream:#241f24!important; --site-background:#18151a!important; --site-surface:#241f24!important; --site-text:#f4edf0!important; --site-muted:#c5b7be!important; --site-accent:#f4b1c1!important; --site-border:#55434c!important; --site-header-background:#241f24!important; --site-header-text:#f4edf0!important; --site-footer-background:#241f24!important; --site-footer-text:#c5b7be!important; --site-button-text:#fff!important; --white:#18151a!important; --blush:#241f24!important; --ink:#f4edf0!important; --muted:#c5b7be!important; --line:#55434c!important; --wine:#f4b1c1!important; }
-[data-theme-scope="public"][data-color-mode="dark"] :is(.price-card,.form-preview,.status-panel,.empty-state,.notice,.page-shell):not(:where([data-element-background],[data-element-background] *)) { background-color:#241f24!important; border-color:#55434c!important; }
-[data-theme-scope="public"][data-color-mode="dark"] .page-shell:not(:where([data-element-background],[data-element-background] *)) { background-color:#18151a!important; }
+[data-theme-scope="public"][data-color-mode="dark"] :is([data-site-render-mode="public"],[data-site-render-mode="private-preview"]) { --cream:#242426!important; --site-background:#18181b!important; --site-surface:#242426!important; --site-text:#f4edf0!important; --site-muted:#c5c5c9!important; --site-accent:#e63950!important; --site-border:#505055!important; --site-header-background:#800014!important; --site-header-text:#f4edf0!important; --site-footer-background:#242426!important; --site-footer-text:#c5c5c9!important; --site-button-text:#fff!important; --white:#18181b!important; --blush:#242426!important; --ink:#f4edf0!important; --muted:#c5c5c9!important; --line:#505055!important; --wine:#e63950!important; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(.price-card,.form-preview,.status-panel,.empty-state,.notice,.page-shell):not(:where([data-element-background],[data-element-background] *)) { background-color:#242426!important; border-color:#505055!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .page-shell:not(:where([data-element-background],[data-element-background] *)) { background-color:#18181b!important; }
 [data-theme-scope="public"][data-color-mode="dark"] :is(.home-intro h1,.status-panel h2):not(:where([data-element-text-color],[data-element-text-color] *)) { color:#f4edf0!important; }
-[data-theme-scope="public"][data-color-mode="dark"] .button:not(.outline):not(:disabled):not(:where([data-element-background],[data-element-background] *)) { background:#970d2a!important; border-color:#db6c84!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .button:not(.outline):not(:disabled):not(:where([data-element-background],[data-element-background] *)) { background:#800014!important; border-color:#b13c4e!important; }
 [data-theme-scope="public"][data-color-mode="dark"] .button:not(.outline):not(:disabled):not(:where([data-element-text-color],[data-element-text-color] *)) { color:#fff!important; }
-[data-theme-scope="public"][data-color-mode="dark"] .button.outline:not(:where([data-element-text-color],[data-element-text-color] *)) { color:#f4b1c1!important; }
-[data-theme-scope="public"][data-color-mode="dark"] :focus-visible { outline-color:#ffb8ca; }
-[data-theme-scope="public"][data-color-mode="dark"] :is(dialog,form,[class*="product"],dialog [class*="actions"],dialog [class*="cancel"]):not(:where([data-element-background],[data-element-background] *)) { background-color:#241f24!important; color:#f4edf0; border-color:#55434c!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .button.outline:not(:where([data-element-text-color],[data-element-text-color] *)) { color:#e63950!important; }
+[data-theme-scope="public"][data-color-mode="dark"] :focus-visible { outline-color:#e63950; }
+[data-theme-scope="public"][data-color-mode="dark"] :is(dialog,form,[class*="product"],dialog [class*="actions"],dialog [class*="cancel"]):not(:where([data-element-background],[data-element-background] *)) { background-color:#242426!important; color:#f4edf0; border-color:#505055!important; }
 [data-theme-scope="public"][data-color-mode="dark"] [class*="error"] { color:#ffd3dc!important; background-color:#49222d!important; }
 [data-theme-scope="public"][data-color-mode="dark"] [class*="error"] a { color:#ffd3dc!important; }
-[data-theme-scope="public"][data-color-mode="dark"] [class*="count"] { color:#241f24; }
+[data-theme-scope="public"][data-color-mode="dark"] [class*="count"] { color:#242426; }
 [data-owner-portal][data-color-mode="dark"] [role="option"][data-active="true"],
-[data-theme-scope="public"][data-color-mode="dark"] [role="option"][data-active="true"] { background-color:#714252!important; color:#fff!important; outline:1px solid #e8a7bb; outline-offset:-1px; }
+[data-theme-scope="public"][data-color-mode="dark"] [role="option"][data-active="true"] { background-color:#702638!important; color:#fff!important; outline:1px solid #e63950; outline-offset:-1px; }
 
 /* Help retains its established blue in both personal modes, including hover.
    The complete enabled/disabled states add specificity above the generic
@@ -97,7 +106,12 @@ html[data-scroll-active="true"]::-webkit-scrollbar-thumb,html[data-scroll-active
 /* Shared owner action tokens. These are personal editor colors, not saved site
    branding. OwnerButton.module.css is the reusable control contract. */
 [data-owner-portal] {
-  --owner-button-radius:7px;
+  --owner-button-font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --owner-button-font-weight:700;
+  --owner-control-line:#c5c5ca;
+  --owner-control-focus:#64748b;
+  --owner-control-error:#a30e2a;
+  --owner-button-radius:10px;
   --owner-button-height:42px;
   --owner-button-compact-height:36px;
   --owner-button-secondary-bg:var(--owner-surface);
@@ -126,3 +140,49 @@ html[data-scroll-active="true"]::-webkit-scrollbar-thumb,html[data-scroll-active
   --owner-button-disabled-ink:#675b5f;
   --owner-button-disabled-line:#b7a5ad;
 }
+
+/* Text-only status labels are not cards. Badge backgrounds belong to their components. */
+[data-owner-portal][data-color-mode="dark"] [class*="draftBadge"],[data-owner-portal][data-color-mode="dark"] [class*="cloudBadge"] { background:transparent!important; box-shadow:none!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .site-header { background:#800014!important; color:#fff!important; }
+[data-theme-scope="public"][data-color-mode="dark"] .site-header :is(a,button,span) { color:inherit; }
+[data-theme-scope="public"][data-color-mode="dark"] .text-link:not([data-element-text-color]) { color:#f4edf0; }
+/* The compact control must not inherit top-bar button padding on narrow screens. */
+.color-mode-toggle[data-theme-toggle] { box-sizing:border-box; width:44px; height:44px; min-width:44px; max-width:44px; min-height:44px; padding:0; border-radius:50%; flex:0 0 44px; }
+
+/* One browser-local control, identical in the workspace, login and site preview. */
+.color-mode-toggle[data-theme-toggle][data-theme-mode] { touch-action:none; user-select:none; transition:background-color .15s,color .15s; transform:none; margin:0; }
+.color-mode-toggle[data-theme-toggle][data-theme-mode="light"] { background:#fff; color:#800014; border-color:#800014; }
+.color-mode-toggle[data-theme-toggle][data-theme-mode="dark"] { background:#28282c; color:#fff; border-color:#800014; }
+.color-mode-toggle[data-theme-toggle][data-theme-mode]:hover { background:#f6eeee; color:#800014; }
+.color-mode-toggle[data-theme-toggle][data-theme-mode="dark"]:hover { background:#343438; color:#fff; }
+.color-mode-toggle[data-theme-toggle][data-dragging] { cursor:grabbing; transition:none; }
+
+/* Separate sibling action: resetting placement never activates the theme toggle. */
+.color-mode-reset[data-theme-reset][data-theme-mode] { position:fixed; z-index:61; box-sizing:border-box; display:grid; place-items:center; width:28px; height:28px; min-width:28px; min-height:28px; padding:0; margin:0; border:1px solid #800014; border-radius:50%; background:#fff; color:#800014; box-shadow:0 2px 6px #0002; cursor:pointer; touch-action:manipulation; text-shadow:none; transform:none; }
+.color-mode-reset[data-theme-reset][data-theme-mode="dark"] { background:#28282c; color:#fff; }
+.color-mode-reset[data-theme-reset][data-theme-mode]:hover { background:#f6eeee; color:#800014; }
+.color-mode-reset[data-theme-reset][data-theme-mode="dark"]:hover { background:#343438; color:#fff; }
+.color-mode-reset[data-theme-reset]:focus-visible { outline:3px solid #cf233e; outline-offset:2px; }
+.color-mode-reset[data-theme-reset] svg { display:block; pointer-events:none; }
+
+.color-mode-default-anchor { position:fixed; right:max(18px,env(safe-area-inset-right)); bottom:max(18px,env(safe-area-inset-bottom)); width:44px; height:44px; visibility:hidden; pointer-events:none; }
+
+/* Owner workspace controls use the same clean UI font family as Salix Main.
+   This is chrome only: saved website typography and preview controls stay intact. */
+[data-owner-portal] button:not([role="combobox"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) {
+  font-family:var(--owner-button-font-family)!important;
+  font-weight:var(--owner-button-font-weight)!important;
+  font-synthesis:none;
+  text-shadow:none!important;
+}
+/* A field is not a red action button. Neutral borders remain visible in both
+   modes, and keyboard focus remains explicit without the red highlight. */
+[data-owner-portal][data-color-mode] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]),textarea,select,[role="combobox"]):not(:where([data-site-render-mode],[data-site-render-mode] *)):not([aria-invalid="true"]) {
+  border-color:var(--owner-control-line)!important;
+  box-shadow:none!important;
+}
+[data-owner-portal][data-color-mode] :is(input,textarea,select,[role="combobox"]):focus-visible:not(:where([data-site-render-mode],[data-site-render-mode] *)) {
+  outline:2px solid var(--owner-control-focus)!important;
+  outline-offset:2px;
+}
+[data-owner-portal][data-color-mode] :is(input,textarea,select,[role="combobox"])[aria-invalid="true"]:is(:enabled,:disabled):not(:where([data-site-render-mode],[data-site-render-mode] *)) { border-color:var(--owner-control-error)!important; }

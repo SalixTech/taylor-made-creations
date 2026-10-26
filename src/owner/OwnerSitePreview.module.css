@@ -87,3 +87,10 @@
 .editorNotice { padding:9px 12px; border:1px dashed var(--wine); background:var(--blush); color:var(--wine); font-size:12px; }
 .editorFrame [data-owner-edit] { cursor:pointer; }
 .editorFrame [data-owner-edit]:focus-visible { outline:3px solid var(--wine); outline-offset:4px; }
+
+/* The saved private site can be viewed with the same personal theme as the public site.
+   This does not apply to the edit canvas or write any saved design settings. */
+.preview[data-color-mode="dark"] :is(.toolbar,.snapshot,.previewFooter,.loading) { background:#242426; color:#f4edf0; border-color:#505055; }
+.preview[data-color-mode="dark"] :is(.toolbar,.snapshot,.previewFooter,.loading) :is(p,small,strong,span,h1,h2) { color:inherit; }
+.preview[data-color-mode="dark"] .back { background:#303034; color:#fff; border-color:#85858c; }
+.preview[data-color-mode="dark"] .back:hover { background:#3a3033; }

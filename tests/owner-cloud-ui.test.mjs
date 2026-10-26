@@ -27,7 +27,20 @@ function setupPortal() {
   const builder = () => h.find(node => typeof node.type === 'function' && node.type.name === 'OwnerVisualBuilder');
   // Parent regression follows either the standalone builder or the simple Home manager.
   const editableContent = () => builder()?.props.content ?? h.find(node => typeof node.type === 'function' && node.type.name === 'HomePageManager')?.props.content;
-  const field = label => label === 'Main heading' && editableContent() ? { props: { value: editableContent().home.title } } : h.find(node => typeof node.type === 'function' && node.type.name === 'Field' && node.props.label === label);
+  // The prices section now lives in a child manager. Render its real component
+  // separately so its fields and callbacks are checked without sharing parent hooks.
+  const pricesHarness = harness();
+  const PricesManager = pricesHarness.load('src/owner/OwnerPricesManager.tsx').OwnerPricesManager;
+  const field = label => {
+    if (label === 'Main heading' && editableContent()) return { props: { value: editableContent().home.title } };
+    const matches = node => typeof node.type === 'function' && node.type.name === 'Field' && node.props.label === label;
+    const direct = h.find(matches);
+    if (direct) return direct;
+    const manager = h.find(node => typeof node.type === 'function' && node.type.name === 'OwnerPricesManager');
+    if (!manager) return undefined;
+    pricesHarness.render(PricesManager, manager.props);
+    return pricesHarness.find(matches);
+  };
   const dialog = () => h.find(node => typeof node.type === 'function' && node.type.name === 'Dialog');
   const dialogButton = label => nodes(dialog()?.props.actions).find(node => (node.type === 'button' || node.type === 'a') && content(node) === label);
   const editTitle = title => { builder().props.onEdit(draft => { draft.home.title = title; }); render(); };
@@ -77,11 +90,15 @@ test('instant preview shows unsaved edits without draft, snapshot or public writ
   t.failPreview = true; t.button('Preview').props.onClick(); t.render();
   assert.equal(t.raw, null); assert.equal(t.saves, 0); assert.equal(t.previews, 0);
   assert.equal(t.dialog().props.title, 'Your draft preview');
-  const frame = nodes(t.dialog()).find(node => typeof node.type === 'function' && node.type.name === 'SiteContentFrame');
+  const frame = nodes(t.dialog()).find(node => typeof node.type === 'function' && node.type.name === 'OwnerVisualBuilder');
   assert.equal(frame.props.content.home.title, 'UNSAVED PRIVATE PREVIEW');
-  assert.equal(frame.props.mode, 'editor');
+  assert.equal(frame.props.browsing, true);
+  frame.props.onBrowsingChange(false); t.render();
+  const editable = nodes(t.dialog()).find(node => node.type?.name === 'OwnerVisualBuilder');
+  assert.equal(editable.props.browsing, false);
+  editable.props.onEdit(draft => { draft.home.title = 'EDITED INSIDE PREVIEW'; }); t.render();
   t.dialogButton('Back to workspace').props.onClick(); t.render();
-  assert.equal(t.dialog(), undefined); assert.equal(t.field('Main heading').props.value, 'UNSAVED PRIVATE PREVIEW');
+  assert.equal(t.dialog(), undefined); assert.equal(t.field('Main heading').props.value, 'EDITED INSIDE PREVIEW');
   assert.equal(t.saves, 0); assert.equal(t.previews, 0); t.h.unmount();
 });
 
@@ -214,7 +231,7 @@ test('dirty section navigation can cancel, discard only unsaved work, or fail sa
   assert.equal(t.raw, null); assert.equal(t.field('Main heading').props.value, 'DO NOT LOSE');
   t.button('Prices & options').props.onClick(); t.render();
   t.dialogButton('Discard changes').props.onClick(); t.render();
-  assert.ok(t.field('Introductory text')); assert.equal(t.raw, null);
+  assert.ok(t.field('Introductory text')); assert.equal(t.field('Introductory text').props.value, t.defaults.createDefaultOwnerContent().prices.intro); assert.equal(t.dialog(), undefined); assert.equal(t.raw, null);
   t.button('Home page').props.onClick(); t.render();
   assert.notEqual(t.field('Main heading').props.value, 'DO NOT LOSE'); t.h.unmount();
 });

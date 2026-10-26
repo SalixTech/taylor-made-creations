@@ -1,3 +1,4 @@
+import { applySettingsCard, type SettingsCardId } from "./settings-cards";
 import { createDefaultOwnerContent, createInitialOwnerWorkspace } from "./defaults";
 import { assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assertOwnerDraftId, normalizeOwnerDraftName, namedDraftSummary, newOwnerId, MAX_NAMED_DRAFTS, OwnerValidationError } from "./model";
 import type { OwnerContent, OwnerPremade, OwnerWorkspace, OwnerNamedDraft, OwnerNamedDraftSummary, SaveNamedDraftOptions } from "./model";
@@ -49,6 +50,9 @@ export interface OwnerStore {
   saveDraft(content: OwnerContent, expectedRevision: number): Promise<OwnerWorkspace>;
   /** Save only this listing privately; never publishes or saves unrelated form edits. */
   savePremadeDraft(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>;
+  saveSettingsCard(content: OwnerContent, card: SettingsCardId, expectedRevision: number): Promise<OwnerWorkspace>;
+  deletePremadeDraft(id: string, expectedRevision: number): Promise<OwnerWorkspace>;
+  publishSettingsCardLive?(content: OwnerContent, card: SettingsCardId, expectedRevision: number): Promise<OwnerWorkspace>;
   publishLocal(expectedRevision: number): Promise<OwnerWorkspace>;
   /** Explicitly save + publish to the new site. Never supplied by local-only stores. */
   publishLive?(content: OwnerContent | undefined, expectedRevision: number): Promise<OwnerWorkspace>;
@@ -195,6 +199,17 @@ export function createOwnerStore(adapter: OwnerStorageAdapter): OwnerStore {
           ? state.draft.premades.map(entry => entry.id === selected.id ? selected : entry)
           : [selected, ...state.draft.premades],
       } }));
+    },
+    async saveSettingsCard(content, card, expectedRevision) {
+      const selected = structuredClone(content);
+      return change(expectedRevision, state => ({ ...state, draft: applySettingsCard(state.draft, selected, card) }));
+    },
+    async deletePremadeDraft(id, expectedRevision) {
+      return change(expectedRevision, state => {
+        const selected = state.draft.premades.find(item => item.id === id);
+        if (!selected || selected.isDraft !== true) throw new OwnerStorageError("not-found", "This saved listing draft no longer exists. Refresh before trying again.");
+        return { ...state, draft: { ...state.draft, premades: state.draft.premades.filter(item => item.id !== id) } };
+      });
     },
     async publishLocal(expectedRevision) {
       return change(expectedRevision, state => ({ ...state, localPublished: { content: structuredClone(state.draft), publishedAt: new Date().toISOString() } }));

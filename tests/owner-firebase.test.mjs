@@ -11,7 +11,8 @@ const root = fileURLToPath(new URL('../src/', import.meta.url));
 function fixture() {
   let raw = null, readError = null, writeError = null, beforeRead = null, afterRead = null, retryDocument;
   let reads = 0, commits = 0, appInitializations = 0, authInitializations = 0;
-  let publicRaw = null;
+  let publicRaw = null, publicAssetsRaw = null;
+  const cloudFiles = new Map();
   const user = { uid: 'owner-uid', email: 'owner@example.test', reload: async () => {}, getIdToken: async () => 'mock-token' };
   const auth = { currentUser: user };
   const db = {};
@@ -20,18 +21,18 @@ function fixture() {
   const snapshot = value => ({ exists: () => value !== null, data: () => structuredClone(value) });
   const liteMocks = {
     getFirestore: () => db,
-    doc: (actualDb, path) => { assert.equal(actualDb, db); assert.ok(['ownerWorkspace/current', 'site/published'].includes(path)); return { path }; },
+    doc: (actualDb, ...parts) => { const path = parts.join('/'); assert.equal(actualDb, db); assert.ok(['ownerWorkspace/current', 'site/published', 'site/publishedAssets'].includes(path) || /^ownerFiles\/[a-f0-9-]{36}$/.test(path)); return { path }; },
     getDoc: async () => { ++reads; await beforeRead?.(); if (readError) throw readError; const result = snapshot(raw); await afterRead?.(); return result; },
     runTransaction: async (_db, transform) => {
       let pending = new Map();
       const transaction = {
-        get: async ref => { ++reads; await beforeRead?.(); if (readError) throw readError; const result = snapshot(ref.path === 'site/published' ? publicRaw : raw); await afterRead?.(); return result; },
+        get: async ref => { ++reads; await beforeRead?.(); if (readError) throw readError; const result = snapshot(ref.path === 'site/published' ? publicRaw : ref.path === 'site/publishedAssets' ? publicAssetsRaw : ref.path.startsWith('ownerFiles/') ? cloudFiles.get(ref.path.slice(11)) ?? null : raw); await afterRead?.(); return result; },
         set: (ref, data) => { pending.set(ref.path, structuredClone(data)); },
       };
       let result = await transform(transaction);
       if (retryDocument !== undefined) { raw = structuredClone(retryDocument); retryDocument = undefined; pending = new Map(); result = await transform(transaction); }
       if (writeError) throw typeof writeError === 'function' ? writeError() : writeError;
-      if (pending.size) { if (pending.has('ownerWorkspace/current')) raw = pending.get('ownerWorkspace/current'); if (pending.has('site/published')) publicRaw = pending.get('site/published'); ++commits; }
+      if (pending.size) { if (pending.has('ownerWorkspace/current')) raw = pending.get('ownerWorkspace/current'); if (pending.has('site/published')) publicRaw = pending.get('site/published'); if (pending.has('site/publishedAssets')) publicAssetsRaw = pending.get('site/publishedAssets'); ++commits; }
       return result;
     },
   };
@@ -58,6 +59,8 @@ function fixture() {
     state: () => ({ raw: structuredClone(raw), reads, commits, appInitializations, authInitializations }),
     raw: value => { raw = structuredClone(value); },
     publicRaw: () => structuredClone(publicRaw),
+    publicAssetsRaw: () => structuredClone(publicAssetsRaw),
+    cloudFile: (id, value) => cloudFiles.set(id, structuredClone(value)),
     setPublicRaw: value => { publicRaw = structuredClone(value); },
     readError: value => { readError = value; }, writeError: value => { writeError = value; },
     beforeRead: value => { beforeRead = value; }, afterRead: value => { afterRead = value; }, retryDocument: value => { retryDocument = value; },
@@ -234,6 +237,7 @@ test('only explicit live publish commits a separate public snapshot atomically',
   const trashed=f.model.trashPage(content,'builtin-terms');
   state=await store.publishLive(trashed,state.revision);
   assert.equal(state.revision,3);assert.equal(f.state().commits,3);
+  assert.deepEqual(f.publicAssetsRaw(), { schemaVersion: 1, revision: 3, ids: [] });
   assert.deepEqual(state.localPublished,previousPreview,'private preview is not replaced by live publication');
   const published=f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw());
   assert.equal(published.revision,state.revision);assert.equal(published.publishedAt,state.updatedAt);
@@ -262,7 +266,7 @@ test('live publish failure, conflict and retry never partially commit either doc
   for(const mode of ['network','stale','retry','session','data-image','corrupt']){
     const f=fixture(),store=f.store(),content=f.defaults.createDefaultOwnerContent();
     await store.publishLive(content,0);
-    const beforePrivate=f.state().raw,beforePublic=f.publicRaw();
+    const beforePrivate=f.state().raw,beforePublic=f.publicRaw(),beforeAssets=f.publicAssetsRaw();
     if(mode==='network')f.writeError({code:'unavailable'});
     if(mode==='session')f.afterRead(()=>{f.auth.currentUser=null;});
     if(mode==='data-image')content.home.image.src='data:image/png;base64,aGVsbG8=';
@@ -273,6 +277,7 @@ test('live publish failure, conflict and retry never partially commit either doc
     }
     await assert.rejects(store.publishLive(content,mode==='stale'?0:1));
     assert.deepEqual(f.publicRaw(),beforePublic,mode);
+    assert.deepEqual(f.publicAssetsRaw(),beforeAssets,mode);
     assert.equal(f.state().commits,1,mode);
     if(!['corrupt','retry'].includes(mode))assert.deepEqual(f.state().raw,beforePrivate,mode);
   }
@@ -390,4 +395,83 @@ test('selective publication rejects stale revisions, transaction races and failu
     if (scenario !== 'retry') assert.deepEqual(f.state().raw, before);
     assert.equal(f.state().commits, 1);
   }
+});
+
+
+test('public photo index is projected from visible published content and selective publish never exposes other draft photos', async () => {
+  const f = fixture(), store = f.store(), draft = f.defaults.createDefaultOwnerContent();
+  const id = '11111111-1111-4111-8111-111111111111';
+  const privateId = '22222222-2222-4222-8222-222222222222';
+  const selectedId = '33333333-3333-4333-8333-333333333333';
+  const source = value => `/api/cloud-media/${value}`;
+  for (const value of [id, privateId, selectedId]) f.cloudFile(value, {schemaVersion:1,revision:2,kind:'photo',name:'Photo',parentId:'root',contentType:'image/webp',bytes:3,width:1,height:1,status:'ready',trashedAt:null,createdAt:'2026-10-26T15:00:00.000Z',updatedAt:'2026-10-26T15:00:00.000Z'});
+  draft.home.image.src = source(id);
+  draft.gallery[0].src = source(privateId); draft.gallery[0].visible = false;
+  draft.site.showPremades = true;
+  draft.premades = [{id:'selected',name:'Product',image:source(id),alt:'Product',description:'',price:12,visible:true}];
+  const live = await store.publishLive(draft, 0);
+  assert.deepEqual(f.publicAssetsRaw(), {schemaVersion:1,revision:live.revision,ids:[id]});
+  const later = structuredClone(live.draft); later.home.image.src = source(privateId);
+  const saved = await store.saveDraft(later, live.revision);
+  assert.deepEqual(f.publicAssetsRaw(), {schemaVersion:1,revision:live.revision,ids:[id]});
+  const selected = {...saved.draft.premades[0],image:source(selectedId)};
+  const next = await store.publishPremadeLive(selected, saved.revision);
+  assert.deepEqual(f.publicAssetsRaw(), {schemaVersion:1,revision:next.revision,ids:[id,selectedId]});
+});
+
+test('settings Save live atomically changes only selected card in private and public documents', async () => {
+  const f = fixture(), store = f.store();
+  const original = f.defaults.createDefaultOwnerContent();
+  const saved = await store.saveDraft(original, 0);
+  await store.publishLive(undefined, saved.revision);
+  const current = await store.load();
+  const edited = structuredClone(current.draft);
+  edited.site.name = 'Card only'; edited.home.title = 'PRIVATE HOME'; edited.gallery = [];
+  const result = await store.publishSettingsCardLive(edited, 'business', current.revision);
+  const live = f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw());
+  assert.equal(result.draft.site.name, 'Card only'); assert.equal(live.content.site.name, 'Card only');
+  assert.equal(result.draft.home.title, original.home.title); assert.equal(live.content.home.title, original.home.title);
+  assert.deepEqual(result.draft.gallery, original.gallery); assert.equal(live.content.gallery.length, original.gallery.filter(item => item.visible).length);
+  assert.equal(live.revision, result.revision); assert.equal(f.publicAssetsRaw().revision,result.revision);
+});
+test('settings Save live requires existing publication and rejects stale revision or invalid card without partial writes', async () => {
+  const f=fixture(),store=f.store(),content=f.defaults.createDefaultOwnerContent();
+  await store.saveDraft(content,0);const before=f.state().commits;
+  await assert.rejects(store.publishSettingsCardLive(content,'business',1));assert.equal(f.state().commits,before);assert.equal(f.publicRaw(),null);
+  await store.publishLive(undefined,1);const current=await store.load(),commits=f.state().commits;
+  await assert.rejects(store.publishSettingsCardLive(content,'contacts',1));
+  const bad=structuredClone(content);bad.site.name='';await assert.rejects(store.publishSettingsCardLive(bad,'business',current.revision));
+  assert.equal(f.state().commits,commits);
+});
+test('settings Save live rejects sign-out during reads and never publishes unrelated dirty cards',async()=>{
+  const f=fixture(),store=f.store(),content=f.defaults.createDefaultOwnerContent();await store.saveDraft(content,0);await store.publishLive(undefined,1);
+  const current=await store.load(),before=f.state().commits;
+  f.afterRead(()=>{f.auth.currentUser=null;});
+  await assert.rejects(store.publishSettingsCardLive(content,'contacts',current.revision));assert.equal(f.state().commits,before);
+});
+test('settings live save preserves retained published inventory while shop is switched off',async()=>{
+  const f=fixture(),store=f.store(),content=f.defaults.createDefaultOwnerContent();
+  content.site.showPremades=true;content.premades=[{id:'retained',name:'Retained',image:'/images/heads.webp',alt:'Head',description:'Public listing',price:621,visible:true}];
+  await store.saveDraft(content,0);await store.publishLive(undefined,1);await store.updateLiveShopVisibility(false,2);
+  const before=f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw());assert.equal(before.content.premades.length,1);
+  const current=await store.load();const edited=structuredClone(current.draft);edited.site.name='Settings only';
+  await store.publishSettingsCardLive(edited,'business',current.revision);
+  const after=f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw());assert.equal(after.content.site.showPremades,false);assert.deepEqual(after.content.premades,before.content.premades);
+  await store.updateLiveShopVisibility(true,after.revision);assert.deepEqual(f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw()).content.premades,before.content.premades);
+});
+test('private draft save refuses newly referenced missing, uploading or deleting assets before any write',async()=>{
+  for(const status of [null,'uploading','deleting']) {
+    const f=fixture(),store=f.store(),draft=f.defaults.createDefaultOwnerContent(),id='44444444-4444-4444-8444-444444444444';
+    await store.saveDraft(draft,0);const before=f.state().commits;
+    if(status) f.cloudFile(id,{schemaVersion:1,revision:2,kind:'photo',name:'Photo',parentId:'root',contentType:'image/webp',bytes:3,width:1,height:1,status,trashedAt:status==='deleting'?'2026-10-26T15:00:00.000Z':null,createdAt:'2026-10-26T15:00:00.000Z',updatedAt:'2026-10-26T15:00:00.000Z'});
+    draft.gallery[0].src=`/api/cloud-media/${id}`;
+    await assert.rejects(store.saveDraft(draft,1),/missing, uploading, or being deleted/);assert.equal(f.state().commits,before);
+  }
+});
+test('ready cloud assets in Trash can remain referenced by a private draft without deleting gallery entries',async()=>{
+  const f=fixture(),store=f.store(),draft=f.defaults.createDefaultOwnerContent(),id='44444444-4444-4444-8444-444444444444';
+  f.cloudFile(id,{schemaVersion:1,revision:2,kind:'photo',name:'Photo',parentId:'root',contentType:'image/webp',bytes:3,width:1,height:1,status:'ready',trashedAt:'2026-10-26T15:00:00.000Z',createdAt:'2026-10-26T15:00:00.000Z',updatedAt:'2026-10-26T15:00:00.000Z'});
+  draft.gallery[0].src=`/api/cloud-media/${id}`;
+  const saved=await store.saveDraft(draft,0);assert.deepEqual(saved.draft.gallery,draft.gallery);
+  saved.draft.site.name='Unrelated name';const next=await store.saveDraft(saved.draft,1);assert.deepEqual(next.draft.gallery,draft.gallery);
 });

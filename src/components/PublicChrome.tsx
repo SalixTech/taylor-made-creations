@@ -4,7 +4,6 @@ import Link from "next/link";
 import { Brand } from "./Brand";
 import { CopyrightRange } from "./Copyright";
 import { Nav } from "./Nav";
-import { ColorModeToggle } from "./ColorMode";
 import { site } from "@/content/site";
 import { type OwnerContent } from "@/owner/model";
 import { getHeaderNavigation } from "@/owner/header-navigation";
@@ -28,7 +27,7 @@ export function PublicHeader() {
   const navigation = content ? getHeaderNavigation(content) : null;
   if (state.status === "locked") return null;
   if (state.status === "error") return <header className="site-header"><div className="header-inner"><span className="small-label">Website temporarily unavailable</span></div></header>;
-  return <header className="site-header"><div className="header-inner"><Brand name={content?.site.name ?? site.name} logo={getTemplateImage(content, "site.logo")} appearance={content?.contentOverrides?.styles?.["site.brand"]} logoAppearance={content?.contentOverrides?.styles?.["site.logo"]} /><div className="header-right"><span className="small-label"><span {...getElementAppearanceAttributes(content?.contentOverrides?.styles?.["site.headerTagline"])} style={getElementAppearanceStyle(content?.contentOverrides?.styles?.["site.headerTagline"])}>{getTemplateText(content, "site.headerTagline")}</span></span><Nav showPremades={content?.site.showPremades ?? site.showPremades} moreEnabled={content?.site.moreEnabled ?? false} moreLinks={navigation?.more ?? []} links={navigation?.main} /><ColorModeToggle scope="public" /></div></div></header>;
+  return <header className="site-header"><div className="header-inner"><Brand name={content?.site.name ?? site.name} logo={getTemplateImage(content, "site.logo")} appearance={content?.contentOverrides?.styles?.["site.brand"]} logoAppearance={content?.contentOverrides?.styles?.["site.logo"]} /><div className="header-right"><span className="small-label"><span {...getElementAppearanceAttributes(content?.contentOverrides?.styles?.["site.headerTagline"])} style={getElementAppearanceStyle(content?.contentOverrides?.styles?.["site.headerTagline"])}>{getTemplateText(content, "site.headerTagline")}</span></span><Nav showPremades={content?.site.showPremades ?? site.showPremades} moreEnabled={content?.site.moreEnabled ?? false} moreLinks={navigation?.more ?? []} links={navigation?.main} /></div></div></header>;
 }
 export function PublicFooter() {
   const state = usePublicSiteState();

@@ -14,9 +14,10 @@ function fixture(name, extra = {}) {
     h.render(Manager, { ...props, content: draft });
     for (const node of h.refs.values()) node.scrollIntoView = () => {};
   }
-  const component = (type, label) => h.find(node => typeof node.type === 'function' && node.type.name === type && (label === undefined || node.props.label === label));
-  const button = label => h.find(node => node.type === 'button' && content(node).trim() === label);
-  const cards = () => h.all(node => typeof node.type === 'function' && node.type.name === 'Card');
+  const allNodes = () => [...nodes(h.tree), ...h.all(node => node.type?.name === 'OwnerPriceReorderList').flatMap(list => list.props.items.flatMap(item => nodes(list.props.children(item, null))))];
+  const component = (type, label) => allNodes().find(node => typeof node.type === 'function' && node.type.name === type && (label === undefined || node.props.label === label));
+  const button = label => allNodes().find(node => node.type === 'button' && content(node).trim() === label);
+  const cards = () => allNodes().filter(node => typeof node.type === 'function' && node.type.name === 'Card');
   const cardAction = (card, label) => nodes(card.props.action).find(node => node.type === 'button' && content(node).trim() === label);
   render();
   return { h, props, render, component, button, cards, cardAction, get draft() { return draft; }, set draft(value) { draft = value; }, get confirmation() { return confirmation; } };
@@ -44,7 +45,7 @@ test('gallery add existing opens familiar fields; display number stays independe
   assert.equal(t.component('Field', 'Photo name').props.value, 'New photo');
   t.component('Field', 'Gallery number (optional)').props.onChange('TMC 42'); t.render();
   assert.equal(t.draft.gallery[0].displayNumber, 'TMC 42'); assert.equal(t.draft.gallery[0].id, added.id);
-  const move = t.component('MoveButtons'); move.props.onMove(1); t.render();
+  const move = t.component('OwnerPriceReorderList', 'Gallery photos'); move.props.onStep(added.id, 1); t.render();
   assert.equal(t.draft.gallery[0].id, second); assert.equal(t.draft.gallery[1].displayNumber, 'TMC 42');
   t.component('ImagePicker').props.onAlt('A front-facing red fox'); t.render();
   assert.equal(t.draft.gallery[1].alt, 'A front-facing red fox', 'editing follows stable photo id after reorder');
@@ -112,17 +113,27 @@ test('home manager changes template copy/photo without exposing canvas or sectio
   assert.match(content(t.h.tree), /separate Website builder tab/); t.h.unmount();
 });
 
-test('contact settings retains commission controls, cleans social handles and only requests Cloud Sync', () => {
+test('contact settings retains commission controls, delegates editable ordered socials and only requests Cloud Sync', () => {
   let syncs = 0;
   const t = fixture('ContactSettingsManager', { userEmail: 'owner@example.test', onSync() { syncs++; } });
-  t.component('Field', 'Telegram username').props.onChange('@maker');
-  t.component('Field', 'TikTok username').props.onChange('@taylor');
-  t.component('Field', 'Twitch username').props.onChange('@streamer');
-  t.component('OwnerSelect', 'Commission status').props.onChange('Closed'); t.render();
-  assert.equal(t.draft.site.telegram, 'maker'); assert.equal(t.draft.site.tiktok, 'taylor'); assert.equal(t.draft.site.twitch, 'streamer'); assert.equal(t.draft.site.commissionStatus, 'Closed');
+  const legacy = { telegram: t.draft.site.telegram, tiktok: t.draft.site.tiktok, twitch: t.draft.site.twitch };
+  const social = t.component('OwnerSocialLinksEditor'); assert.ok(social);
+  const child = harness(), Editor = child.load('src/owner/OwnerSocialLinksEditor.tsx').OwnerSocialLinksEditor;
+  const renderEditor = () => { t.render(); child.render(Editor, t.component('OwnerSocialLinksEditor').props); };
+  renderEditor();
+  const list = child.find(node => node.type?.name === 'OwnerPriceReorderList'), telegram = list.props.items.find(item => item.id === 'telegram');
+  const fields = nodes(list.props.children(telegram, null));
+  fields.find(node => node.type?.name === 'Field' && node.props.label === 'Contact label').props.onChange('Message Taylor');
+  fields.find(node => node.type?.name === 'Field' && node.props.label === 'Display text').props.onChange('@maker');
+  fields.find(node => node.type?.name === 'Field' && node.props.label === 'Link address (optional)').props.onChange('https://t.me/maker');
+  t.render(); t.component('OwnerSelect', 'Commission status').props.onChange('Closed'); t.render();
+  const updated = t.draft.site.socialLinks.find(item => item.id === 'telegram');
+  assert.equal(updated.label, 'Message Taylor'); assert.equal(updated.value, '@maker'); assert.equal(updated.url, 'https://t.me/maker');
+  assert.deepEqual({ telegram: t.draft.site.telegram, tiktok: t.draft.site.tiktok, twitch: t.draft.site.twitch }, legacy, 'legacy fields are preserved rather than silently rewritten by the new flexible contact list');
+  assert.equal(t.draft.site.commissionStatus, 'Closed');
   assert.equal(syncs, 0); t.button('Cloud Sync').props.onClick(); assert.equal(syncs, 1);
   assert.match(content(t.h.tree), /owner@example.test/); assert.match(content(t.h.tree), /never silently replaces unsaved work/);
-  assert.equal(t.component('OwnerVisualBuilder'), undefined); t.h.unmount();
+  assert.equal(t.component('OwnerVisualBuilder'), undefined); child.unmount(); t.h.unmount();
 });
 
 test('template managers reuse current upload and multi-photo tools rather than old single-photo controls', () => {

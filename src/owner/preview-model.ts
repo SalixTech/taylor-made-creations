@@ -34,7 +34,10 @@ export function resolveSiteDestination(content: OwnerContent, href: string, mode
     }
     path = path.replace(/^\//, "");
     const decoded = decodeURIComponent(path);
-    if (decoded.includes("/")) return null;
+    if (decoded.includes("/")) {
+      const commission = getPreviewCommissionPage(content, decoded.split("/"));
+      return commission ? { href: `${mode === "public" ? "" : OWNER_PREVIEW_ROOT}/${encodeURIComponent(commission.slug)}/request${url.search}${url.hash}`, kind: "page" } : null;
+    }
     const page = getPreviewPage(content, decoded ? [decoded] : []);
     const target = page ? mode === "public" ? (page.slug ? `/${encodeURIComponent(page.slug)}` : "/") : previewPageHref(page) : null;
     return target ? { href: `${target}${url.search}${url.hash}`, kind: "page" } : null;
@@ -42,4 +45,9 @@ export function resolveSiteDestination(content: OwnerContent, href: string, mode
 }
 export function resolvePreviewDestination(content: OwnerContent, href: string): PreviewDestination | null {
   return resolveSiteDestination(content, href, "preview");
+}
+
+export function getPreviewCommissionPage(content: OwnerContent, slug: readonly string[]): OwnerPage | undefined {
+  if (slug.length !== 2 || slug[1] !== "request") return undefined;
+  return content.pages.find(page => page.builtinKey === "commissions" && page.slug === slug[0] && isPreviewPageAvailable(content, page));
 }

@@ -10,7 +10,7 @@ function setup(options = {}) {
   const library = { assets: [{ ...photo }], loading: false, error: '', available: true, refresh() { refreshes++; }, add() {}, ...options.library };
   h.overrides['./asset-library-client'] = { usePrivateAssetLibrary: () => library };
   h.overrides['./temporary-photo-client'] = { isStagedPhoto: () => true, emptyTemporaryPhotoTrash(entries, signal) { calls.push({ entries, signal }); return options.empty ? options.empty(entries, signal) : Promise.resolve(entries.map(item => ({ id: item.id, status: 'removed' }))); } };
-  const Library = h.load('src/owner/AssetLibrary.tsx').AssetLibrary, render = () => h.render(Library, { manager: true, onSelect: src => selected.push(src) }); render();
+  const Library = h.load('src/owner/AssetLibrary.tsx').LegacyAssetLibrary, render = () => h.render(Library, { manager: true, onSelect: src => selected.push(src) }); render();
   const button = label => h.find(n => n.type === 'button' && (n.props['aria-label'] === label || content(n) === label));
   const dialog = () => h.find(n => n.type?.name === 'Dialog'), action = label => nodes(dialog()?.props.actions).find(n => n.type === 'button' && content(n) === label);
   const open = () => { button(`Trash (${library.assets.filter(photo => photo.trashedAt).length})`).props.onClick(); render(); button('Empty Trash').props.onClick(); render(); };

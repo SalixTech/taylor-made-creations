@@ -23,7 +23,7 @@
 .canvas { font-size:16px; line-height:1.65; max-width:100%; width:100%; margin:0 auto; background:#fff; border:1px solid #e3dddf; box-shadow:0 4px 18px #302b2c08; scroll-margin-top:95px; }
 .stage[data-device="mobile"] .canvas { max-width:390px; }
 .editing [data-owner-edit] { position:relative; cursor:pointer; outline:1px dashed transparent; outline-offset:-2px; transition:outline-color .13s; }
-.editing [data-owner-edit]:hover:not(:has([data-owner-edit]:hover)) { outline-color:#80001480; background-color:#80001403; }
+.editing [data-owner-edit]:hover:not(:has([data-owner-edit]:hover)) { outline-color:#80001480; }
 .editing [data-owner-edit]:focus-visible,.editing [data-owner-selected="true"] { outline:2px solid #800014; outline-offset:-2px; }
 .editing [data-owner-edit]:hover:not(:has([data-owner-edit]:hover))::after,.editing [data-owner-selected="true"]::after { content:"✎ Click to edit"; position:absolute; right:8px; top:8px; z-index:2; padding:5px 8px; background:#800014; color:white; border-radius:4px; font-family:'MS Reference Sans Serif',Arial,sans-serif; font-size:10px; line-height:1.4; letter-spacing:0; font-weight:400; pointer-events:none; }
 .editing [data-owner-selected="true"]::after { content:"✎ Editing"; }
@@ -103,10 +103,10 @@
 
 /* Editor chrome follows the private workspace palette, never the live canvas. */
 :global([data-owner-portal][data-color-mode="dark"]) .panel { box-shadow: 0 18px 70px #0007, 0 3px 14px #0003; }
-:global([data-owner-portal][data-color-mode="dark"]) :is(.panelNav, .modeSwitch, .deviceSwitch, .contextbar) button[aria-pressed="true"]:enabled { background-color: #48313e!important; border-color: #d7879b!important; color: #fff!important; box-shadow: inset 0 0 0 1px #d7879b; }
-:global([data-owner-portal][data-color-mode="dark"]) .contextbar .applyShop:is(:enabled, :disabled) { background-color: #970d2a!important; border-color: #db6c84!important; color: #fff!important; }
-:global([data-owner-portal][data-color-mode="dark"]) .contextbar .applyShop:enabled:hover { background-color: #b11739!important; border-color: #f39ab0!important; }
-:global([data-owner-portal][data-color-mode="dark"]) .panelHeader > button:enabled { border-color: var(--owner-control-line, #947887)!important; }
+:global([data-owner-portal][data-color-mode="dark"]) :is(.panelNav, .modeSwitch, .deviceSwitch, .contextbar) button[aria-pressed="true"]:enabled { background-color: #3a3033!important; border-color: #c8334e!important; color: #fff!important; box-shadow: inset 0 0 0 1px #c8334e; }
+:global([data-owner-portal][data-color-mode="dark"]) .contextbar .applyShop:is(:enabled, :disabled) { background-color: #800014!important; border-color: #b13c4e!important; color: #fff!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .contextbar .applyShop:enabled:hover { background-color: #99001c!important; border-color: #e63950!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .panelHeader > button:enabled { border-color: var(--owner-control-line, #85858c)!important; }
 
 /* Pointer dragging keeps the complete source card in place, with a full-size inert ghost. */
 .navRow { position:relative; transition:box-shadow .15s ease, opacity .15s ease; }
@@ -123,5 +123,32 @@
 .navLabel input[aria-invalid="true"] { border-color:#a01432; }
 @media(prefers-reduced-motion:reduce) { .navRow { transition:none; } }
 .editing [data-owner-dragging="true"] { opacity:.35; outline:2px dashed currentColor; }
-:global([data-owner-portal][data-color-mode="dark"]) .navError { color:#ffc0cc!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .navError { color:#f4eff1!important; }
 :global([data-owner-portal][data-color-mode="dark"]) .navLabel input[aria-invalid="true"] { border-color:#eb8da1!important; }
+.panelHeader[data-move-handle] { cursor:grab; touch-action:none; user-select:none; }
+.panel[data-moving=true] .panelHeader { cursor:grabbing; }
+.panelHeader[data-move-handle]:focus-visible { outline:2px solid var(--owner-button-focus,#800014); outline-offset:-4px; }
+.panelHeader > button { display:grid; place-items:center; width:36px; height:36px; padding:0; }
+.panelHeader > button svg,.deviceSwitch button svg { display:block; flex:none; }
+.deviceSwitch button { display:grid; place-items:center; }
+
+/* Framing controls sit above the actual public image, without recoloring its canvas. */
+.canvas { position:relative; }
+.imageTools { position:absolute; inset:0; pointer-events:none; z-index:6; }
+.imageToolbar { position:absolute; display:flex; flex-wrap:wrap; gap:4px; max-width:100%; pointer-events:auto; }
+.imageToolbar button { border:1px solid #800014; border-radius:6px; padding:5px 9px; background:#fff; color:#800014; font-size:11px!important; line-height:1.5; min-height:32px; }
+.imageToolbar button[aria-pressed="true"] { background:#800014; color:#fff; }
+.imageToolbar button:disabled { opacity:.55; }
+.imageCorner { position:absolute; width:24px; height:24px; border:3px solid white; border-radius:5px; background:#800014; box-shadow:0 0 0 1px #800014; padding:0; pointer-events:auto; touch-action:none; }
+.imageCorner[data-corner="nw"],.imageCorner[data-corner="se"] { cursor:nwse-resize; }
+.imageCorner[data-corner="ne"],.imageCorner[data-corner="sw"] { cursor:nesw-resize; }
+.cropHandle { position:absolute; padding:0; pointer-events:auto; touch-action:none; background:transparent; border:2px dashed #800014; cursor:move; display:grid; place-items:center; color:#fff; }
+.cropHandle:hover,.cropHandle:active { background:transparent; }
+.cropHandle span { background:#800014; color:#fff; padding:5px 10px; border-radius:6px; font-size:12px; pointer-events:none; }
+.imageCorner:focus-visible,.cropHandle:focus-visible,.imageToolbar button:focus-visible { outline:3px solid #54a6eb; outline-offset:3px; }
+
+/* Whole-card hold-to-move leaves fields clickable and touch scrolling native. */
+.navRow { cursor:grab; touch-action:pan-y; }
+.navRow[data-dragging="true"] { cursor:grabbing; user-select:none; }
+.navRow:focus-visible { outline:2px solid var(--owner-accent,#800014); outline-offset:3px; }
+.navRow input, .navRow button, .navRow select, .navRow textarea { cursor:auto; }

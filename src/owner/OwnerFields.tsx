@@ -2,7 +2,7 @@
 
 import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import Image from "next/image";
-import SiteSelect, { type SelectOption } from "@/components/SiteSelect";
+import SiteSelect, { type SelectOption, type InlineSelectCreate } from "@/components/SiteSelect";
 import { isSafeImageSource } from "./model";
 import { fursuitGallery } from "@/content/fursuit-gallery";
 import styles from "./OwnerPortal.module.css";
@@ -21,11 +21,11 @@ export function Field({ label, value, onChange, hint, multiline = false, type = 
 }
 
 /** Same keyboard-accessible combobox used by the public commission form. */
-export function OwnerSelect({ label, value, onChange, options, hint, placeholder, required = false }: {
-  label: string; value: string; onChange: (value: string) => void; options: readonly SelectOption[]; hint?: string; placeholder?: string; required?: boolean;
+export function OwnerSelect({ label, value, onChange, options, hint, placeholder, required = false, inlineCreate }: {
+  label: string; value: string; onChange: (value: string) => void; options: readonly SelectOption[]; hint?: string; placeholder?: string; required?: boolean; inlineCreate?: InlineSelectCreate;
 }) {
   const id = useId();
-  return <div className={`${styles.field} ${styles.ownerSelect}`}><label htmlFor={id}>{label}{required && <span className={styles.required}> *</span>}</label><SiteSelect id={id} value={value} onChange={onChange} options={options} placeholder={placeholder} required={required} describedBy={hint ? `${id}-hint` : undefined} />{hint && <small id={`${id}-hint`}>{hint}</small>}</div>;
+  return <div className={`${styles.field} ${styles.ownerSelect}`}><label htmlFor={id}>{label}{required && <span className={styles.required}> *</span>}</label><SiteSelect id={id} value={value} onChange={onChange} options={options} placeholder={placeholder} required={required} inlineCreate={inlineCreate} describedBy={hint ? `${id}-hint` : undefined} />{hint && <small id={`${id}-hint`}>{hint}</small>}</div>;
 }
 
 export function Toggle({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (checked: boolean) => void; hint?: string }) {
@@ -70,6 +70,7 @@ export function Icon({ name }: { name: string }) {
     home: <><path d="M3 10l9-7 9 7M5 9v12h14V9M9 21v-8h6v8" /></>,
     requests: <><path d="M3 5h18v14H3zM3 6l9 7 9-7" /></>,
     clients: <><circle cx="9" cy="8" r="3" /><path d="M3 21v-3a6 6 0 0112 0v3M16 5a3 3 0 010 6M17 15a5 5 0 014 5" /></>,
+    inventory: <><path d="M3 7l9-4 9 4v13H3zM3 7l9 4 9-4M12 11v9M7 15v3M17 15v3" /></>,
     files: <><path d="M3 6h7l2 3h9v12H3zM3 6V3h7l2 3h7v3" /></>,
     settings: <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" fill="currentColor" stroke="none" /><circle cx="15" cy="17" r="3" fill="currentColor" stroke="none" /></>,
   };

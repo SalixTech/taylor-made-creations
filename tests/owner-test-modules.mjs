@@ -7,7 +7,7 @@ import {join,dirname} from 'node:path';
 import {createRequire} from 'node:module';
 const directory=mkdtempSync(join(tmpdir(),'tmc-owner-tests-'));
 const root=new URL('../',import.meta.url);
-for(const path of ['owner/model.ts','owner/site-design.ts','owner/appearance.ts','owner/defaults.ts','owner/storage.ts','owner/preview-model.ts','content/site.ts','content/fursuit-gallery.ts']){
+for(const path of ['components/commission-options.ts','components/commission-form-config.ts','owner/model.ts','owner/site-design.ts','owner/appearance.ts','owner/defaults.ts','owner/storage.ts','owner/settings-cards.ts','owner/preview-model.ts','content/site.ts','content/fursuit-gallery.ts']){
   const source=readFileSync(new URL(`src/${path}`,root),'utf8');
   const output=join(directory,path.replace(/\.ts$/,'.js'));
   mkdirSync(dirname(output),{recursive:true});

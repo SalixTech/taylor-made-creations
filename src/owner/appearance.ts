@@ -13,6 +13,9 @@ export type ElementAppearance = {
   heightPercent?: number;
   textSize?: "small" | "standard" | "large";
   align?: "left" | "center" | "right";
+  imageAspectLocked?: boolean;
+  imageWidthPercent?: number;
+  imageHeightPx?: number;
   imageFit?: "cover" | "contain";
   imagePositionX?: number;
   imagePositionY?: number;
@@ -62,5 +65,14 @@ export function getImageAppearanceStyle(appearance?: ElementAppearance): CSSProp
   const style: CSSProperties = {};
   if (appearance.imageFit === "cover" || appearance.imageFit === "contain") style.objectFit = appearance.imageFit;
   if (position(appearance.imagePositionX) || position(appearance.imagePositionY)) style.objectPosition = `${position(appearance.imagePositionX) ? appearance.imagePositionX : 50}% ${position(appearance.imagePositionY) ? appearance.imagePositionY : 50}%`;
+  return style;
+}
+
+/** Size the photo frame, not the whole text section or an absolutely positioned image. */
+export function getImageFrameStyle(appearance?: ElementAppearance): CSSProperties {
+  if (!appearance || typeof appearance !== "object") return {};
+  const style: CSSProperties = {};
+  if (bounded(appearance.imageWidthPercent, 5, 100)) { style.width = `${appearance.imageWidthPercent}%`; style.maxWidth = "100%"; style.marginInline = "auto"; }
+  if (bounded(appearance.imageHeightPx, 16, 2000)) { style.height = `${appearance.imageHeightPx}px`; style.minHeight = 0; style.aspectRatio = "auto"; }
   return style;
 }

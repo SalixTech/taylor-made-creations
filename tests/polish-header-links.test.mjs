@@ -74,3 +74,43 @@ test('polish: baseline public header also includes safe TOS and Trello links', (
   const t = setup(); t.value = null; const html = t.render('header');
   assert.match(html, /href="\/terms"[^>]*>TOS<\/a>/); assert.ok(html.includes(`href="${board}" target="_blank" rel="noopener noreferrer"`));
 });
+
+test('enabled empty legacy More renders an eligible default identically in public and preview without changing saved content', () => {
+  const t = setup(); t.value.site.moreEnabled = true;
+  const before = structuredClone(t.value), nav = t.getHeaderNavigation(t.value);
+  assert.equal(nav.more.length, 1); assert.equal(nav.more[0].pageId, 'builtin-contact');
+  assert.ok(!nav.main.some(link => link.pageId === nav.more[0].pageId));
+  for (const mode of modes) {
+    const html = t.render(mode); assert.match(html, /<summary>More /);
+    const menu = html.match(/class="nav-more-menu"[^>]*>([\s\S]*?)<\/div>/)?.[1];
+    assert.ok(menu?.includes('Contact'), mode);
+  }
+  assert.deepEqual(t.value, before);
+  t.value.site.moreEnabled = false;
+  assert.equal(t.getHeaderNavigation(t.value).more.length, 0);
+  assert.ok(t.getHeaderNavigation(t.value).main.some(link => link.pageId === 'builtin-contact'));
+});
+
+test('automatic More never exposes unavailable or unlisted pages and follows later assignments', () => {
+  const t = setup(); t.value.site.moreEnabled = true;
+  for (const page of t.value.pages) { if (!['home', 'terms', 'prices'].includes(page.builtinKey)) page.navPlacement = 'unlisted'; }
+  let nav = t.getHeaderNavigation(t.value);
+  assert.deepEqual(nav.more.map(link => link.pageId), ['builtin-prices']);
+  t.value.pages.find(page => page.builtinKey === 'prices').availability = 'hidden';
+  assert.equal(t.getHeaderNavigation(t.value).more.length, 0, 'Home and TOS never become fallbacks');
+  for (const mode of modes) assert.doesNotMatch(t.render(mode), /<summary>More /);
+  const gallery = t.value.pages.find(page => page.builtinKey === 'gallery'); gallery.navPlacement = 'more';
+  assert.deepEqual(t.getHeaderNavigation(t.value).more.map(link => link.pageId), [gallery.id]);
+  gallery.trashedAt = '2026-10-26T00:00:00Z'; assert.equal(t.getHeaderNavigation(t.value).more.length, 0);
+  gallery.trashedAt = null; gallery.availability = 'hidden'; assert.equal(t.getHeaderNavigation(t.value).more.length, 0);
+});
+
+test('automatic More survives public content projection and reload with the same grouping', () => {
+  const t = setup(); t.value.site.moreEnabled = true;
+  const model = t.h.load('src/owner/model.ts');
+  const expected = t.getHeaderNavigation(t.value);
+  const published = model.createPublicContentSnapshot(t.value);
+  assert.deepEqual(t.getHeaderNavigation(published), expected);
+  assert.deepEqual(t.getHeaderNavigation(JSON.parse(JSON.stringify(published))), expected);
+  assert.equal(model.getPageNavPlacement(published.pages.find(page => page.id === 'builtin-contact')), 'main', 'derived display does not silently rewrite saved placement');
+});

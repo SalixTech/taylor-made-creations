@@ -19,3 +19,8 @@
 /* Title-only confirmations keep their count and actions without an empty body. */
 .dialog[data-compact=true] > div:first-child { padding-bottom:22px; }
 .dialog[data-compact=true] > div:nth-child(2) { display:none; }
+.dialog [data-move-handle] { cursor:grab; touch-action:none; user-select:none; }
+.dialog[data-moving=true] [data-move-handle] { cursor:grabbing; }
+.dialog [data-move-handle]:focus-visible { outline:2px solid var(--owner-button-focus,#800014); outline-offset:-4px; }
+.headingActions button { width:36px; height:36px; min-width:36px; padding:0; }
+.headingActions svg { display:block; flex:none; }

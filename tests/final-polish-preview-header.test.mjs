@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { harness, content } from './owner-ui-harness.mjs';
 
 function headerSetup() {
-  const h = harness(); h.overrides['./PhotoUpload'] = { PhotoUpload: 'PhotoUpload' };
+  const h = harness(); let pendingHold; h.globals.setTimeout = fn => { pendingHold = fn; return 1; }; h.globals.clearTimeout = () => { pendingHold = null; }; h.overrides['./PhotoUpload'] = { PhotoUpload: 'PhotoUpload' };
   const ghosts = []; h.overrides['./navigation-drag'] = { ...h.load('src/owner/navigation-drag.ts'), createNavigationDragGhost(card, x, y) { const ghost = { card, x, y, moves: [], removed: false, move(x,y) { this.moves.push([x,y]); }, remove() { this.removed = true; } }; ghosts.push(ghost); return ghost; } };
   const { OwnerHeaderEditor } = h.load('src/owner/OwnerHeaderEditor.tsx'); let value = h.load('src/owner/defaults.ts').createDefaultOwnerContent(); let writes = 0;
   const props = { content: value, open: true, disabled: false, onOpenChange() {}, onEdit(change) { value = structuredClone(value); change(value); props.content = value; writes++; } };
@@ -12,10 +12,10 @@ function headerSetup() {
   const cards = value.pages.map((page, index) => ({ dataset: { navCard: page.id }, getBoundingClientRect: () => ({ left: (index % 3) * 300, top: Math.floor(index / 3) * 400, width: 280, height: 380 }), closest() { return this; } }));
   const list = h.find(n => n.props.className === 'navRows').props.ref.current; list.contains = node => cards.includes(node); list.querySelectorAll = () => cards;
   let target = cards[2]; h.document.elementFromPoint = () => target;
-  const captured = new Set(); const handle = { closest: () => cards[0], setPointerCapture: id => captured.add(id), hasPointerCapture: id => captured.has(id), releasePointerCapture: id => captured.delete(id), focus() {} };
-  const event = (x = 20, y = 20, extra = {}) => ({ button: 0, pointerId: 1, clientX: x, clientY: y, currentTarget: handle, preventDefault() {}, stopPropagation() {}, ...extra });
+  const captured = new Set(); const handle = Object.assign(cards[0], { setPointerCapture: id => captured.add(id), hasPointerCapture: id => captured.has(id), releasePointerCapture: id => captured.delete(id), focus() {} });
+  const event = (x = 20, y = 20, extra = {}) => ({ button: 0, pointerId: 1, clientX: x, clientY: y, currentTarget: handle, target: { closest: () => null }, preventDefault() {}, stopPropagation() {}, ...extra });
   const drag = () => h.all(n => n.props.onPointerDown)[0]; const order = () => value.pages.filter(p => !p.trashedAt).sort((a,b) => a.order-b.order).map(p => p.id);
-  return { h, props, render, cards, ghosts, captured, event, drag, order, setTarget(node) { target = node; }, get value() { return value; }, get writes() { return writes; } };
+  return { h, props, render, cards, ghosts, captured, event, drag, order, hold() { const fn = pendingHold; pendingHold = null; fn?.(); }, setTarget(node) { target = node; }, get value() { return value; }, get writes() { return writes; } };
 }
 
 test('preview maximize/restore keeps the same modal, focus and page scroll lock; Escape still closes', () => {
@@ -31,7 +31,7 @@ test('preview maximize/restore keeps the same modal, focus and page scroll lock;
 });
 test('only draft preview opts into maximize and Overview removes only the decorative spade', () => {
   const source = fs.readFileSync(new URL('../src/owner/OwnerPortal.tsx', import.meta.url), 'utf8');
-  assert.match(source, /<Dialog wide maximizable title="Your draft preview"/); assert.doesNotMatch(source, /styles\.spadeDisc/); assert.match(source, /OwnerBrandLogo className=\{styles\.welcomeLogo\}/); assert.match(source, /<OwnerBrandLogo decorative/);
+  assert.match(source, /<Dialog draggable wide maximizable title="Your draft preview"/); assert.equal((source.match(/<Dialog draggable\b/g)||[]).length,1); assert.doesNotMatch(source, /styles\.spadeDisc/); assert.match(source, /OwnerBrandLogo className=\{styles\.welcomeLogo\}/); assert.match(source, /<OwnerBrandLogo decorative/);
 });
 test('More enable creates one visible assignment, preserves existing groups and never promotes unavailable pages', () => {
   const t = headerSetup(); const before = structuredClone(t.value.pages); const toggle = () => t.h.find(n => n.type?.name === 'Toggle' && n.props.label === 'Enable the More dropdown');
@@ -43,16 +43,16 @@ test('assigning a card to More automatically enables the dropdown without changi
   const t = headerSetup(); const controls = t.h.all(n => n.type?.name === 'OwnerPageNavigation'); controls[2].props.onEdit(page => { page.navPlacement = 'more'; page.showInNav = true; });
   assert.equal(t.value.site.moreEnabled, true); assert.equal(t.value.pages[2].navPlacement, 'more'); assert.equal(t.value.pages.filter(p => p.navPlacement === 'more').length, 1);
 });
-test('pointer drag starts only after threshold, moves the full card ghost and commits once on drop', () => {
+test('pointer drag starts on movement without delay, moves the full card ghost and commits once on drop', () => {
   const t = headerSetup(); const original = t.order(); t.drag().props.onPointerDown(t.event()); t.drag().props.onPointerMove(t.event(22,22)); assert.equal(t.ghosts.length, 0); assert.equal(t.writes, 0);
-  t.drag().props.onPointerMove(t.event(850,200)); assert.equal(t.ghosts.length, 1); assert.equal(t.ghosts[0].card, t.cards[0]); assert.deepEqual(t.ghosts[0].moves, [[850,200]]); assert.deepEqual(t.order(), original, 'source order is a stable placeholder until drop');
+  t.hold(); t.drag().props.onPointerMove(t.event(850,200)); assert.equal(t.ghosts.length, 1); assert.equal(t.ghosts[0].card, t.cards[0]); assert.deepEqual(t.ghosts[0].moves, [[850,200]]); assert.deepEqual(t.order(), original, 'source order is a stable placeholder until drop');
   t.drag().props.onPointerUp(t.event(850,200)); assert.equal(t.order()[2], original[0]); assert.equal(t.writes, 1); assert.equal(t.ghosts[0].removed, true); assert.equal(t.captured.size, 0);
   let blocked = 0; t.h.tree.props.onClickCapture({ detail: 1, preventDefault() { blocked++; }, stopPropagation() {} }); assert.equal(blocked, 1);
   t.h.tree.props.onPointerDownCapture(); t.h.tree.props.onClickCapture({ detail: 1, preventDefault() { blocked++; }, stopPropagation() {} }); assert.equal(blocked, 1, 'a subsequent deliberate click works');
 });
 test('pointercancel, lost capture, Escape, outside drop and upload lock never commit a card move', () => {
   for (const action of ['pointercancel', 'lostcapture', 'escape', 'outside', 'lock']) {
-    const t = headerSetup(); const original = t.order(); t.drag().props.onPointerDown(t.event()); t.drag().props.onPointerMove(t.event(850,200));
+    const t = headerSetup(); const original = t.order(); t.drag().props.onPointerDown(t.event()); t.hold(); t.drag().props.onPointerMove(t.event(850,200));
     if (action === 'pointercancel') t.drag().props.onPointerCancel(t.event());
     if (action === 'lostcapture') t.drag().props.onLostPointerCapture(t.event());
     if (action === 'escape') t.h.tree.props.onKeyDownCapture({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
@@ -98,4 +98,33 @@ test('preview More closes on Escape without dismissing its containing preview di
   const value = h.load('src/owner/defaults.ts').createDefaultOwnerContent(); value.site.moreEnabled = true; value.pages[2].navPlacement = 'more'; const {SiteContentFrame} = h.load('src/components/SiteContent.tsx');
   h.render(SiteContentFrame,{content:value,page:value.pages[0],mode:'editor'}); const more = h.find(n=>n.type==='details'); let closed=0, focused=0, stopped=0;
   more.props.onKeyDown({key:'Escape',preventDefault(){},stopPropagation(){stopped++;},currentTarget:{removeAttribute(name){assert.equal(name,'open');closed++;},querySelector(){return {focus(){focused++;}};}}}); assert.deepEqual([closed,focused,stopped],[1,1,1]);
+});
+
+test('whole navigation cards have no six-dot handle and hold does not hijack clicks, controls or pre-hold scrolling', () => {
+  const t = headerSetup(); const before = t.order();
+  assert.equal(t.h.all(n => n.props.className === 'dragHandle').length, 0);
+  t.drag().props.onPointerDown(t.event()); t.drag().props.onPointerUp(t.event()); t.hold(); assert.equal(t.ghosts.length, 0);
+  t.drag().props.onPointerDown(t.event(20,20,{pointerType:'touch'})); t.drag().props.onPointerMove(t.event(20,40,{pointerType:'touch'})); t.hold(); assert.equal(t.ghosts.length, 0);
+  t.drag().props.onPointerDown(t.event(20,20,{target:{closest:()=>({})}})); t.hold(); assert.equal(t.ghosts.length, 0, 'nested form controls never drag');
+  t.drag().props.onKeyDown({key:'ArrowDown',target:{},currentTarget:{},preventDefault(){throw Error('input key swallowed');}});
+  assert.deepEqual(t.order(), before); assert.equal(t.writes, 0);
+  t.drag().props.onPointerDown(t.event()); t.drag().props.onPointerMove(t.event(30,20)); t.h.window.dispatchEvent(new Event('blur'));
+  assert.equal(t.ghosts[0].removed, true); assert.equal(t.captured.size, 0); assert.deepEqual(t.order(), before);
+});
+
+test('enabled legacy empty More is explained in the editor without making a draft write', () => {
+  const t = headerSetup(); t.value.site.moreEnabled = true; t.render();
+  assert.match(content(t.h.tree), /Contact appears in More automatically/);
+  assert.match(content(t.h.tree), /Automatically in More/); assert.equal(t.writes, 0);
+});
+
+
+test('header mouse and pen drags activate at five pixels without waiting for a hold',()=>{
+ for(const pointerType of ['mouse','pen']) {
+  const t=headerSetup();t.drag().props.onPointerDown(t.event(20,20,{pointerType}));
+  t.hold();assert.equal(t.ghosts.length,0,'holding alone does not start mouse drag');
+  t.drag().props.onPointerMove(t.event(23,20,{pointerType}));assert.equal(t.ghosts.length,0);
+  t.drag().props.onPointerMove(t.event(25,20,{pointerType}));assert.equal(t.ghosts.length,1);
+  t.drag().props.onPointerCancel(t.event());assert.equal(t.writes,0);assert.equal(t.captured.size,0);t.h.unmount();
+ }
 });

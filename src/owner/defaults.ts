@@ -33,7 +33,7 @@ export function createDefaultOwnerContent(): OwnerContent {
     schemaVersion: 1,
     site: {
       name: site.name, commissionStatus: site.commissionStatus, statusNote: site.statusNote,
-      showPremades: site.showPremades, telegram: site.telegram, discord: site.discord,
+      showPremades: site.showPremades, additionalPartsQuantities: false, telegram: site.telegram, discord: site.discord,
       email: "taylormadecreations.dog@gmail.com", tiktok: "gd_taylor", twitch: "gd_taylor",
     },
     home: {

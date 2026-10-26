@@ -23,9 +23,9 @@ export function OwnerDesignPanel({ content, onEdit, onReset }: Props) {
     <p className={ui.help}>These choices change the whole website, including this live canvas. Your public website changes only when you publish.</p>
     <section className={styles.group} aria-labelledby="builder-colors-heading">
       <h3 id="builder-colors-heading">Website colors</h3>
-      <p className={styles.hint}>Choose a swatch to open the color picker. Keep text and backgrounds easy to read.</p>
+      <p className={styles.hint}>Choose a swatch to open the color picker. Keep text and backgrounds easy to read. Price text changes amounts on the price sheet without changing accents or buttons. Until you choose a color, it follows the accent; Reset restores that link.</p>
       <div className={styles.colors}>{DESIGN_COLOR_FIELDS.map(field => {
-        const value = content.design?.colors?.[field.key] ?? field.defaultValue;
+        const value = content.design?.colors?.[field.key] ?? (field.key === "priceText" ? content.design?.colors?.accent : undefined) ?? field.defaultValue;
         const overridden = content.design?.colors?.[field.key] !== undefined;
         return <div key={field.key} className={styles.colorRow}>
           <label><input type="color" aria-label={field.label} value={value} onChange={event => {

@@ -1,0 +1,36 @@
+/* The real form renderer remains the canvas. Editors live inside their card. */
+.editor{min-width:0;color:var(--owner-ink,#302b2c)}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:16px;border:1px solid var(--owner-line);border-radius:12px;background:var(--owner-surface)}
+.toolbar>div{min-width:0}.toolbar h2{margin:0;font-size:18px}.toolbar p{margin:6px 0 0;font-size:12px;color:var(--owner-muted)}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.toolbar .saveStatus{flex-basis:100%;margin:0}.saveStatus:empty{display:none}
+.columns{display:grid;grid-template-columns:minmax(0,1fr);margin-top:16px}
+.preview{min-width:0;--ink:var(--owner-ink);--muted:var(--owner-muted);--line:var(--owner-line);--wine:var(--owner-wine);--site-surface:var(--owner-surface)}
+.preview>section{margin:0;padding:16px;border-radius:12px}
+.sectionCanvas,.questionCanvas{min-width:0;padding:12px;border:1px solid var(--owner-line);border-radius:10px;background:var(--owner-surface);color:var(--owner-ink)}
+.questionCanvas[data-selected=true]{border-color:#c6374b;box-shadow:0 0 0 1px #c6374b}
+.canvasTools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}.canvasTools>button{max-width:100%;overflow-wrap:anywhere}
+.inlineFields{min-width:0;margin:0 0 16px;padding:16px;border:1px solid var(--owner-line);border-radius:8px;background:var(--owner-raised)}
+.inlineFields>*{min-width:0;max-width:100%}.inlineFields input,.inlineFields textarea{box-sizing:border-box;max-width:100%}
+.questionSurface{cursor:pointer}.questionSurface>fieldset{border:0;padding:0;margin:0;min-width:0;pointer-events:none}
+.questionSurface input:disabled,.questionSurface textarea:disabled{opacity:1}
+.preview input:not([type=radio]):not([type=checkbox]),.preview textarea{background:var(--owner-surface)!important;color:var(--owner-ink)!important;border-color:var(--owner-line)!important}.preview fieldset{color:var(--owner-ink)}
+.questionHeading{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;align-items:baseline}.questionHeading h3{font-size:15px;margin:0 0 10px}.questionHeading>span{font-size:11px;color:var(--owner-muted)}
+.options{padding-top:16px;border-top:1px solid var(--owner-line);margin-top:18px}.options h4{margin:0 0 8px;font-size:13px;font-style:normal}
+.option{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;border-bottom:1px solid var(--owner-line)}.option>div{flex:1 1 160px;min-width:0}
+.removeConfirmation{border:1px solid var(--owner-line);border-radius:7px;padding:14px;margin-top:20px;background:var(--owner-surface)}.removeConfirmation p{font-size:12px;margin:0 0 14px}.error{font-size:12px;color:var(--owner-ink)}
+@media(max-width:600px){.toolbar{padding:12px;align-items:flex-start}.toolbar .actions{width:100%}.preview>section{padding:10px}.sectionCanvas,.questionCanvas,.inlineFields{padding:10px}.canvasTools>button{flex-shrink:1}}
+
+/* Native question labels supply the card title. The pencil shares that row,
+   rather than reserving a blank heading-sized strip above every field. */
+.questionCanvas { display:grid; grid-template-columns:minmax(0,1fr) 32px; column-gap:12px; align-items:start; }
+.questionCanvas > .canvasTools { grid-column:2; grid-row:1; margin:0; }
+.questionCanvas > .questionSurface { grid-column:1; grid-row:1; min-width:0; }
+.questionCanvas > .inlineFields { grid-column:1/-1; grid-row:2; margin:12px 0 0; }
+.questionSurface [data-commission-question] > :first-child { margin-top:0; }
+.questionSurface [data-commission-question] > :last-child { margin-bottom:0; }
+.sectionTools { justify-content:space-between; margin-bottom:14px; }
+.sectionTools h3 { flex:1; min-width:0; margin:0; font-size:18px; overflow-wrap:anywhere; }
+.sectionCanvas > fieldset[data-commission-section] { border:0; padding:0; margin:0; min-width:0; }
+/* Keep the real form section's accessible legend without repeating its title. */
+.sectionCanvas > fieldset[data-commission-section] > legend { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+:global([data-owner-portal]) .questionCanvas .editPencil:global([data-owner-button]) { width:32px; height:32px; min-height:32px; padding:6px; display:inline-flex; align-items:center; justify-content:center; }

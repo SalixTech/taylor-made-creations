@@ -29,7 +29,7 @@
 .savedDot, .unsavedDot { width: 6px; height: 6px; border-radius: 50%; background: #6d8b72; flex-shrink: 0; }
 .unsavedDot { background: #b8863a; }
 .topbarActions, .inlineActions, .addButtons { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.primary, .secondary, .danger { display: inline-flex; align-items: center; justify-content: center; gap: 15px; border: 1px solid var(--owner-wine, #800014); padding: 11px 18px; border-radius: 7px; font-size: 12px !important; font-weight: 600 !important; line-height: 1.5; min-height: 42px; white-space: nowrap; text-decoration: none; }
+.primary, .secondary, .danger { display: inline-flex; align-items: center; justify-content: center; gap: 15px; border: 1px solid var(--owner-wine, #800014); padding: 11px 18px; border-radius: 10px; font-size: 12px !important; font-family: var(--owner-button-font-family); font-weight: var(--owner-button-font-weight) !important; font-synthesis:none; text-shadow:none; line-height: 1.5; min-height: 42px; white-space: nowrap; text-decoration: none; }
 .primary { background: var(--owner-wine, #800014); color: white; }
 .primary:hover { background: #670010; }
 .secondary { background: white; color: #57494e; border-color: #dedada; }
@@ -114,8 +114,8 @@
 .pageIdentity { flex: 1; min-width: 155px; }
 .pageIdentity strong { display: block; color: #5f4b54; font-size: 13px; font-weight: 500; }
 .pageIdentity small { display: block; color: #766f70; font-size: 10px; margin-top: 5px; overflow-wrap: anywhere; }
-.badge { font-size: 9px; background: #f2f0f1; border: 1px solid #e5e3e1; color: #766f70; border-radius: 20px; padding: 4px 9px; white-space: nowrap; }
-.badgeVisible { background: #f2f7f3; border-color: #e1ebe3; color: #6d8b73; }
+.badge { font-size: 9px; background: var(--owner-badge-bg, #f2f0f1); border: 1px solid var(--owner-line, #e5e3e1); color: var(--owner-badge-ink, #625a60); border-radius: 20px; padding: 4px 9px; white-space: nowrap; }
+.badgeVisible { background: var(--owner-badge-visible-bg, #edf5ef); border-color: var(--owner-badge-visible-line, #cbdcce); color: var(--owner-badge-visible-ink, #385c40); }
 .textButton, .dangerLink, .backButton { padding: 7px 0; border: 0; background: transparent; font-size: 11px !important; color: #8a6876; text-decoration: none; }
 .textButton:hover, .dangerLink:hover, .backButton:hover { text-decoration: underline; text-underline-offset: 3px; }
 .dangerLink { color: #963c44; }
@@ -339,7 +339,7 @@
 
 /* Explicit owner-component rules outrank the legacy generic dark control rule.
    Nothing here targets the public canvas or changes saved website colors. */
-.portal:global([data-owner-portal][data-color-mode="dark"]) { --owner-art-backplane: #3a3038; --owner-control-line: #947887; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) { --owner-art-backplane: #3a3038; --owner-control-line: #85858c; }
 .portal:global([data-color-mode="dark"]) .welcomeArt::before { border-color: var(--owner-line); }
 .portal:global([data-owner-portal][data-color-mode="dark"]) .primary:is(:enabled, :disabled, :any-link) { background-color: #970d2a!important; border-color: #db6c84!important; color: #fff!important; }
 .portal:global([data-owner-portal][data-color-mode="dark"]) .primary:is(:enabled, :any-link):hover { background-color: #b11739!important; border-color: #f39ab0!important; }
@@ -358,6 +358,15 @@
 .portal:global([data-owner-portal][data-color-mode="dark"]) :is(.sideNav a, .serviceTab, .quickCard, .hubLinks > a):hover:not([aria-disabled="true"]) { background-color: #48313e!important; border-color: #d7879b!important; }
 .portal:global([data-owner-portal][data-color-mode="dark"]) :is(.sideNav a, .serviceTab)[aria-current="page"] { background-color: #48313e!important; border-color: #d7879b!important; }
 .portal:global([data-owner-portal][data-color-mode="dark"]) .hubLinks > a { background-color: var(--owner-surface)!important; border-color: var(--owner-line)!important; }
-.portal:global([data-owner-portal][data-color-mode="dark"]) .field :is(input, textarea, select, [role="combobox"]):not([type="color"]) { border-color: var(--owner-control-line)!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .field :is(input, textarea, select, [role="combobox"]):not([type="color"]):not([aria-invalid="true"]) { border-color: var(--owner-control-line)!important; }
 
 .portal:global([data-color-mode="dark"]) .block { border-color: var(--owner-line); }
+
+/* Sign out is an action, not an underlined navigation link. */
+.sidebarUtilities .signOutButton { align-self:stretch; border:1px solid var(--owner-line, #d4c5c8); border-radius:8px; padding:10px 14px; background:var(--owner-surface, #fff); color:var(--owner-ink, #241c1f); font:inherit; font-size:12px !important; font-weight:600; text-decoration:none; cursor:pointer; }
+.sidebarUtilities .signOutButton:hover:not(:disabled) { border-color:var(--owner-wine); color:var(--owner-wine); }
+.sidebarUtilities .signOutButton:focus-visible { outline:2px solid var(--owner-wine); outline-offset:3px; }
+.sidebarUtilities .signOutButton:disabled { opacity:.55; cursor:wait; }
+
+/* Editable preview keeps the same canvas when its surrounding dialog maximizes. */
+.dialogPreview[data-editable-preview] { max-height:none; overflow:visible; min-height:360px; }

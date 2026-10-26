@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CLOUD_PHOTO_SOURCE } from "./cloud-files-model";
 
 export const OWNER_MEDIA_SOURCE_PATTERN = /^\/api\/media\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export const PHOTO_UPLOAD_MAX_BYTES = 12 * 1024 * 1024;
 export const PHOTO_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,image/gif,image/avif";
-export type UploadedPhoto = { id: string; src: string; width: number; height: number; bytes: number; contentType: "image/webp"; storage: "development-disk" };
+export type UploadedPhoto = { id: string; src: string; width: number; height: number; bytes: number; contentType: "image/webp"; storage: "development-disk" | "firebase-storage" };
 export async function uploadOwnerPhoto(file: File, signal?: AbortSignal): Promise<UploadedPhoto> {
   if (!PHOTO_UPLOAD_ACCEPT.split(",").includes(file.type)) throw new Error("Choose a PNG, JPEG, WebP, GIF or AVIF photo. SVG is not supported.");
   if (!file.size || file.size > PHOTO_UPLOAD_MAX_BYTES) throw new Error("Each photo must be non-empty and 12 MB or smaller.");
@@ -22,7 +23,7 @@ export async function uploadOwnerPhoto(file: File, signal?: AbortSignal): Promis
 
 /** Tokens stay in Authorization headers. Draft bytes never need a public URL or token query string. */
 export function useOwnerMediaSource(source: string, enabled = true): { src: string | null; error: string | null } {
-  const privateMedia = enabled && OWNER_MEDIA_SOURCE_PATTERN.test(source);
+  const privateMedia = enabled && (OWNER_MEDIA_SOURCE_PATTERN.test(source) || CLOUD_PHOTO_SOURCE.test(source));
   const key = privateMedia ? source : "";
   const [result, setResult] = useState<{ source: string; src: string | null; error: string | null }>({ source: key, src: null, error: null });
   // Reset at the identity boundary, including A → B → A and preview-mode changes.

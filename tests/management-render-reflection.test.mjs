@@ -78,3 +78,10 @@ test('per-element CSS tokens have scoped consumers and placeholder appearances d
   assert.match(css, /data-element-text-color="true"[^}]*::placeholder|::placeholder[^}]*--element-text-color/);
   assert.match(css, /(?:input|textarea)[^}]*data-element-text-size="true"|data-element-text-size="true"[^}]*:is\(input,textarea\)/);
 });
+
+
+test('custom contact labels, order, links and text-only entries render on the public site', () => {
+  const value = make(); value.site.socialLinks = [{ id: 'custom-first', label: 'My portfolio', value: 'Browse art', url: 'https://example.test/art' }, { id: 'custom-second', label: 'At conventions', value: 'Find the red Folf' }, { id: 'custom-email', label: 'Email Taylor', value: 'Send a message', url: 'mailto:taylor@example.test' }];
+  const html = render(value, 'contact'); assert.ok(html.indexOf('My portfolio') < html.indexOf('At conventions')); assert.match(html, /href="https:\/\/example.test\/art"/); assert.match(html, /href="mailto:taylor@example.test"/); assert.match(html, /Find the red Folf/); assert.doesNotMatch(html, /gd_taylor/);
+  value.site.socialLinks = []; assert.match(render(value, 'contact'), /No contact methods are currently available/);
+});

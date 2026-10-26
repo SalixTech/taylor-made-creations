@@ -121,12 +121,13 @@ test('tag layout permits wrapping long tags in public and owner cards', () => {
   assert.match(publicCss, /\.premade-tags>span\{[^}]*max-width:100%;overflow-wrap:anywhere/);
 });
 
-test('the expanded gallery card has its requested singular Save Photo action', () => {
+test('the gallery photo dialog has its requested singular Save Photo action', () => {
   const h = harness(), Manager = h.load('src/owner/OwnerTemplateManagers.tsx').PhotoGalleryManager;
   const draft = h.load('src/owner/defaults.ts').createDefaultOwnerContent(); let saves = 0;
   const props = { content: draft, onEdit(change) { change(draft); }, onRemove() {}, onSavePhotos() { saves++; } };
   const render = () => { h.render(Manager, props); for (const node of h.refs.values()) node.scrollIntoView = () => {}; };
-  render(); h.find(n => n.type === 'button' && content(n) === 'Edit photo').props.onClick(); render();
-  h.find(n => n.type === 'button' && content(n) === 'Save Photo').props.onClick(); assert.equal(saves, 1);
+  const photoNodes = () => { const list = h.find(n => n.type?.name === 'OwnerPriceReorderList'); return list.props.items.flatMap(photo => nodes(list.props.children(photo, null))); };
+  render(); photoNodes().find(n => n.type === 'button' && content(n) === 'Edit photo').props.onClick(); render();
+  nodes(h.find(n => n.type?.name === 'Dialog').props.actions).find(n => n.type === 'button' && content(n) === 'Save Photo').props.onClick(); assert.equal(saves, 1);
   assert.ok(h.find(n => n.type === 'button' && content(n) === 'Save photos')); h.unmount();
 });

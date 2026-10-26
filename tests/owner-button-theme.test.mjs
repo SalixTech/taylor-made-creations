@@ -46,7 +46,7 @@ test('shared owner actions retain variants, sizing and readable text in light/da
         if (state === 'loading') t.control.attrs['aria-busy'] = 'true';
         const style = computed(t.control), fill = background(t.control, computed);
         assert.equal(style.appearance, 'none', `${mode}/${variant}/${state}`);
-        assert.equal(style['min-height'], '42px'); assert.equal(style['border-radius'], '7px'); assert.equal(style['font-size'], '12px');
+        assert.equal(style['min-height'], '42px'); assert.equal(style['border-radius'], '10px'); assert.equal(style['font-size'], '12px');
         assert.ok(contrast(style.color, fill) >= 4.5, `${mode}/${variant}/${state}: ${style.color} on ${fill}`);
         assert.equal(computed(t.label).color, style.color, 'nested label stays readable instead of inheriting legacy text colors');
         if (state === 'focus-visible') assert.ok(contrast(style['outline-color'], background(t.portal, computed)) >= 3);
@@ -105,11 +105,15 @@ test('File Hub native controls, photo chooser and confirmation actions use actua
   const h = themedHarness(), library = { assets: [photo], loading: false, error: '', available: true, refresh() {}, add() {} };
   h.overrides['./asset-library-client'] = { usePrivateAssetLibrary: () => library };
   h.overrides['./temporary-photo-client'] = { isStagedPhoto: () => true };
-  const Library = h.load('src/owner/AssetLibrary.tsx').AssetLibrary, render = () => h.render(Library, { manager: true, onSelect() {} }); render();
+  const Library = h.load('src/owner/AssetLibrary.tsx').LegacyAssetLibrary, render = () => h.render(Library, { manager: true, onSelect() {} }); render();
   assertThemed(h.all(node => node.type === 'button'));
   h.find(node => node.props['aria-label'] === 'Delete photo: Sample photo').props.onClick(); render();
   assertThemed(nodes(h.find(node => node.type?.name === 'Dialog').props.actions).filter(node => node.type === 'button'));
   h.unmount();
+});
+test('cloud File Hub uses the shared compiled button controls even when access is unavailable', () => {
+  const h = themedHarness(), Hub = h.load('src/owner/CloudFileHub.tsx').CloudFileHub;
+  h.render(Hub, { manager: true }); assertThemed(h.all(node => node.type === 'button')); h.unmount();
 });
 test('photo/font upload and photo viewer actions read the same compiled theme', () => {
   for (const file of ['PhotoUpload', 'FontUpload', 'TemporaryPhotoView']) {
