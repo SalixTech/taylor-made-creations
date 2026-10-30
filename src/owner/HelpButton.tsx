@@ -1,5 +1,7 @@
 "use client";
 
+import { useOutcomeNotice } from "./use-outcome-notice";
+
 import { useEffect, useRef, useState } from "react";
 import { responseObject, serviceReadError, taylorOwnerSession } from "./taylor-services-client";
 import styles from "./TaylorServices.module.css";
@@ -7,8 +9,9 @@ import styles from "./TaylorServices.module.css";
 export type HelpFeedback = { kind: "error" | "success"; message: string };
 export function HelpButton({ onFeedback }: { onFeedback?: (feedback: HelpFeedback) => void } = {}) {
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [message, setMessage, messageView] = useOutcomeNotice(failed ? "error" : "success");
+  const [acceptedAt, setAcceptedAt] = useState("");
   const pending = useRef(false);
   const requestId = useRef<string | null>(null);
   const mounted = useRef(false);
@@ -31,9 +34,9 @@ export function HelpButton({ onFeedback }: { onFeedback?: (feedback: HelpFeedbac
       session.assertCurrent();
       if (result.status !== "accepted") throw new Error("The email service did not confirm this request. Please try again.");
       requestId.current = null;
-      if (mounted.current) { const message = "Your help email was accepted for sending. Inbox delivery is not yet confirmed."; setMessage(message); onFeedback?.({ kind: "success", message }); }
+      if (mounted.current) { const message = "Your help email was accepted for sending. Inbox delivery is not yet confirmed."; setMessage(message); setAcceptedAt(new Date().toISOString()); onFeedback?.({ kind: "success", message }); }
     } catch (error) {
-      if (mounted.current) { const message = serviceReadError(error, "Help email"); setFailed(true); setMessage(message); onFeedback?.({ kind: "error", message }); }
+      if (mounted.current) { const message = serviceReadError(error, "Help email"); setFailed(true); setMessage(message, true); onFeedback?.({ kind: "error", message }); }
     } finally { pending.current = false; if (mounted.current) setBusy(false); }
   }
 
@@ -42,6 +45,7 @@ export function HelpButton({ onFeedback }: { onFeedback?: (feedback: HelpFeedbac
       <span aria-hidden="true">?</span>{busy ? "Asking Salix…" : "Ask Salix For Help"}
     </button>
     <span id="taylor-help-description" className={styles.visuallyHidden}>Sends one email with the subject Taylor Needs Help. No files or customer details are included.</span>
-    {message && !onFeedback && <p className={failed ? styles.error : styles.notice} role={failed ? "alert" : "status"}>{message}</p>}
+    {!onFeedback && messageView(failed ? styles.error : styles.notice)}
+    {!message && acceptedAt && <small>Last help request accepted at {new Date(acceptedAt).toLocaleString()}. Inbox delivery is not confirmed.</small>}
   </div>;
 }

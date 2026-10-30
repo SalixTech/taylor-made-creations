@@ -24,3 +24,9 @@
 .dialog [data-move-handle]:focus-visible { outline:2px solid var(--owner-button-focus,#800014); outline-offset:-4px; }
 .headingActions button { width:36px; height:36px; min-width:36px; padding:0; }
 .headingActions svg { display:block; flex:none; }
+
+/* Consistent red modal edge and close controls anchored to the corner. */
+.dialog { border-color:var(--owner-wine,#800014); }
+.dialog > div:first-child { position:relative; padding-right:62px; min-height:58px; }
+.dialog > div:first-child .headingActions { position:absolute; top:8px; right:8px; }
+.dialog:has(.headingActions > button:nth-child(2)) > div:first-child { padding-right:104px; }

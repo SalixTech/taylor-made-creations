@@ -1,3 +1,4 @@
+export const INVENTORY_STANDARD_UNITS = ["pieces", "yards", "metres", "feet", "inches", "grams", "kilograms"] as const;
 export type InventoryCategory = { id: string; name: string };
 export type InventoryCategories = { schemaVersion: 1; revision: number; categories: InventoryCategory[]; itemTypes?: InventoryCategory[]; units?: string[] };
 export type StockChange = { at: string; from: number; to: number; fromUnit: string; unit: string; note: string };
@@ -87,4 +88,21 @@ export function inventoryTimestamp(value: unknown): string | null {
   else throw new Error("Inventory retirement time is invalid.");
   if (!Number.isFinite(milliseconds)) throw new Error("Inventory retirement time is invalid.");
   return new Date(milliseconds).toISOString();
+}
+
+export type InventoryChoiceField = "categoryId" | "kind" | "unit";
+/** Includes archived and trashed records: restoring must never expose dangling references. */
+export function inventoryChoiceReferences(items: Pick<InventoryItem, "name" | "categoryId" | "kind" | "unit">[], field: InventoryChoiceField, value: string) {
+  return items.filter(item => item[field] === value);
+}
+export function inventoryChoiceRemovalError(items: Pick<InventoryItem, "name" | "categoryId" | "kind" | "unit">[], field: InventoryChoiceField, value: string): string | null {
+  const used = inventoryChoiceReferences(items, field, value);
+  if (!used.length) return null;
+  const label = field === "categoryId" ? "category" : field === "kind" ? "item type" : "unit";
+  return `This ${label} is used by ${used.length} inventory ${used.length === 1 ? "item" : "items"}: ${used.slice(0, 3).map(item => item.name).join(", ")}${used.length > 3 ? "…" : ""}. Reassign those items first. Archived items and Trash also count; restore them to change their choice.`;
+}
+/** Spinner controls move in whole steps, while manual values retain fractional precision. */
+export function stepInventoryQuantity(value: number, direction: -1 | 1) {
+  const current = Number.isFinite(value) ? value : 0;
+  return Math.min(1_000_000, Math.max(0, direction > 0 ? Math.floor(current) + 1 : Math.ceil(current) - 1));
 }

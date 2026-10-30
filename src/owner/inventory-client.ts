@@ -1,7 +1,7 @@
 "use client";
 import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp } from "firebase/firestore/lite";
 import { taylorOwnerSession } from "./taylor-services-client";
-import { barcodeAliases, barcodeKey, INVENTORY_BARCODE_HOLD_MS, inventoryTimestamp, validInventoryBarcode, decodeInventoryCategories, decodeInventoryItem, emptyInventoryCategories, generatedInventoryBarcode, inventoryId, validateInventoryEdit, type InventoryCategories, type InventoryEdit, type InventoryItem } from "./inventory-model";
+import { INVENTORY_STANDARD_UNITS, barcodeAliases, barcodeKey, inventoryChoiceRemovalError, INVENTORY_BARCODE_HOLD_MS, inventoryTimestamp, validInventoryBarcode, decodeInventoryCategories, decodeInventoryItem, emptyInventoryCategories, generatedInventoryBarcode, inventoryId, validateInventoryEdit, type InventoryCategories, type InventoryEdit, type InventoryItem } from "./inventory-model";
 export const INVENTORY_ITEMS = "ownerInventory";
 export const INVENTORY_CATEGORIES = "ownerInventorySettings/categories";
 export const INVENTORY_BARCODES = "ownerInventoryBarcodes";
@@ -12,15 +12,33 @@ export async function readInventory() {
   session.assertCurrent();
   return { items: items.docs.map(item => decodeInventoryItem(item.data(), item.id)), categories: categories.exists() ? decodeInventoryCategories(categories.data()) : emptyInventoryCategories() };
 }
+function sameInventoryChoices(a: InventoryCategories, b: InventoryCategories) {
+  return JSON.stringify([a.categories, a.itemTypes ?? [], a.units ?? []]) === JSON.stringify([b.categories, b.itemTypes ?? [], b.units ?? []]);
+}
 export async function saveInventoryCategories(previous: InventoryCategories, categories: InventoryCategories["categories"], options: Pick<InventoryCategories, "itemTypes" | "units"> = {}) {
-  const expectedRevision = previous.revision;
-  const next = structuredClone(decodeInventoryCategories({ ...previous, ...options, revision: expectedRevision + 1, categories }));
-  const session = await taylorOwnerSession();
-  await runTransaction(session.db, async tx => {
-    const target = doc(session.db, INVENTORY_CATEGORIES), snapshot = await tx.get(target);
+  const candidate = structuredClone(decodeInventoryCategories({ ...previous, ...options, revision: previous.revision + 1, categories }));
+  const removed = [
+    ...previous.categories.filter(choice => !candidate.categories.some(next => next.id === choice.id)).map(choice => ({ field: "categoryId" as const, value: choice.id })),
+    ...(previous.itemTypes ?? []).filter(choice => !candidate.itemTypes?.some(next => next.id === choice.id)).map(choice => ({ field: "kind" as const, value: choice.id })),
+    ...(previous.units ?? []).filter(unit => !candidate.units?.includes(unit)).map(value => ({ field: "unit" as const, value })),
+  ];
+  const session = await taylorOwnerSession(), target = doc(session.db, INVENTORY_CATEGORIES);
+  // Every item write advances this same settings document. A deletion therefore
+  // cannot race a newly created reference, even though Lite has no query-in-tx.
+  const guardSnapshot = removed.length ? await getDoc(target) : null;
+  const guard = guardSnapshot?.exists() ? decodeInventoryCategories(guardSnapshot.data()) : emptyInventoryCategories();
+  const inventory = removed.length ? await getDocs(collection(session.db, INVENTORY_ITEMS)) : null;
+  if (inventory) for (const choice of removed) {
+    const message = inventoryChoiceRemovalError(inventory.docs.map(item => decodeInventoryItem(item.data(), item.id)), choice.field, choice.value);
+    if (message) throw new Error(message);
+  }
+  const next = await runTransaction(session.db, async tx => {
+    const snapshot = await tx.get(target);
     const current = snapshot.exists() ? decodeInventoryCategories(snapshot.data()) : emptyInventoryCategories();
-    if (current.revision !== expectedRevision) throw new Error("Categories changed on another device. Refresh before saving.");
-    session.assertCurrent(); tx.set(target, next);
+    if (!sameInventoryChoices(current, previous)) throw new Error("Inventory choices changed on another device. Refresh before saving.");
+    if (removed.length && current.revision !== guard.revision) throw new Error("Inventory changed while checking this choice. Refresh inventory and try deleting again.");
+    const saved = { ...candidate, revision: current.revision + 1 };
+    session.assertCurrent(); tx.set(target, saved); return saved;
   });
   session.assertCurrent(); return next;
 }
@@ -41,6 +59,7 @@ export async function saveInventoryItem(previous: InventoryItem | null, edit: In
     const categories = categorySnapshot.exists() ? decodeInventoryCategories(categorySnapshot.data()) : emptyInventoryCategories();
     if (snapshotEdit.categoryId && !categories.categories.some(category => category.id === snapshotEdit.categoryId)) throw new Error("That category is no longer available. Choose another category.");
     if (!["material", "finished"].includes(snapshotEdit.kind) && !categories.itemTypes?.some(type => type.id === snapshotEdit.kind)) throw new Error("That item type is no longer available. Choose another type.");
+    if (!(INVENTORY_STANDARD_UNITS as readonly string[]).includes(snapshotEdit.unit) && !categories.units?.includes(snapshotEdit.unit) && current?.unit !== snapshotEdit.unit) throw new Error("That unit is no longer available. Choose another unit or create it again.");
     const oldKeys = current ? barcodeAliases(current.barcode).map(barcodeKey) : [];
     const newKeys = barcodeAliases(snapshotEdit.barcode).map(barcodeKey);
     const keys = [...new Set([...oldKeys, ...newKeys])];
@@ -57,6 +76,7 @@ export async function saveInventoryItem(previous: InventoryItem | null, edit: In
     decodeInventoryItem(data(next), id); session.assertCurrent();
     for (const key of oldKeys) if (!newKeys.includes(key)) tx.set(doc(session.db, INVENTORY_BARCODES, key), { itemId: id, releasedAt: serverTimestamp(), assignment: "manual" });
     for (const key of newKeys) tx.set(doc(session.db, INVENTORY_BARCODES, key), { itemId: id, releasedAt: null, assignment });
+    tx.set(doc(session.db, INVENTORY_CATEGORIES), { ...categories, revision: categories.revision + 1 });
     tx.set(target, data(next)); return next;
   });
   session.assertCurrent(); return result;
@@ -94,7 +114,7 @@ async function setInventoryTrash(previous: InventoryItem, trash: boolean) {
   inventoryId(previous.id);
   const session = await taylorOwnerSession(), target = doc(session.db, INVENTORY_ITEMS, previous.id);
   await runTransaction(session.db, async tx => {
-    const snapshot = await tx.get(target);
+    const [snapshot, settingsSnapshot] = await Promise.all([tx.get(target), tx.get(doc(session.db, INVENTORY_CATEGORIES))]);
     if (!snapshot.exists()) throw new Error("This inventory item no longer exists.");
     const current = decodeInventoryItem(snapshot.data(), previous.id);
     if (current.revision !== previous.revision) throw new Error("This item changed on another device. Refresh before continuing.");
@@ -111,6 +131,8 @@ async function setInventoryTrash(previous: InventoryItem, trash: boolean) {
     session.assertCurrent();
     const stamp = trash ? serverTimestamp() : null;
     for (const key of keys) tx.set(doc(session.db, INVENTORY_BARCODES, key), { itemId: current.id, releasedAt: stamp, assignment: "manual" });
+    const settings = settingsSnapshot.exists() ? decodeInventoryCategories(settingsSnapshot.data()) : emptyInventoryCategories();
+    tx.set(doc(session.db, INVENTORY_CATEGORIES), { ...settings, revision: settings.revision + 1 });
     tx.set(target, { ...data(current), barcodeKeys: keys, trashedAt: stamp, revision: current.revision + 1, updatedAt: new Date().toISOString() });
   });
   session.assertCurrent();

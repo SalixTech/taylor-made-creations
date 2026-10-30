@@ -12,6 +12,7 @@ import { usePublicServerState } from "./PublicSiteContext";
 import { UnderConstruction } from "./UnderConstruction";
 import { PublicNotFound } from "./PublicNotFound";
 import { PublicUnavailable } from "./PublicUnavailable";
+import { ClientHub } from "@/client-hub/ClientHub";
 
 export function PublishedPage({ slug, fallback, serverState }: { slug: string[]; fallback?: ReactNode; request?: boolean; serverState: PublicSiteState }) {
   const state = usePublicServerState(serverState);
@@ -24,5 +25,6 @@ export function PublishedPage({ slug, fallback, serverState }: { slug: string[];
   const requestPage = getPublicRequestPage(content, slug);
   if (requestPage) return <CommissionRequestPage page={requestPage} />;
   const page = getPreviewPage(content, slug);
+  if (page?.builtinKey === "client-hub") return <ClientHub />;
   return page ? <ContentPage content={content} page={page} mode="public" /> : <PublicNotFound state={state} />;
 }

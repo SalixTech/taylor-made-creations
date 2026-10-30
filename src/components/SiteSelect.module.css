@@ -7,9 +7,9 @@
 
 /* Theme the complete popover, not only its inner listbox. Native top-layer
    popovers retain these inherited tokens, including their scrollbar gutter. */
-.root{--select-surface:#fff;--select-ink:#393536;--select-line:#c5c5ca;--select-selected:#f1f1f4;--select-active:#e4e4eb;--select-focus:#64748b}
+.root{--select-surface:#fff;--select-ink:#393536;--select-line:#c5c5ca;--select-selected:#8000140d;--select-active:#8000141a;--select-focus:#80001480}
 :global([data-owner-portal][data-color-mode="dark"]) .root,
-:global([data-theme-scope="public"][data-color-mode="dark"]) .root{--select-surface:#303034;--select-ink:#e5e7eb;--select-line:#85858c;--select-selected:#3b3b42;--select-active:#484850;--select-focus:#a1a1aa;color-scheme:dark}
+:global([data-theme-scope="public"][data-color-mode="dark"]) .root{--select-surface:#303034;--select-ink:#e5e7eb;--select-line:#85858c;--select-selected:#ffffff0d;--select-active:#ffffff1f;--select-focus:#ffffff80;color-scheme:dark}
 .root .list[data-site-select-menu]{background:var(--select-surface);color:var(--select-ink);border:1px solid var(--select-line);border-radius:10px;padding:5px;scrollbar-color:var(--select-line) var(--select-surface)}
 .root .list[data-site-select-menu] [role="listbox"]{background:transparent!important;border:0!important;padding:0}
 .root .list[data-site-select-menu] .option{border-radius:6px;font-weight:500;font-synthesis:none;text-shadow:none;line-height:1.4}
@@ -25,4 +25,13 @@
 .root .createRow input,.root .createRow button{background:var(--select-surface);color:var(--select-ink);border-color:var(--select-line);border-radius:8px}
 .root .control{font-weight:500;font-synthesis:none;text-shadow:none;border-radius:10px}
 /* An explicitly light public preview must not inherit its dark owner shell. */
-:global([data-theme-scope="public"][data-color-mode="light"]) .root{--select-surface:#fff;--select-ink:#393536;--select-line:#c5c5ca;--select-selected:#f1f1f4;--select-active:#e4e4eb;--select-focus:#64748b;color-scheme:light}
+:global([data-theme-scope="public"][data-color-mode="light"]) .root{--select-surface:#fff;--select-ink:#393536;--select-line:#c5c5ca;--select-selected:#8000140d;--select-active:#8000141a;--select-focus:#80001480;color-scheme:light}
+:global([data-owner-portal]) .root .list[data-site-select-menu] .option { padding:12px 14px; min-height:44px; margin-block:3px; }
+
+/* Owner dropdowns share the same separated rows, including inline-create
+   menus whose accessible listbox is nested inside the popover. */
+:global([data-owner-portal][data-color-mode="dark"]) .root { --select-surface:#18181b; --select-ink:#d0d0d0; --select-selected:#48484c; --select-active:#48484c; --select-focus:#d0d0d0; }
+:global([data-owner-portal][data-color-mode="dark"]) .root .list[data-site-select-menu] { background:#18181b!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .root .list[data-site-select-menu] .option { background:#2c2c2d!important; margin-block:4px; }
+:global([data-owner-portal][data-color-mode="dark"]) .root .list[data-site-select-menu] .option[aria-selected="true"],
+:global([data-owner-portal][data-color-mode="dark"]) .root .list[data-site-select-menu] .option[data-active="true"] { background:#48484c!important; }

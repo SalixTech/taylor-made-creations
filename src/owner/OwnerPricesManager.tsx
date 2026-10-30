@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { stepWholeNumber, useWholeNumberWheel } from "./whole-number-input";
 import { newOwnerId, type OwnerContent } from "./model";
 import { Card, Field } from "./OwnerFields";
 import { PriceItemChooser, priceNameKey } from "./PriceItemChooser";
@@ -18,7 +19,9 @@ type Props = {
 
 function MoneyField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   const [typed, setTyped] = useState<string | null>(null);
-  return <label className={ui.field}><span>{label}</span><div className={ui.money}><span>$</span><input type="number" min="0" step="0.01" value={typed ?? String(value)} onChange={event => { setTyped(event.target.value); onChange(event.target.value === "" ? 0 : Number(event.target.value)); }} onBlur={() => setTyped(null)} placeholder="0" /></div></label>;
+  const change = (next: string) => { setTyped(next); onChange(next === "" ? 0 : Number(next)); };
+  const inputRef = useWholeNumberWheel(typed ?? value, change, true);
+  return <label className={ui.field}><span>{label}</span><div className={ui.money}><span>$</span><input ref={inputRef} onKeyDown={event => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); change(stepWholeNumber(typed ?? value, event.key === "ArrowUp" ? 1 : -1)); } }} type="number" min={Number.isFinite(value) ? Math.round((value % 1) * 100) / 100 : 0} step="1" value={typed ?? String(value)} onChange={event => { setTyped(event.target.value); onChange(event.target.value === "" ? 0 : Number(event.target.value)); }} onBlur={() => setTyped(null)} placeholder="0" /></div></label>;
 }
 
 function stepById<T extends { id: string }>(items: T[], id: string, direction: -1 | 1) {

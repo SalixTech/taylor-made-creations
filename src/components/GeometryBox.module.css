@@ -1,0 +1,17 @@
+.frame { display:block; position:relative; min-width:0; max-width:100%; box-sizing:border-box; overflow-x:clip; overflow-y:visible; }
+.inline { display:inline-block; vertical-align:top; }
+/* Keep a stable, untransformed in-flow source. It supplies intrinsic width in
+   flex/inline parents; absolute content + inline-size containment had removed
+   that width, allowing aspect-ratio/min-height measurement feedback. */
+.contents { display:flow-root; position:relative; transform-origin:top left; overflow-wrap:anywhere; }
+.contents > :first-child { margin:0!important; max-width:100%; }
+/* One explicit frame height reserves scaled content, including later text edits.
+   Horizontal clipping prevents the pre-transform baseline from widening mobile
+   scroll bounds. Vertical overflow stays visible; text edits are never truncated. */
+
+/* New materializations keep one immutable-width normal-flow slot. The selected
+   frame moves within that slot; parent-relative x is NEVER a flex margin. */
+.flowSlot { display:block; position:relative; flex:0 0 auto; min-width:0; max-width:100%; box-sizing:border-box; }
+.flowSlot.inline { display:inline-block; vertical-align:baseline; }
+.flowFrame { max-width:none; }
+.flowContents { overflow-wrap:inherit; }

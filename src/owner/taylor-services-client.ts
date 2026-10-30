@@ -1,3 +1,4 @@
+import { assertHubWindowSession } from "@/client-hub/window-session";
 import { getOwnerFirebaseClient, readOwnerFirebaseConfig, verifyOwnerSession } from "./firebase-client";
 
 /** Private tools reuse the existing browser-session-only Firebase connection. */
@@ -10,6 +11,7 @@ export async function taylorOwnerSession() {
   await verifyOwnerSession(client, user);
   const token = await user.getIdToken();
   const assertCurrent = () => {
+    assertHubWindowSession("owner", user.uid);
     if (client.auth.currentUser !== user || client.auth.currentUser?.uid !== config.ownerUid) throw new Error("Your owner session changed. Sign in again to continue.");
   };
   assertCurrent();

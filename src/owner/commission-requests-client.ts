@@ -4,7 +4,12 @@ import { REQUEST_STATUSES, timestampText, verifyRequestDecision, type RequestDec
 
 /** Updates only the decision, with a version check and immutable audit record.
  * This never sends a reply, creates a contract, charges, or changes site content. */
-export async function decideCommissionRequest(request: RequestSummary, status: RequestDecision): Promise<{ status: RequestStatus; version: number }> {
+export async function decideCommissionRequest(request: RequestSummary, status: RequestDecision): Promise<{ status: RequestStatus; version: number; referencePurge?: { status: "pending" | "failed" | "complete" } }> {
+  if (status === "denied") {
+    if (request.version === null || request.status === null) throw new Error("Refresh this request before denying it.");
+    const { denyCommissionRequest } = await import("./intake-client");
+    return denyCommissionRequest(request.id, request.version);
+  }
   const session = await taylorOwnerSession();
   const actorUid = session.auth.currentUser?.uid;
   if (!actorUid) throw new Error("Sign in with Taylor’s owner account to continue.");
@@ -31,4 +36,13 @@ export async function readCommissionHistory(id: string): Promise<RequestHistory[
     if (!REQUEST_STATUSES.includes(value.fromStatus) || !REQUEST_STATUSES.includes(value.toStatus) || !Number.isSafeInteger(value.version) || typeof value.actorUid !== "string") throw new Error("A decision history entry could not be read safely. It has not been changed.");
     return { id: document.id, fromStatus: value.fromStatus, toStatus: value.toStatus, version: value.version, actorUid: value.actorUid, createdAt: timestampText(value.createdAt) };
   });
+}
+
+/** Visibility only: files, decisions, project links and history are untouched. */
+export async function setCommissionRequestTrashed(request: RequestSummary, trashed: boolean, operationId: string) {
+  if (request.version === null) throw new Error("Refresh this request before changing Deleted.");
+  const { callOwnerIntake } = await import("./intake-client");
+  const result = await callOwnerIntake("tmcSetCommissionRequestTrashed", { requestId: request.id, expectedVersion: request.version, trashed, operationId });
+  if (result.requestId !== request.id || result.operationId !== operationId || result.version !== request.version + 1 || (trashed ? typeof result.trashedAt !== "string" || !Number.isFinite(Date.parse(result.trashedAt)) : result.trashedAt !== null)) throw new Error("The Deleted change could not be confirmed. Retry this same action or refresh before continuing.");
+  return { trashedAt: result.trashedAt as string | null, version: result.version as number };
 }

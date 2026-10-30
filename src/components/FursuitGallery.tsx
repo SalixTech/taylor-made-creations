@@ -1,4 +1,5 @@
 "use client";
+import { PhotoLoading } from "./PhotoLoading";
 
 import Image from "next/image";
 import { lockPageScroll } from "./modal-scroll-lock";
@@ -14,7 +15,7 @@ function GalleryImage({ photo, expanded = false, unoptimized = false, privateMed
   const [failed, setFailed] = useState(false);
   const media = useOwnerMediaSource(photo.src, privateMedia);
   if (!isSafeImageSource(photo.src) || failed || media.error) return <div className={styles.unavailable} role="status">The photo of {photo.name} is unavailable. You can still browse the other suits.</div>;
-  if (!media.src) return <div className={styles.unavailable} role="status">Loading photo…</div>;
+  if (!media.src) return <div className={styles.unavailable} role="status"><PhotoLoading /></div>;
   return <Image src={media.src} alt={photo.alt} width={photo.width} height={photo.height} unoptimized={unoptimized || privateMedia}
       sizes={expanded ? "95vw" : "(max-width: 650px) 94vw, 48vw"}
       className={expanded ? styles.expandedImage : styles.thumbnail} onError={() => setFailed(true)} />;

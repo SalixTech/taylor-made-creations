@@ -1,7 +1,9 @@
 import type { CSSProperties } from "react";
+import type { ElementBox } from "./box-geometry";
 
 /** Deliberately bounded creative tokens; never a free-form style, class or HTML field. */
 export type ElementAppearance = {
+  box?: ElementBox;
   textColor?: string;
   backgroundColor?: string;
   font?: "original" | "sans" | "serif" | "rounded" | "mono";

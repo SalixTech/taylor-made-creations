@@ -2,6 +2,7 @@
 
 import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import Image from "next/image";
+import { stepWholeNumber, useWholeNumberWheel } from "./whole-number-input";
 import SiteSelect, { type SelectOption, type InlineSelectCreate } from "@/components/SiteSelect";
 import { isSafeImageSource } from "./model";
 import { fursuitGallery } from "@/content/fursuit-gallery";
@@ -10,12 +11,14 @@ import photoStyles from "./PhotoManager.module.css";
 import { useOwnerMediaSource } from "./media-client";
 import { AssetLibrary } from "./AssetLibrary";
 
-export function Field({ label, value, onChange, hint, multiline = false, type = "text", placeholder, required = false, readOnly = false }: {
-  label: string; value: string | number; onChange: (value: string) => void; hint?: string; multiline?: boolean; type?: string; placeholder?: string; required?: boolean; readOnly?: boolean;
+export function Field({ label, value, onChange, hint, multiline = false, type = "text", placeholder, required = false, readOnly = false, step }: {
+  label: string; value: string | number; onChange: (value: string) => void; hint?: string; multiline?: boolean; type?: string; placeholder?: string; required?: boolean; readOnly?: boolean; step?: number | string;
 }) {
+  const whole = type === "number" && (step === undefined || Number(step) === 1);
+  const numberRef = useWholeNumberWheel(value, onChange, whole && !readOnly);
   return <label className={styles.field}><span>{label}{required && <span className={styles.required}> *</span>}</span>{multiline
     ? <textarea value={value} onChange={event => onChange(event.target.value)} rows={4} placeholder={placeholder} readOnly={readOnly} required={required} />
-    : <input value={value} onChange={event => onChange(event.target.value)} type={type} min={type === "number" ? 0 : undefined} step={type === "number" ? "0.01" : undefined} placeholder={placeholder} readOnly={readOnly} required={required} />}
+    : <input ref={numberRef} onKeyDown={event => { if (whole && !readOnly && (event.key === "ArrowUp" || event.key === "ArrowDown")) { event.preventDefault(); onChange(stepWholeNumber(value, event.key === "ArrowUp" ? 1 : -1)); } }} value={value} onChange={event => onChange(event.target.value)} type={type} min={type === "number" ? (step === undefined || Number(step) === 1) && Number.isFinite(Number(value)) ? Math.round((Number(value) % 1) * 100) / 100 : 0 : undefined} step={type === "number" ? step ?? 1 : undefined} placeholder={placeholder} readOnly={readOnly} required={required} />}
     {hint && <small>{hint}</small>}
   </label>;
 }
@@ -28,8 +31,8 @@ export function OwnerSelect({ label, value, onChange, options, hint, placeholder
   return <div className={`${styles.field} ${styles.ownerSelect}`}><label htmlFor={id}>{label}{required && <span className={styles.required}> *</span>}</label><SiteSelect id={id} value={value} onChange={onChange} options={options} placeholder={placeholder} required={required} inlineCreate={inlineCreate} describedBy={hint ? `${id}-hint` : undefined} />{hint && <small id={`${id}-hint`}>{hint}</small>}</div>;
 }
 
-export function Toggle({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (checked: boolean) => void; hint?: string }) {
-  return <label className={styles.toggle}><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /><span className={styles.switch} aria-hidden="true" /><span><strong>{label}</strong>{hint && <small>{hint}</small>}</span></label>;
+export function Toggle({ label, checked, onChange, hint, disabled = false }: { label: string; checked: boolean; onChange: (checked: boolean) => void; hint?: string; disabled?: boolean }) {
+  return <label className={styles.toggle}><input type="checkbox" checked={checked} disabled={disabled} onChange={event => onChange(event.target.checked)} /><span className={styles.switch} aria-hidden="true" /><span><strong>{label}</strong>{hint && <small>{hint}</small>}</span></label>;
 }
 
 export function Card({ title, description, children, action }: { title?: string; description?: string; children: ReactNode; action?: ReactNode }) {
@@ -54,7 +57,7 @@ export function OwnerImage({ src, alt, style }: { src: string; alt: string; styl
 export function ImagePicker({ src, alt, onSource, onAlt }: { src: string; alt: string; onSource: (src: string) => void; onAlt: (alt: string) => void }) {
   return <div className={styles.imagePicker}>
     <div className={styles.imagePreview}><OwnerImage src={src} alt={alt || "Selected image"} /></div>
-    <div><AssetLibrary selected={src} onSelect={onSource} /><div className={photoStyles.selectWrap}><OwnerSelect label="Choose a photo already on your site" value={imageChoices.some(choice => choice.src === src) ? src : ""} onChange={onSource} placeholder="Choose a photo…" options={imageChoices.map(choice => ({ value: choice.src, label: choice.name }))} /></div><details className={styles.details}><summary>Use an image link instead</summary><Field label="Image link" value={src} onChange={onSource} placeholder="https://…" hint="Use a full https:// image link or choose an existing photo above." /></details><Field label="Photo description" value={alt} onChange={onAlt} hint="Describe what is in the photo for visitors who use screen readers." /></div>
+    <div><AssetLibrary selected={src} onSelect={onSource} /><div className={photoStyles.selectWrap}><OwnerSelect label="Choose a photo already on your site" value={imageChoices.some(choice => choice.src === src) ? src : ""} onChange={onSource} placeholder="Choose a photo…" options={imageChoices.map(choice => ({ value: choice.src, label: choice.name }))} /></div><details className={styles.details}><summary>Use an image link instead</summary><Field label="Image link" value={src} onChange={onSource} placeholder="https://…" hint="Use a full https:// image link or choose an existing photo above." /></details><Field label="Photo description" multiline value={alt} onChange={onAlt} hint="Describe what is in the photo for visitors who use screen readers." /></div>
   </div>;
 }
 

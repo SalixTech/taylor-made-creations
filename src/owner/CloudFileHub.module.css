@@ -11,7 +11,7 @@
 .moveStatus{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;margin:12px 0;border:1px solid var(--owner-line,#d8c4cc);border-radius:8px;background:var(--owner-raised,#f7f2f4)}.moveStatus .hint{margin:0;min-width:0;overflow-wrap:anywhere}.moveStatus>button{flex:0 0 auto;white-space:nowrap}.breadcrumbs{justify-content:flex-start}@media(max-width:450px){.moveStatus{align-items:flex-start;flex-direction:column}.moveStatus>button{align-self:flex-end}}
 
 /* Compact Explorer-style folder navigation stays independent of grid/list layout. */
-.explorer{display:grid;grid-template-columns:minmax(165px,210px) minmax(0,1fr);gap:16px;align-items:start;margin-top:12px}
+.explorer{display:grid;grid-template-columns:minmax(185px,230px) minmax(0,1fr);gap:16px;align-items:start;margin-top:12px}
 .filePane{min-width:0}
 .folderSidebar{min-width:0;border:1px solid var(--owner-line,#d8c4cc);border-radius:10px;background:var(--owner-surface,#fff);overflow:hidden}
 .folderSidebar>summary{padding:12px;cursor:pointer;font-size:13px;font-weight:700;color:var(--owner-ink,#2b2025)}
@@ -46,3 +46,99 @@
 /* Public header nav rules must never right-align or shrink the folder hierarchy. */
 .hub .folderSidebar nav{display:block;width:100%;box-sizing:border-box;margin:0;padding:4px 10px 12px;gap:0;align-items:stretch;justify-content:flex-start;text-align:left}
 .hub .folderSidebar nav>.folderBranch{width:100%}
+
+.fileMoreActions { position:relative; margin-left:auto; }
+.fileMoreActions > summary { display:flex; align-items:center; justify-content:center; list-style:none; cursor:pointer; width:30px; height:30px; border-radius:50%; font-size:21px; line-height:1; }
+.fileMoreActions > summary::-webkit-details-marker { display:none; }
+.fileMoreActions > div { display:flex; flex-wrap:wrap; gap:5px; padding:6px; border:1px solid var(--owner-line,#ccc); border-radius:8px; }
+.fileMoreActions > summary:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+
+.photoBuffer { display:flex; flex-direction:column; gap:8px; align-items:center; justify-content:center; width:100%; height:100%; min-height:54px; font-size:10px; text-align:center; }.photoBuffer>span { width:21px; height:21px; border:2px solid #8886; border-top-color:#b61837; border-radius:50%; animation:private-photo-spin .8s linear infinite; }
+@keyframes private-photo-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .photoBuffer>span { animation:none; border-color:#b61837; } }
+.actions { gap:8px; flex-wrap:wrap; }.headerActions { padding:4px 0; }.tools { gap:10px; padding-block:8px; }
+.heading { align-items:flex-start; padding-bottom:12px; }
+.headingActions { margin-left:auto; display:flex; align-items:center; gap:8px; padding-block:2px; }
+/* Image pickers share File Hub readiness/errors but keep the editor compact. */
+.hub:not(.manager) .list { max-height:280px; }
+.hub:not(.manager) .tools { margin:6px 0; padding-block:4px; }
+.hub:not(.manager) .preview { height:88px; min-height:88px; }
+.hub:not(.manager) .heading h3 { font-size:15px; }
+
+/* Commission files share the main library without inheriting thumbnail-only grid tracks. */
+.commissionHub.hub { border:0; padding:0; border-radius:0; }
+.commissionHub .toolbar { border-top:0; padding-top:0; }
+.commissionHub .toolbar h3 { margin:0; }
+.commissionHub .toolbar .hint { margin:6px 0 0; }
+.commissionHub .breadcrumbs { min-height:0; padding:12px 0; }
+.commissionHub .list { min-height:0; padding:0; margin-top:12px; }
+.commissionHub .item { border-radius:12px; padding:16px; gap:14px; min-height:112px; background:var(--owner-raised,#242426); }
+.commissionHub .item h4 { margin:0; font-size:14px; line-height:1.4; overflow-wrap:anywhere; }
+.commissionHub .grid .item>button { align-self:flex-end; margin-top:auto; }
+.commissionHub .details .item { display:flex; flex-direction:column; align-items:stretch; }
+.commissionHub .details .item>span { font-size:14px; overflow-wrap:anywhere; }
+.commissionHub .details .item>.actions { align-self:flex-end; justify-content:flex-end; margin-top:auto; }
+.commissionHub .details .item>button { align-self:flex-end; margin-top:auto; }
+.commissionHub .details .item button[title=Download] { width:38px; min-width:38px; height:38px; padding:0; display:grid; place-items:center; }
+/* File rows do not inherit the roomy folder-tile height. */
+.commissionHub .details .item { min-height:0; flex-direction:row; align-items:center; padding:12px 14px; gap:12px; }
+.commissionHub .details .item>span { flex:1; min-width:0; }
+.commissionHub .details .item>.actions,.commissionHub .details .item>button { margin-top:0; margin-left:auto; flex-shrink:0; align-self:flex-end; }
+
+/* Fox12 federated commission folders: explicitly resist global nav/section styles. */
+:global([data-owner-portal]) .commissionHub.hub { border:1px solid #8d2940; border-radius:18px; padding:20px; background:var(--owner-card,#18181b)!important; }
+:global([data-owner-portal]) .commissionHub.hub .toolbar { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:0 0 16px; border:0; background:transparent!important; }
+:global([data-owner-portal]) .commissionHub.hub .toolbar h3 { background:transparent!important; margin:0 0 8px; }
+:global([data-owner-portal]) .commissionHub.hub .breadcrumbs { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; width:100%; gap:8px; padding:14px 0; margin:0 0 12px; border-top:1px solid var(--owner-line,#505055); text-align:left; }
+:global([data-owner-portal]) .commissionHub.hub .breadcrumbs>span { margin:0; font-size:12px; color:var(--owner-muted,#c5c5c9); overflow-wrap:anywhere; }
+:global([data-owner-portal]) .commissionHub.hub .list { max-height:none; margin:12px 0 0; padding:0; overflow:visible; }
+:global([data-owner-portal]) .commissionHub.hub .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr)); gap:12px; }
+:global([data-owner-portal]) .commissionHub.hub .grid .item { display:grid; grid-template-columns:32px minmax(0,1fr); align-items:center; gap:10px 12px; padding:16px; min-height:108px; border:1px solid #6f3644; border-radius:14px; background:linear-gradient(135deg,#2b1921,#18181b)!important; }
+:global([data-owner-portal]) .commissionHub.hub .item h4 { background:transparent!important; font-size:14px; margin:0; min-width:0; }
+.commissionFolderIcon { color:#e63950; flex:none; }
+:global([data-owner-portal]) .commissionHub.hub .grid .item>button { grid-column:1/-1; justify-self:end; margin:2px 0 0; }
+:global([data-owner-portal]) .commissionHub.hub .details .item { display:flex; flex-wrap:wrap; min-height:0; padding:16px; gap:12px; border:1px solid #6f3644; border-radius:14px; background:var(--owner-card,#18181b)!important; }
+:global([data-owner-portal]) .commissionHub.hub .details .item>span { flex:1 1 240px; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+:global([data-owner-portal]) .commissionHub.hub .details .item>.actions { margin-left:auto; justify-content:flex-end; gap:8px; }
+@media(max-width:600px) { :global([data-owner-portal]) .commissionHub.hub { padding:14px; border-radius:14px; } :global([data-owner-portal]) .commissionHub.hub .toolbar { flex-wrap:wrap; } :global([data-owner-portal]) .commissionHub.hub .details .item>.actions { flex-basis:100%; } }
+/* Only the leaf files change: keep the praised root/folder card layout. */
+.commissionHub .commissionFiles { grid-template-columns:repeat(auto-fill,minmax(min(220px,100%),1fr)); }
+.commissionHub .commissionFiles .item { display:flex; min-height:0; flex-direction:column; align-items:stretch; padding:12px; gap:10px; }
+.commissionHub .commissionFiles .item>.actions { display:flex; flex-wrap:wrap; justify-content:flex-end; margin-top:auto; }
+.commissionHub .commissionFiles .item>span { font-size:13px; line-height:1.5; overflow-wrap:anywhere; }
+.commissionThumbnail { display:grid; place-items:center; width:100%; height:145px; padding:0!important; border:1px solid var(--owner-line)!important; border-radius:9px; overflow:hidden; background:#18181b!important; color:inherit; }
+.commissionThumbnail img { display:block; width:100%; height:100%; object-fit:contain; }
+.commissionHub .commissionFiles .item>button:has(img) { align-self:stretch; width:100%; height:145px; }
+.commissionHub .commissionFiles .item>button:first-child { width:100%; height:145px; align-self:stretch; }
+:global([data-owner-portal]) .hub button:has(>svg[data-owner-trash-icon]) { width:36px; min-width:36px; height:36px; padding:8px; border-radius:8px; color:#f16d83!important; background:transparent!important; border:1px solid var(--owner-control-line,var(--owner-line,#85858c))!important; }
+
+/* A continuous folder rail, with one consistent indentation and row rhythm. */
+:global([data-owner-portal]) .hub .folderSidebar { background:transparent!important; border:0; border-right:1px solid var(--owner-line,#505055); border-radius:0; padding-right:12px; }
+.folderSidebar>summary { padding:8px 4px 12px; }
+.folderSidebar nav { padding:0 0 8px; }
+.folderChildren { margin:2px 0 0 10px; padding-left:8px; border-left:1px solid var(--owner-line,#505055); }
+.folderBranch+.folderBranch { margin-top:2px; }
+.folderRow { min-height:38px; gap:0; }
+:global([data-owner-portal][data-color-mode="dark"]) .hub .folderRow :is(.folderExpand,.folderLink) { background:transparent!important; border-color:transparent!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .hub .folderLink:is(:hover,[aria-current="location"]) { background:var(--owner-raised,#2c2c2d)!important; }
+.folderLink { padding:7px 4px; gap:7px; }
+.folderLink>span[aria-label="Protected folder"] { margin-left:auto; flex:0 0 auto; }
+.hub .tools { align-items:center; }
+.hub .tools>.search { margin:0; display:flex; align-items:center; }
+.hub .tools>.search input { box-sizing:border-box; margin:0; height:42px; min-height:42px; }
+.hub .tools>button { height:42px; min-height:42px; }
+@media(max-width:650px) { :global([data-owner-portal]) .hub .folderSidebar { border-right:0; border-bottom:1px solid var(--owner-line,#505055); padding:0 0 8px; } .hub .tools>.search { flex-basis:100%; } }
+/* Keep the compact rail's full width for names instead of double nav padding. */
+.hub .folderSidebar nav { padding:0 0 8px; }
+
+/* Fox18: small folder cards only in the navigation rail. */
+.hub .folderRow { margin:4px 0; padding:3px 5px; border:1px solid var(--owner-line,#505055); border-radius:8px; background:var(--owner-raised,#2c2c2d); }
+.hub .folderChildren { margin-left:9px; padding-left:6px; border-left:0; }
+.hub .folderLink svg { color:var(--owner-ink,#d0d0d0); }
+.hub .keyboardPlacement { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.hub .keyboardPlacement:has(:focus-visible),.hub .keyboardPlacement[data-placing=true] { position:static; width:auto; height:auto; clip-path:none; overflow:visible; display:flex; gap:6px; flex-wrap:wrap; }
+/* Keyboard placement expands into its own row, never squeezing the filename. */
+.hub .details .item:has(.keyboardPlacement :focus-visible, .keyboardPlacement[data-placing=true]) > .identity { grid-column:2/-1; }
+.hub .details .item:has(.keyboardPlacement :focus-visible, .keyboardPlacement[data-placing=true]) > .actions { grid-column:1/-1; min-width:0; justify-content:flex-end; }
+
+.hub{--owner-control-focus:var(--owner-wine,#800014);--owner-button-selected-line:var(--owner-wine,#800014);--owner-button-focus:var(--owner-wine,#800014)}

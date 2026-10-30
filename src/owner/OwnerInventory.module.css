@@ -7,7 +7,7 @@
 .filters { display:grid;grid-template-columns:2fr repeat(3,1fr);gap:14px;margin-top:20px;align-items:end; }
 .filters label,.form label,.categoryName { display:grid;gap:7px;font-size:13px;min-width:0; }
 .filters input,.form input,.form textarea,.categoryName input { width:100%;min-width:0;border:1px solid var(--owner-line,#d9ced2);background:var(--owner-input-bg,var(--owner-card,#fff));color:var(--owner-ink,#342a2c);border-radius:9px;padding:10px 12px;font:inherit;box-sizing:border-box; }
-.filters input:focus-visible,.form input:focus-visible,.form textarea:focus-visible { outline:2px solid var(--owner-wine,#800014);outline-offset:2px; }
+.filters input:focus-visible,.form input:focus-visible,.form textarea:focus-visible { outline:2px solid var(--owner-wine,#7f0011);outline-offset:2px; }
 .hint { color:var(--owner-muted,#6d6064);font-size:12px;line-height:1.6; }
 .grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,290px),1fr));gap:16px; }
 .card { background:var(--owner-card,#fff);border:1px solid var(--owner-line,#ded3d5);border-radius:14px;padding:18px;min-width:0; }.card p { margin:9px 0; }.card h3 { margin:0;overflow-wrap:anywhere;font-size:17px; }.cardTop { display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;justify-content:space-between; }
@@ -91,3 +91,45 @@
 .cardActions { display:flex; flex-wrap:nowrap; align-items:center; gap:8px; margin-top:14px; }
 .cardActions .cardIcon { width:38px; min-width:38px; height:38px; min-height:38px; padding:0; flex:0 0 38px; display:inline-flex; align-items:center; justify-content:center; }
 .cardIcon svg { pointer-events:none; flex-shrink:0; }
+
+/* Status is always the next line after the card title, including archived cards. */
+.cardTop { display:block; }
+.cardBadges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.low { background:#ffdfbf; color:#743b0d; }
+:global([data-owner-portal][data-color-mode="dark"]) .card .low { background:#59321c!important; color:#ffdbb9!important; }
+.scanHelp { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.scanHelp p { flex:1 1 360px; }
+.choiceHeading { font-size:14px; margin:16px 0 8px; }
+.choiceList { display:grid; gap:8px; list-style:none; padding:0; margin:0; }
+.choiceList li { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.choiceList li > span { flex:1 1 160px; overflow-wrap:anywhere; }
+.choiceList button { min-height:36px; font-size:12px; }
+.summary > button[aria-pressed="true"] { border-color:var(--owner-wine,#7f0011); box-shadow:inset 0 0 0 1px var(--owner-wine,#7f0011); }
+.summary > button:focus-visible { outline:2px solid var(--owner-wine,#7f0011); outline-offset:3px; }
+:global([data-owner-portal][data-color-mode="dark"]) .summary > button[aria-pressed="true"] { border-color:#7f0011; box-shadow:inset 0 0 0 1px #7f0011; }
+
+.card[data-scan-highlight] { outline:3px solid #34b875; outline-offset:3px; box-shadow:0 0 0 7px #34b87522; scroll-margin-block:100px; }
+.categories { padding:4px; }.categories .choiceList li { display:flex; align-items:center; gap:8px; }.categories .choiceList li>span { flex:1; }.categories button[aria-label^="Delete"] { color:#7f0011; }
+/* Choice dialogs are short forms, not full-width inventory editors. */
+:global(dialog):has(.categories), :global(dialog):has(.choiceField) { width:min(520px,calc(100vw - 32px)); }
+.choiceField { display:grid; gap:8px; font-size:13px; }
+.choiceField input { width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid var(--owner-line,#d8c4cc); border-radius:6px; color:var(--owner-ink,#2b2025); background:var(--owner-surface,#fff); }
+.categories .choiceList { gap:6px; }
+.categories .choiceHeading { margin:12px 0 6px; }
+.categories .choiceList li > span { flex:1 1 120px; }
+
+/* Keep the final toolbar action at the section’s right edge without reordering controls. */
+.root .toolbar > .toolbarRefresh { margin-left:auto; }
+/* Shared premade-style trash affordance; action and confirmation are unchanged. */
+:global([data-owner-portal]) .root button:has(>svg[data-owner-trash-icon]),:global([data-owner-portal]) .categories button:has(>svg[data-owner-trash-icon]) { width:36px; min-width:36px; height:36px; padding:8px; border-radius:8px; color:#f16d83!important; background:transparent!important; border:1px solid var(--owner-control-line,var(--owner-line,#85858c))!important; }
+
+.categories>div { padding-bottom:14px; margin-bottom:14px; border-bottom:1px solid #ffffff88; }
+.categories>div:last-child { margin-bottom:0; }
+
+.categories .choiceHeading { font-weight:500!important; }
+
+:global([data-owner-portal][data-color-mode="dark"]) .summary>button[aria-pressed="true"] { border-color:#7f0011!important; box-shadow:inset 0 0 0 1px #7f0011!important; }
+
+/* Fox17: pencil blends normally; the shared keyboard focus stays visible. */
+:global([data-owner-portal][data-color-mode="dark"]) .toolbar .cardIcon[aria-label="Manage inventory choices"],
+:global([data-owner-portal][data-color-mode="dark"]) .cardActions .cardIcon[aria-label^="Edit "] { border:1px solid var(--owner-control-line,#85858c)!important; background:transparent!important; }

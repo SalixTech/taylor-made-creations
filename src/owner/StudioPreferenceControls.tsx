@@ -1,0 +1,26 @@
+"use client";
+import { useState } from "react";
+import { useStudioSettings, refreshStudioSettings, retryStudioSettings, saveStudioSettings } from "./use-studio-settings";
+import { importLocalWhimsy, readLocalOwnerWhimsy, readLocalOwnerWhimsyTerms } from "./owner-whimsy";
+import { RefreshButton } from "@/components/RefreshButton";
+import ui from "./OwnerPortal.module.css";
+export function StudioPreferenceRefresh() {
+  const state = useStudioSettings();
+  return <RefreshButton label="Refresh account preferences" busy={state.loading} disabled={state.busy} onClick={refreshStudioSettings} />;
+}
+export function StudioPreferenceStatus() {
+  const state = useStudioSettings();
+  return <div aria-live="polite"><p className={ui.help}>{state.loading ? "Checking account preferences…" : state.busy ? "Saving account preferences…" : state.error ? "Account preferences need attention." : state.settings ? "Saved to your owner account. Changes sync across signed-in devices, separately from website drafts." : "Account preferences are unavailable."}</p>{state.error && <p role="alert" className={ui.error}>{state.error}</p>}{state.retry && <button type="button" className={ui.secondary} disabled={state.busy} onClick={() => void retryStudioSettings()}>Retry preference save</button>}</div>;
+}
+export function ImportBrowserWhimsy() {
+  const state = useStudioSettings(), [confirm, setConfirm] = useState(false);
+  const localTerms = readLocalOwnerWhimsyTerms(), localEnabled = readLocalOwnerWhimsy();
+  if (!state.settings || state.settings.revision !== 0 || !localTerms.length && localEnabled) return null;
+  return <div><p className={ui.help}>This browser has an older Whimsy preference{localTerms.length ? ` and ${localTerms.length} custom words` : ""}. It has not overwritten your account defaults.</p><button type="button" className={ui.secondary} disabled={state.busy || state.retry} onClick={() => setConfirm(true)}>Review browser preference</button>{confirm && <div role="group" aria-label="Import browser Whimsy"><p>Save Whimsy {localEnabled ? "On" : "Off"} and these words to your account: {localTerms.join(", ") || "none"}?</p><button type="button" className={ui.secondary} disabled={state.busy} onClick={() => void importLocalWhimsy().then(saved => { if (saved) setConfirm(false); })}>Import to account</button><button type="button" className={ui.secondary} disabled={state.busy} onClick={() => setConfirm(false)}>Keep account defaults</button></div>}</div>;
+}
+export function GlobalUpdateCooldown() {
+  const state = useStudioSettings(), [days, setDays] = useState<{ text: string; revision: number } | null>(null), [resetConfirm, setResetConfirm] = useState<number | null>(null);
+  const value = days?.text ?? String(state.settings?.updateRequestCooldownDays ?? 7), numeric = Number(value);
+  const disabled = state.loading || state.busy || !state.settings || state.retry;
+  return <section className={ui.compactCooldown} aria-label="Global update request cooldown"><h3>Update request interval</h3><p className={ui.help}>Default for all clients unless Taylor sets an individual override. Support and Maker Chat remain available. General sending limits always apply.</p><form onSubmit={event => { event.preventDefault(); if (!disabled && value.trim() && Number.isInteger(numeric) && numeric >= 0 && numeric <= 365) void saveStudioSettings({ updateRequestCooldownDays: numeric }, false, days?.revision ?? state.settings?.revision).then(saved => { if (saved) setDays(null); }); }}><label>Days between update requests<input type="number" min="0" max="365" step="1" value={value} disabled={disabled} onChange={event => setDays(previous => ({ text: event.target.value, revision: previous?.revision ?? state.settings!.revision }))} /></label><p className={ui.help}>{days && days.revision !== state.settings?.revision && <strong>Account settings changed elsewhere. Use the saved interval to review the latest setting before saving. </strong>}0 disables this cooldown. 7 is one week. Changing the interval applies to the last successful request; it does not erase history.</p><div className={ui.cooldownActions}><button type="submit" className={ui.secondary} disabled={disabled || !value.trim() || !Number.isInteger(numeric) || numeric < 0 || numeric > 365}>Save default interval</button>{days && <button type="button" className={ui.secondary} disabled={state.busy} onClick={() => setDays(null)}>Use saved interval</button>}<button type="button" className={ui.secondary} disabled={disabled} onClick={() => setResetConfirm(state.settings!.revision)}>Reset all update cooldowns</button></div></form>{resetConfirm !== null && <div role="group" aria-label="Confirm global cooldown reset"><p>Allow every client to request an update now, including clients with an individual interval? Existing requests and general rate limits stay unchanged.</p><button type="button" className={ui.secondary} disabled={disabled} onClick={() => void saveStudioSettings({}, true, resetConfirm).then(saved => { if (saved) setResetConfirm(null); })}>Confirm reset for all clients</button><button type="button" className={ui.secondary} disabled={state.busy} onClick={() => setResetConfirm(null)}>Cancel</button></div>}</section>;
+}

@@ -1,5 +1,8 @@
 "use client";
 
+import { RefreshButton } from "@/components/RefreshButton";
+import { useOutcomeNotice } from "./use-outcome-notice";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OwnerStore } from "./storage";
 import type { SiteAccess } from "./site-access";
@@ -17,7 +20,7 @@ export function ConstructionModeSettings({ store, disabled, beginUpdate, endUpda
   const [checking, setChecking] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [, setNotice, noticeView] = useOutcomeNotice("success");
   const [confirmation, setConfirmation] = useState<{ constructionMode: boolean; revision: number } | null>(null);
   const mounted = useRef(false);
   const request = useRef(0);
@@ -89,25 +92,25 @@ export function ConstructionModeSettings({ store, disabled, beginUpdate, endUpda
   }
 
   const blocked = disabled || saving || checking || !live || !available;
-  return <Card title="Construction Mode">
+  return <Card title="Construction Mode" description="Choose when visitors can explore your published website." action={<div className={styles.actions}>
+          <button type="button" data-owner-button className={`${buttons.button} ${buttons.primary}`} disabled={blocked || selected === live?.constructionMode} aria-busy={saving} onClick={() => {
+            if (!blocked && live && selected !== live.constructionMode) setConfirmation({ constructionMode: selected, revision: live.revision });
+          }}>{saving ? "Updating live…" : "Update live"}</button>
+          {available && <RefreshButton label="Refresh Construction Mode" busy={checking} disabled={disabled || saving} onClick={() => { void check(); }} />}
+        </div>}>
     <div className={styles.content}>
-      <p className={ui.help}>Live Construction Mode: <strong>{!available ? "Not connected" : checking ? "Checking…" : live ? live.constructionMode ? "On" : "Off" : "Could not check"}</strong>.</p>
+      <p className={styles.liveStatus}>Live Construction Mode: <strong data-live-mode={available && !checking && live ? live.constructionMode ? "on" : "off" : "unknown"}>{!available ? "Not connected" : checking ? "Checking…" : live ? live.constructionMode ? "On" : "Off" : "Could not check"}</strong></p>
       <div className={styles.controls}>
         <fieldset disabled={blocked} className={styles.setting}>
           <Toggle label="Construction Mode" checked={selected} onChange={value => { if (!blocked) { setSelected(value); setNotice(null); } }} hint="On shows the construction page. Off opens the published website. Use Update live to apply." />
         </fieldset>
-        <div className={styles.actions}>
-          <button type="button" data-owner-button className={`${buttons.button} ${buttons.primary}`} disabled={blocked || selected === live?.constructionMode} aria-busy={saving} onClick={() => {
-            if (!blocked && live && selected !== live.constructionMode) setConfirmation({ constructionMode: selected, revision: live.revision });
-          }}>{saving ? "Updating live…" : "Update live"}</button>
-          {available && <button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} disabled={disabled || checking || saving} onClick={() => { void check(); }}>Check again</button>}
-        </div>
+
       </div>
       <p className={ui.help}>Update live changes only this setting. It does not save or publish your draft.</p>
       {!available && <p className={ui.help}>Live Construction Mode controls are not connected in this workspace.</p>}
       {error && <p className={ui.error} role="alert">{error}</p>}
-      {notice && <p className={ui.help} role="status">{notice}</p>}
-      <p className={ui.help}>Visible visitor tabs check about every 30 seconds or on focus. Downloads, public image links and cached copies cannot be recalled.</p>
+      {noticeView(ui.notice)}
+      <details className={styles.refreshNote}><summary>Visitor refresh &amp; cached copies</summary><p className={ui.help}>Visible visitor tabs check about every 30 seconds or on focus. Downloads, public image links and cached copies cannot be recalled.</p></details>
     </div>
     {confirmation && <Dialog title={confirmation.constructionMode ? "Turn Construction Mode on?" : "Open the published website to visitors?"} onClose={() => setConfirmation(null)} actions={<>
       <button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} onClick={() => setConfirmation(null)}>Cancel</button>

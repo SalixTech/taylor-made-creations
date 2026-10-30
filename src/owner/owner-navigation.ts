@@ -1,3 +1,4 @@
+import { OWNER_HUB_LOCATION_CHANGED, OWNER_HUB_LOCATION_RESTORE } from "./owner-hub-location";
 /** Owner workspace URLs are intentionally separate from /taylor/preview/*. */
 export const OWNER_SECTION_SLUGS = {
   overview: "overview", pages: "pages", prices: "prices", photos: "photos",
@@ -58,6 +59,7 @@ export function createOwnerNavigation(browser: Window, callbacks: {
   const acceptPop = (destination: OwnerDestination, mark: HistoryMark) => {
     current = mark; currentUrl = browser.location.href; currentState = browser.history.state;
     callbacks.arrive(destination);
+    if (destination.section === "clients") browser.dispatchEvent(new Event(OWNER_HUB_LOCATION_RESTORE));
   };
   const onPopState = (event: PopStateEvent) => {
     const mark = historyMark(event.state ?? browser.history.state);
@@ -90,6 +92,12 @@ export function createOwnerNavigation(browser: Window, callbacks: {
     }
   };
   browser.addEventListener("popstate", onPopState, true);
+  const hubLocationChanged = () => {
+    const mark = historyMark(browser.history.state);
+    if (restoring || approvedIndex !== null || mark?.session !== current.session || mark.index !== current.index || ownerDestinationFromUrl(browser.location.href)?.section !== "clients") return;
+    currentUrl = browser.location.href; currentState = browser.history.state;
+  };
+  browser.addEventListener(OWNER_HUB_LOCATION_CHANGED, hubLocationChanged);
 
   return {
     get restoring() { return restoring !== null || approvedIndex !== null; },
@@ -116,6 +124,6 @@ export function createOwnerNavigation(browser: Window, callbacks: {
       }
       callbacks.arrive(destination);
     },
-    dispose() { browser.removeEventListener("popstate", onPopState, true); },
+    dispose() { browser.removeEventListener("popstate", onPopState, true); browser.removeEventListener(OWNER_HUB_LOCATION_CHANGED, hubLocationChanged); },
   };
 }

@@ -1,0 +1,38 @@
+.editor { min-width:0; }
+.add { display:flex; align-items:flex-end; gap:12px; margin:0 0 16px; }
+.add label { flex:1; min-width:0; }
+.add label,.fields label { display:flex; flex-direction:column; gap:7px; font-size:13px; }
+.add input,.fields input { width:100%; min-width:0; min-height:42px; border:1px solid var(--owner-line,#505055); border-radius:9px; background:var(--owner-raised,#303034); color:var(--owner-ink,#f4edf0); padding:9px 12px; font:inherit; }
+.hint { font-size:12px; line-height:1.55; color:var(--owner-muted,#c5c5c9); margin:12px 0; }
+.list { position:relative; display:flex; flex-direction:column; gap:10px; }
+.row { display:grid; grid-template-columns:28px minmax(0,1fr) 38px 46px; align-items:center; gap:8px; min-height:66px; padding:10px 12px; border:1px solid var(--owner-line,#505055); border-radius:12px; background:var(--owner-surface,#242426); color:var(--owner-ink,#f4edf0); transition:border-color .16s ease,box-shadow .16s ease; }
+.row[data-dragging] { border:2px dashed var(--owner-wine,#e63950); padding:9px 11px; opacity:.45; }
+.ordinal { font-variant-numeric:tabular-nums; font-size:13px; text-align:left; }
+:global([data-owner-portal]) .handle:global([data-owner-button]) { appearance:none; display:flex; align-items:center; gap:9px; width:100%; min-width:0; min-height:44px; border:0!important; background:transparent!important; padding:0!important; color:inherit!important; text-align:left; touch-action:none; cursor:grab; font:inherit; font-weight:600; }
+.handle > span:last-child { min-width:0; overflow-wrap:anywhere; }
+.handle small { display:block; font-size:10px; font-weight:400; color:var(--owner-muted,#c5c5c9); margin-top:4px; }
+.handle:active { cursor:grabbing; }
+.handle:focus-visible { outline:2px solid var(--owner-wine,#e63950); outline-offset:3px; border-radius:5px; }
+.swatch { width:14px; height:14px; border:1px solid #fff8; border-radius:50%; flex:0 0 auto; }
+:global([data-owner-portal]) .icon:global([data-owner-button]),:global([data-owner-portal]) .trash:global([data-owner-button]) { padding:7px!important; min-width:0; width:100%; min-height:36px; gap:0; }
+:global([data-owner-portal]) .trash:global([data-owner-button]) { color:var(--owner-wine,#e63950)!important; }
+.show { font-size:10px; }
+.ghost { position:fixed; z-index:2147483647; pointer-events:none; box-sizing:border-box; margin:0; opacity:.98; border:2px solid var(--owner-wine,#e63950)!important; background:var(--owner-surface,#242426)!important; box-shadow:0 14px 36px #0008; transform:rotate(1deg); }
+.ghost strong { font-size:14px; overflow-wrap:anywhere; min-width:0; }
+.fields { display:flex; flex-direction:column; gap:14px; }
+.colors { display:grid; grid-template-columns:minmax(100px,.65fr) minmax(0,1fr); gap:14px; }
+.colors input[type="color"] { padding:4px; height:44px; cursor:pointer; }
+.rgb { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+@media(max-width:480px){.row{grid-template-columns:23px minmax(0,1fr) 34px 40px;gap:5px;padding:8px}.row[data-dragging]{padding:7px}.add{gap:8px}.add button{padding:9px!important}.rgb{gap:8px}.colors{grid-template-columns:90px minmax(0,1fr)}}
+@media(prefers-reduced-motion:reduce){.row{transition:none}.ghost{transform:none}}
+:global([data-owner-portal]) .fields { gap:10px; }
+:global([data-owner-portal]) .fields>label,:global([data-owner-portal]) .fields>p,:global([data-owner-portal]) .fields>.colors,:global([data-owner-portal]) .fields>.advanced { margin:0!important; }
+:global([data-owner-portal]) .fields label { margin:0!important; gap:6px; }
+:global([data-owner-portal]) .fields .hint { font-size:12px; line-height:1.5; }
+.advanced>summary { cursor:pointer; font-size:12px; padding:5px 0; }
+.advanced[open] .rgb { margin-top:8px; }
+/* Use the standard neutral action surface and shared trash glyph, not a dark red variant. */
+:global([data-owner-portal][data-color-mode=dark]) .row .trash:global([data-owner-button]) {
+ background:#2c2c2d!important; border:1px solid #85858c!important; color:#d0d0d0!important;
+}
+:global([data-owner-portal][data-color-mode=dark]) .row .trash:global([data-owner-button])>svg { color:#d0d0d0!important; }

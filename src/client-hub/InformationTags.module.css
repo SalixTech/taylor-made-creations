@@ -1,0 +1,9 @@
+.tags { display:flex; flex-wrap:wrap; gap:6px; list-style:none; margin:10px 0; padding:0; }
+.tags>li { --tag-bg:#ead8ff; --tag-ink:#57327a; display:inline-flex; align-items:center; border:1px solid transparent; border-radius:999px; padding:4px 9px; background:var(--tag-bg); color:var(--tag-ink); font-size:10px; font-weight:600; line-height:1.5; }
+.tags>li[data-information-tag=paid-100] { --tag-bg:#ceedd7; --tag-ink:#18532d; }
+.tags>li[data-information-tag=paid-partial] { --tag-bg:#fff0a3; --tag-ink:#665000; }
+:global([data-color-mode=dark]) .tags>li[data-information-tag] { background:var(--tag-bg)!important; color:var(--tag-ink)!important; border-color:transparent!important; }
+
+.tags [data-information-tag="dtd-received"] { --tag-bg:#d9f4e2; --tag-ink:#185d32; border-color:#9ed7b1; }
+
+.tags { flex-direction:column; align-items:flex-start; }

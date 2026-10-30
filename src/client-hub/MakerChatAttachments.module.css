@@ -1,0 +1,92 @@
+.paperclip { width:36px; min-width:36px; height:36px; display:grid; place-items:center; padding:0; color:var(--work-ink); background:var(--work-bg); border:1px solid var(--work-line); border-radius:9px; cursor:pointer; }
+.dialog { width:min(760px,calc(100vw - 28px)); max-height:calc(100dvh - 28px); padding:0; border:1px solid var(--work-line); border-radius:16px; background:var(--work-bg,var(--hub-bg,#fff)); color:var(--work-ink,var(--hub-ink,#342a2c)); box-shadow:0 20px 80px #0006; overflow:auto; }.dialog::backdrop { background:#151016a6; }
+.dialog header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px 20px; border-bottom:1px solid var(--work-line); }.dialog h2 { font-size:20px; margin:0 0 4px; }.dialog p { font-size:12px; line-height:1.6; }.dialog header p { margin:0; }.body { padding:18px 20px; }.dialog button { min-height:36px; border:1px solid var(--work-line); border-radius:9px; padding:7px 12px; color:inherit; background:var(--work-soft,var(--hub-bg,#fff)); font:inherit; font-size:12px; cursor:pointer; }.dialog button:disabled { opacity:.55; cursor:not-allowed; }.dialog button:focus-visible,.dialog input:focus-visible { outline:2px solid #b61837; outline-offset:2px; }.dialog .close { padding:0; width:34px; min-width:34px; font-size:24px; line-height:1; }.actions,.galleryHeading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }.actions { justify-content:flex-end; margin-top:12px; }.upload label,.legacy label { display:grid; gap:8px; font-size:13px; }.upload input,.legacy input[type=datetime-local] { width:100%; border:1px solid var(--work-line); padding:9px; border-radius:8px; box-sizing:border-box; color:inherit; background:transparent; }.legacy .check { display:flex; align-items:flex-start; margin:12px 0; }.dialog .legacy input[type=checkbox] { flex:none; width:16px; min-width:16px; height:16px; padding:0; margin:3px 0 0; }.files { list-style:none; padding:0; margin:8px 0; }.files li { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid var(--work-line); }.files li>div { min-width:0; }.files strong { display:block; font-size:13px; overflow-wrap:anywhere; }.files small { display:block; margin-top:5px; font-size:11px; color:var(--work-muted); }.files button { flex:none; }.error { padding:10px; border:1px solid #bd314e; border-radius:8px; color:var(--owner-error,#bd314e); }.success { color:var(--hub-success,#267449); }.progress { display:grid; gap:6px; margin:12px 0; font-size:12px; }.progress progress { width:100%; accent-color:#b61837; }.caption { color:var(--work-muted); }.galleryHeading { margin-top:18px; }.galleryHeading h3 { font-size:15px; margin:0; }
+@media(max-width:520px) { .body,.dialog header { padding:14px; }.files li { align-items:flex-start; }.files small { line-height:1.7; } }
+
+:global([data-color-mode=dark]) .success { color:#85dba1; }
+
+.completionDetails { margin-top:16px; border-top:1px solid var(--work-line); padding-top:12px; min-width:0; }
+.completionDetails summary { cursor:pointer; font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.completionDetails summary:focus-visible { outline:2px solid #b61837; outline-offset:2px; }
+.legacy { min-width:0; }
+.legacy .check { gap:10px; overflow-wrap:anywhere; }
+
+.paperclip svg { display:block; margin:auto; }.dialog .close { border:0; background:transparent; box-shadow:none; }
+
+.paperclip.paperclip { display:grid; place-items:center; width:36px; height:36px; min-width:36px; padding:0; }
+
+/* Fixed filename/action tracks keep downloads aligned despite long names. */
+.files li { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.7fr); align-items:center; gap:14px; }
+.files strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; overflow-wrap:normal; }
+.fileActions { display:grid; justify-self:end; grid-template-columns:116px 88px 112px; align-items:center; gap:8px; }
+.fileActions button { width:100%; white-space:nowrap; padding-inline:8px; }
+.dialog .refresh { display:grid; place-items:center; width:36px; height:36px; padding:0; }
+.renameField { display:grid; gap:8px; font-size:13px; }
+.renameField input { min-width:0; width:100%; padding:10px 12px; border:1px solid var(--owner-line,var(--work-line)); border-radius:9px; color:inherit; background:transparent; font:inherit; box-sizing:border-box; }
+.renameField small { color:var(--owner-muted,var(--work-muted)); }
+@media(max-width:620px) { .files li { grid-template-columns:minmax(0,1fr); gap:8px; } .fileActions { justify-self:end; grid-template-columns:auto auto auto; max-width:100%; } .fileActions button { font-size:11px; } }
+@media(max-width:360px) { .fileActions { grid-template-columns:1fr 1fr; justify-self:stretch; } .fileActions button:first-child { grid-column:1/-1; } }
+
+.fileActions { flex-wrap:wrap; gap:8px; }
+.fileActions button { flex:0 0 auto; white-space:nowrap; padding:9px 12px; min-height:40px; line-height:1.4; }
+.success { background:#153f2c; color:#c6f4d6; border:1px solid #397d55; border-radius:9px; padding:10px 12px; }
+.dialog>header { position:relative; padding-right:50px; }.dialog .close { position:absolute; top:8px; right:8px; width:34px; height:34px; display:grid; place-items:center; padding:0; }
+
+/* Compact shared-file rows and an explicit foreground handle for background sends. */
+.dialog>header { padding:12px 48px 12px 16px; }
+.dialog .body { padding:12px 16px; }
+.dialog .galleryHeading { margin-top:4px; }
+.dialog .fileActions { grid-template-columns:minmax(104px,auto) 40px minmax(96px,auto); gap:8px; }
+.dialog .fileActions button { min-width:0; text-align:center; display:inline-flex; align-items:center; justify-content:center; }
+.dialog .fileActions button:nth-child(2) { width:40px; padding:8px; }
+.dialog .close { display:grid!important; place-items:center; min-width:34px; width:34px; height:34px; padding:0!important; border:0!important; background:transparent!important; }
+.pendingFiles { list-style:none; padding:0; margin:12px 0; display:grid; gap:10px; }
+.pendingFiles li { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--work-line); }
+.pendingFiles li>span { min-width:0; overflow-wrap:anywhere; font-size:13px; }
+.pendingFiles li>div { display:flex; gap:8px; flex-shrink:0; }
+.dialog .upload input[hidden] { display:none; }
+.dialog .upload { margin-bottom:18px; }
+.backgroundStatus { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; margin:8px; border:1px solid var(--work-line); border-radius:9px; background:var(--work-bg); font-size:13px; }
+.backgroundStatus[role=alert] { border-color:#e63950; }
+.backgroundStatus button { padding:7px 12px; color:inherit; background:transparent; border:1px solid var(--work-line); border-radius:8px; white-space:nowrap; }
+@media(max-width:520px) { .pendingFiles li { align-items:flex-start; flex-direction:column; } .pendingFiles li>div { align-self:flex-end; } .dialog .fileActions { grid-template-columns:minmax(92px,auto) 36px minmax(88px,auto); gap:6px; } .dialog .fileActions button { padding:7px; } .dialog .fileActions button:nth-child(2) { width:36px; } }
+:global([data-color-mode="dark"]) .dialog .close { background:transparent!important; border:0!important; padding:0!important; }
+.dialog .upload .pendingFiles input.hiddenChooser[hidden] { display:none!important; width:0!important; min-width:0!important; }
+.dialog .pendingFiles li { display:grid; grid-template-columns:54px minmax(0,1fr); align-items:center; gap:10px; }
+.dialog .pendingFiles li>div { grid-column:2; justify-content:flex-end; flex-wrap:wrap; }
+.dialog .pendingFiles li>span { min-width:0; overflow-wrap:anywhere; }
+.dialog .stagedThumbnail { width:54px; height:54px; padding:0; border-radius:8px; overflow:hidden; }
+.stagedThumbnail img { display:block; width:100%; height:100%; object-fit:cover; }
+.stagedFileIcon { width:54px; display:grid; place-items:center; font-size:10px; color:var(--work-muted); }
+.backgroundStatus { flex-wrap:wrap; padding:12px; gap:12px; background:var(--work-bg)!important; border-color:var(--work-line)!important; }
+.transferSummary { flex:1 1 200px; min-width:0; display:grid; gap:5px; overflow-wrap:anywhere; }
+.transferSummary small { color:var(--work-muted); font-size:11px; }
+.transferSummary progress { width:100%; height:5px; accent-color:#e63950; }
+.transferActions { display:flex; gap:8px; margin-left:auto; align-items:center; flex-wrap:wrap; }
+.backgroundStatus .transferActions button { width:auto; min-height:34px; min-width:0; padding:6px 10px; background:transparent!important; border:1px solid var(--work-line)!important; box-shadow:none; }
+.backgroundStatus[role=alert] { border-color:#e63950!important; }
+.backgroundStatus { flex-shrink:0; }
+/* Compact history/pending rows reserve room for the image and align actions. */
+.dialog>header { padding:10px 48px 10px 14px; }
+.dialog>header h2 { margin:0 0 3px; font-size:18px; }
+.dialog>header p { font-size:11px; line-height:1.35; }
+.dialog .body { padding:10px 14px; }
+.dialog .files li { grid-template-columns:64px minmax(0,1fr) auto; gap:10px; padding:10px 0; }
+.dialog .pendingFiles li { grid-template-columns:54px minmax(0,1fr) auto; }
+.dialog .pendingFiles li>div { grid-column:auto; }
+.savedThumbnail { width:64px; height:64px; padding:0!important; display:grid; place-items:center; overflow:hidden; border:1px solid var(--work-line,#505055); border-radius:9px; background:#18181b; color:inherit; cursor:pointer; }
+.savedThumbnail img { display:block; width:100%; height:100%; object-fit:cover; }
+.savedThumbnail span { font-size:10px; line-height:1.3; padding:4px; }
+:global([data-color-mode="dark"]) .dialog button.close { background:transparent!important; border:0!important; box-shadow:none!important; }
+@media(max-width:650px) { .dialog .files li,.dialog .pendingFiles li { grid-template-columns:54px minmax(0,1fr); } .dialog .files .fileActions,.dialog .pendingFiles li>div { grid-column:2; justify-self:end; } }
+.savedThumbnail .previewSpinner { display:block; width:20px; height:20px; padding:0; box-sizing:border-box; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:attachment-preview-spin .8s linear infinite; }
+@keyframes attachment-preview-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .savedThumbnail .previewSpinner { animation:none; border-style:dotted; } }
+/* Beat owner-wide dialog button backgrounds without altering other dialog controls. */
+:global([data-owner-portal][data-color-mode]) dialog.dialog>header>button.close,
+:global([data-color-mode]) dialog.dialog>header>button.close { background:transparent!important; background-image:none!important; border:0!important; box-shadow:none!important; border-radius:0; }
+.transferSpinner { display:inline-block; width:18px; height:18px; box-sizing:border-box; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:attachment-preview-spin .8s linear infinite; vertical-align:middle; margin-right:7px; }
+@media(prefers-reduced-motion:reduce) { .transferSpinner { animation:none; border-style:dotted; } }
+.dialog .stagedThumbnail { display:grid; place-items:center; }
+.stagedThumbnail>img,.stagedThumbnail>span { grid-area:1/1; }
+.stagedThumbnail .transferSpinner { margin:0; }

@@ -1,0 +1,29 @@
+.root { display:inline-flex; align-items:center; gap:8px; position:relative; color:var(--owner-ink,var(--hub-ink,#302c2c)); font:inherit; }
+.root .bell { position:relative; display:grid; place-items:center; width:44px; min-height:44px; padding:0; border:1px solid var(--owner-line,var(--hub-line,#ded3d5)); border-radius:12px; background:var(--owner-card,var(--hub-bg,#fff)); color:inherit; cursor:pointer; }
+.count { position:absolute; right:-4px; top:-5px; display:grid; place-items:center; min-width:19px; height:19px; padding:0 4px; border-radius:20px; background:#b61837; color:#fff; font-size:10px; font-weight:700; }
+.panel { position:absolute; right:0; top:calc(100% + 10px); width:min(380px,calc(100vw - 36px)); z-index:80; border:1px solid var(--owner-line,var(--hub-line,#ded3d5)); border-radius:16px; box-shadow:0 18px 60px #0003; background:var(--owner-card,var(--hub-bg,#fff)); padding:17px; }
+.panel header { display:flex; justify-content:space-between; align-items:center; gap:12px; }.panel header>strong { font-size:14px; }.panel header>button { display:grid; place-items:center; width:36px; height:36px; min-height:36px; padding:0; border:0; border-radius:8px; background:transparent; color:inherit; font-size:24px; line-height:1; cursor:pointer; }
+.panel p { font-size:12px; line-height:1.7; }.panel ul { list-style:none; padding:0; margin:12px 0; max-height:300px; overflow-y:auto; }
+.panel strong { font-size:12px; }.panel small { display:block; font-size:10px; line-height:1.7; color:var(--owner-muted,var(--hub-muted,#706a67)); }
+.actions { display:grid; gap:4px; margin:6px 0 10px; }.root .actions>button { justify-self:start; padding:6px 0; min-height:36px; border:0; background:transparent; color:inherit; font:inherit; font-size:11px; font-weight:700; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+.notificationCard { display:flex; align-items:center; gap:2px; border-bottom:1px solid var(--owner-line,var(--hub-line,#ded3d5)); }
+.root .openNotification { flex:1; min-width:0; min-height:78px; display:flex; align-items:center; gap:9px; padding:12px 3px; border:0; background:transparent; color:inherit; font:inherit; text-align:left; cursor:pointer; }
+.notificationText { flex:1; min-width:0; }.notificationText strong { display:block; overflow-wrap:anywhere; }.channel { display:block; margin-top:3px; font-size:11px; line-height:1.5; }.unreadDot { width:7px; height:7px; background:#b61837; border-radius:50%; flex-shrink:0; }
+.root .dismiss { display:grid; place-items:center; flex:0 0 36px; width:36px; height:36px; min-height:36px; padding:0; border:0; border-radius:8px; background:transparent; color:inherit; font:inherit; font-size:22px; line-height:1; cursor:pointer; }
+.dismiss:hover,.panel header>button:hover { background:var(--owner-button-secondary-bg,var(--hub-surface,#f8f4f4)); }.root button:disabled { opacity:.55; cursor:wait; }
+.preferences { display:grid; gap:10px; border-top:1px solid var(--owner-line,var(--hub-line,#ded3d5)); padding-top:14px; margin-top:12px; }.root .preferences>button { min-height:36px; border:1px solid var(--owner-line,var(--hub-line,#ded3d5)); border-radius:8px; background:var(--owner-button-secondary-bg,var(--hub-surface,#f8f4f4)); color:inherit; font:inherit; font-size:11px; cursor:pointer; }.preferences label { display:flex; align-items:center; gap:8px; font-size:11px; }.preferences input[type=checkbox] { width:16px; height:16px; accent-color:#b61837; }
+.root :is(button,input):focus-visible { outline:3px solid #c52643; outline-offset:3px; }
+:global([data-owner-portal][data-color-mode=dark]) .root .count { background:#b61837!important; color:#fff!important; }
+:global([data-owner-portal][data-color-mode=dark]) .root .unreadDot { background:#eb5974!important; }
+@media(max-width:650px) { .panel { position:fixed; top:85px; right:18px; max-height:calc(100dvh - 110px); overflow-y:auto; } .root .dismiss { flex-basis:44px; width:44px; height:44px; } }
+
+.panel header>button>svg,.dismiss>svg { display:block; flex:none; }
+
+/* One notification card contains its own dismiss action; no grey button islands. */
+.notificationCard { position:relative; display:block; border:1px solid var(--owner-line,var(--hub-line,#ded3d5)); border-radius:12px; margin-bottom:8px; overflow:hidden; }
+.root .openNotification { width:100%; padding:13px 43px 13px 12px; background:transparent; }
+.root .dismiss { position:absolute; right:5px; top:6px; width:32px; height:32px; min-height:32px; background:transparent; }
+:global([data-owner-portal][data-color-mode=dark]) .root button:is(.openNotification,.dismiss),
+:global([data-owner-portal][data-color-mode=dark]) .root .actions>button,
+:global([data-owner-portal][data-color-mode=dark]) .root .panel header>button { background:transparent!important; }
+.root .preferences>button { background:transparent; }

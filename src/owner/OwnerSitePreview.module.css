@@ -39,7 +39,7 @@
 .listing { min-width:0; }
 .listing h2 { font-size:27px; margin:20px 0 10px; }
 .listing p { white-space:pre-wrap; font-size:14px; }
-.listing .price { color:var(--wine); font-size:22px; margin:12px 0; }
+.listing .price, :global(.selected-design) .listing .price { color:var(--site-price-text,var(--wine)); font-size:22px; margin:12px 0; }
 .listing small { display:block; font-size:12px; color:var(--muted); }
 .previewFooter { padding:22px max(22px,calc((100% - 1084px)/2)); border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:16px; font-size:12px; background:#fff; }
 .previewFooter>div { display:flex; flex-wrap:wrap; gap:20px; }

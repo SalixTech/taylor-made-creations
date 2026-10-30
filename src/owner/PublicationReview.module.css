@@ -1,0 +1,26 @@
+.list { display:grid; gap:10px; margin-block:18px; }
+.change { display:grid; grid-template-columns:24px minmax(0,1fr); gap:12px; border:1px solid var(--owner-line,#443438); padding:16px; border-radius:10px; cursor:pointer; }
+.change:has(input:checked) { border-color:var(--owner-wine,#bb123b); background:color-mix(in srgb,var(--owner-wine,#bb123b) 7%,transparent); }
+.change input { width:20px; height:20px; accent-color:var(--owner-wine,#bb123b); margin-top:2px; }
+.change strong,.change small { display:block; }
+.change small { margin-top:6px; color:var(--owner-muted); line-height:1.5; }
+.diff { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; font-size:12px; overflow-wrap:anywhere; }
+.diff > span { border-radius:6px; padding:10px; background:var(--owner-raised,#242426); }
+.diff b { display:block; margin-bottom:6px; font-size:10px; text-transform:uppercase; color:var(--owner-muted); }
+.error { border:1px solid #e3596d; border-radius:8px; padding:12px; }
+.remainder { font-weight:600; }
+@media(max-width:580px) { .diff { grid-template-columns:1fr; } .change { padding:12px; } }
+
+.fields { margin-top:12px; cursor:auto; }
+.fields summary { cursor:pointer; font-size:12px; }
+.field { display:block; margin-top:12px; font-size:12px; }
+.field > span { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
+.field del,.field ins { display:block; padding:8px; border-radius:5px; overflow-wrap:anywhere; white-space:pre-wrap; max-height:180px; overflow:auto; text-decoration:none; background:var(--owner-raised,#242426); }
+.field del { border-left:2px solid #dc6a7d; }.field ins { border-left:2px solid #58b895; }
+.photos { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+.photos > span { min-width:0; }.photos b { display:block; font-size:11px; margin-bottom:6px; }
+.photos img { width:100%; max-height:140px; object-fit:contain; }
+@media(max-width:580px) { .field > span { grid-template-columns:1fr; } }
+
+.selectionTools { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+.selectionTools button { padding:8px 12px; border:1px solid var(--owner-line); border-radius:8px; background:var(--owner-raised); color:var(--owner-ink); cursor:pointer; }

@@ -1,0 +1,27 @@
+.dialog { z-index:100; }
+.panel { position:relative; padding:18px; border:1px solid #e63950; border-radius:14px; background:var(--owner-surface,var(--site-surface,#242426)); color:var(--owner-ink,var(--site-text,#f4edf0)); box-sizing:border-box; }
+.toolbar { padding-right:42px; min-height:32px; }
+.toolbar h2 { font-size:17px; overflow-wrap:anywhere; }
+.close { position:absolute; top:8px; right:8px; width:36px; height:36px; display:grid; place-items:center; padding:0; background:transparent; color:inherit; border:1px solid transparent; border-radius:8px; cursor:pointer; }
+.close:hover { border-color:#e63950; background:#80001433; }
+.stage { min-height:120px; overflow:auto; flex:1 1 auto; text-align:center; max-height:calc(100dvh - 230px); }
+.stage img { display:block; height:auto; margin:auto; object-fit:contain; }
+.controls { display:flex; justify-content:center; align-items:center; gap:8px; margin-top:12px; }
+.controls button { min-width:40px; min-height:36px; border:1px solid #505055; border-radius:8px; background:#303034; color:inherit; cursor:pointer; }
+.controls button:disabled { opacity:.45; cursor:default; }
+.close:focus-visible,.controls button:focus-visible { outline:2px solid #e63950; outline-offset:2px; }
+@media(max-width:600px){.panel{padding:12px}.stage{max-height:calc(100dvh - 210px)}}
+/* Keep the visible lightbox frame red above the shared dark panel cascade. */
+:global([data-owner-portal][data-color-mode="dark"]) .dialog .panel,
+:global([data-theme-scope="public"][data-color-mode="dark"]) .dialog .panel { border-color:#e63950!important; }
+
+:global([data-color-mode="dark"]) .dialog .panel { background:#18181b!important; border:2px solid #e63950!important; }
+:global([data-color-mode="dark"]) .dialog .panel .close { display:grid!important; place-items:center; width:36px; height:36px; min-width:36px; padding:0!important; background:transparent!important; border-color:transparent!important; }
+:global([data-color-mode="dark"]) .dialog .panel .stage { background:#18181b!important; }
+/* Shared owner toolbar rules must not paint a grey strip over the private viewer. */
+:global([data-color-mode="dark"]) .dialog .panel .toolbar,
+:global([data-color-mode="dark"]) .dialog .panel .toolbar h2 { background:transparent!important; border-color:transparent!important; }
+.dialog .panel .download { display:grid; place-items:center; width:36px; min-width:36px; height:36px; padding:0; }
+.loadingSpinner { display:block; width:24px; height:24px; box-sizing:border-box; margin:0 auto 8px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:private-photo-spin .8s linear infinite; }
+@keyframes private-photo-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .loadingSpinner { animation:none; border-style:dotted; } }

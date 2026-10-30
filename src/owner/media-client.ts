@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { loadOwnerPrivateMedia } from "./private-media-cache";
 import { CLOUD_PHOTO_SOURCE } from "./cloud-files-model";
 
 export const OWNER_MEDIA_SOURCE_PATTERN = /^\/api\/media\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -47,12 +48,7 @@ export function useOwnerMediaSource(source: string, enabled = true): { src: stri
             if (alive) setResult({ source, src: null, error: "Sign in again to view this private photo." });
           }
         });
-        const response = await fetch(source, { headers: { Authorization: `Bearer ${session.token}` }, cache: "no-store", credentials: "same-origin", signal: controller.signal });
-        if (!response.ok || response.headers.get("content-type") !== "image/webp") {
-          const body = await response.json().catch(() => null);
-          throw new Error(body && typeof body.message === "string" ? body.message : "This private photo could not be loaded.");
-        }
-        const blob = await response.blob();
+        const blob = await loadOwnerPrivateMedia(source, session, controller.signal);
         session.assertCurrent();
         if (!alive || controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);

@@ -1,10 +1,12 @@
 "use client";
 
+import { decodePrivateGallery, type PrivateGallery } from "./private-gallery";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { collection, doc, getDoc, getDocs, runTransaction } from "firebase/firestore/lite";
 import { getMetadata, getStorage, ref, uploadBytesResumable } from "firebase/storage";
 import { taylorOwnerSession } from "./taylor-services-client";
 import { notifyPrivateAssetLibraryChanged } from "./asset-library-client";
-import { assertActiveFolder, assertCloudId, CLOUD_BUCKET, CLOUD_FILE_MAX_BYTES, CLOUD_FONT_MAX_BYTES, CLOUD_FONTS_FOLDER_ID, CLOUD_FONT_TYPES, CLOUD_PRIVATE_EXTENSIONS, CLOUD_ORIGINAL_PHOTO_TYPES, isOriginalCloudPhoto, CLOUD_PHOTO_MAX_BYTES, CLOUD_PHOTO_INPUT_MAX_BYTES, cloudObjectPath, cloudPhotoSource, folderAncestors, decodeCloudFile, decodeCloudFolders, emptyCloudFolders, validFileName, type CloudFile, type CloudFolders } from "./cloud-files-model";
+import { assertActiveFolder, assertCloudId, CLOUD_BUCKET, CLOUD_FILE_MAX_BYTES, CLOUD_FONT_MAX_BYTES, CLOUD_FONTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, isProtectedCloudFolder, CLOUD_FONT_TYPES, CLOUD_PRIVATE_EXTENSIONS, CLOUD_ORIGINAL_PHOTO_TYPES, isOriginalCloudPhoto, CLOUD_PHOTO_MAX_BYTES, CLOUD_PHOTO_INPUT_MAX_BYTES, cloudObjectPath, cloudPhotoSource, decodeCloudFile, decodeCloudFolders, emptyCloudFolders, validFileName, type CloudFile, type CloudFolders } from "./cloud-files-model";
 
 import { decodeCloudFileOrder, emptyCloudFileOrder, reorderCloudKeys, type CloudFileOrder } from "./cloud-file-order";
 
@@ -91,6 +93,8 @@ export async function changeCloudFile(file: CloudFile, change: { name?: string; 
       if (current.revision !== file.revision) throw new Error("This file changed on another tab or device. Refresh before changing it again.");
       const folders = folderSnapshot.exists() ? decodeCloudFolders(folderSnapshot.data()) : emptyCloudFolders();
       const next = { ...current, ...change, revision: current.revision + 1, updatedAt: new Date().toISOString() };
+      if (change.parentId === CLOUD_COMMISSIONS_FOLDER_ID) throw new Error("Commission files use the private commission sharing controls.");
+      if (change.name !== undefined && change.name.length > 42) throw new Error("Use a file name of 42 characters or fewer.");
       if (change.parentId !== undefined) assertActiveFolder(folders, change.parentId);
       if (change.trashedAt === null) { try { assertActiveFolder(folders, next.parentId); } catch { next.parentId = "root"; } }
       decodeCloudFile(fileData(next), file.id); session.assertCurrent();
@@ -100,33 +104,15 @@ export async function changeCloudFile(file: CloudFile, change: { name?: string; 
   } catch (error) { changed(); throw message(error); }
 }
 export async function changeCloudFolder(registry: CloudFolders, id: string, change: { name?: string; parentId?: string; trashedAt?: string | null }): Promise<CloudFolders> {
+  assertCloudId(id);
+  if (isProtectedCloudFolder(id)) throw new Error("This protected folder stays at the top of File Hub.");
   try {
-    assertCloudId(id);
-    if (id === CLOUD_FONTS_FOLDER_ID) throw new Error("The default Fonts folder stays at the top of File Hub.");
-    const session = await connection();
-    const knownFiles = registry.folders[id] ? await getDocs(collection(session.db, CLOUD_FILES_COLLECTION)) : null;
-    session.assertCurrent();
-    const result = await runTransaction(session.db, async transaction => {
-      const target = doc(session.db, CLOUD_FOLDERS_DOCUMENT), snapshot = await transaction.get(target);
-      const current = snapshot.exists() ? decodeCloudFolders(snapshot.data()) : emptyCloudFolders();
-      if (current.revision !== registry.revision) throw new Error("Folders changed on another device. Refresh before changing them again.");
-      for (const known of knownFiles?.docs ?? []) {
-        const saved = await transaction.get(doc(session.db, CLOUD_FILES_COLLECTION, known.id));
-        if (!saved.exists()) continue;
-        const file = decodeCloudFile(saved.data(), known.id);
-        if (file.status === "deleting" && folderAncestors(current, file.parentId).includes(id)) throw new Error("A file inside this folder is being permanently deleted. Refresh before moving or restoring the folder.");
-      }
-      const next = structuredClone(current), existing = next.folders[id];
-      if (!existing && (!change.name || !change.parentId)) throw new Error("Name the new folder and choose its parent.");
-      const folder = { ...(existing ?? { name: "", parentId: "root", trashedAt: null }), ...change };
-      if (change.parentId !== undefined) assertActiveFolder(current, change.parentId);
-      if (change.trashedAt === null) { try { assertActiveFolder(current, folder.parentId); } catch { folder.parentId = "root"; } }
-      next.folders[id] = folder; next.revision++;
-      decodeCloudFolders(next); session.assertCurrent(); transaction.set(target, next); return next;
-    });
-    session.assertCurrent(); changed(); return result;
+    const session = await connection(); session.assertCurrent();
+    const response = await httpsCallable<unknown, { folders: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerChangeCloudFolder")({ folderId: id, expectedRevision: registry.revision, change });
+    session.assertCurrent(); const result = decodeCloudFolders(response.data.folders); changed(); return result;
   } catch (error) { changed(); throw message(error); }
 }
+
 async function normalizePhoto(file: File): Promise<{ blob: Blob; width: number; height: number }> {
   if (!["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"].includes(file.type) || !file.size || file.size > CLOUD_PHOTO_INPUT_MAX_BYTES) throw new Error("Choose a PNG, JPEG, WebP, GIF or AVIF photo no larger than 30 MB. SVG is not allowed.");
   const image = await createImageBitmap(file).catch(() => { throw new Error("This file could not be decoded as an image."); });
@@ -169,6 +155,8 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
   if (!validFileName(name)) throw new Error("Choose a file with a valid name.");
   if (fontType && !options.parentId) await ensureCloudFontsFolder();
   const id = crypto.randomUUID(), now = new Date().toISOString();
+  if (options.parentId === CLOUD_COMMISSIONS_FOLDER_ID) throw new Error("Use the private commission sharing controls for commission files.");
+  if (name.length > 42) throw new Error("Use a file name of 42 characters or fewer.");
   const record: CloudFile = { id, schemaVersion: 1, revision: 1, kind: photo ? "photo" : fontType ? "font" : pdf ? "pdf" : "file", name, parentId: options.parentId ?? (fontType ? CLOUD_FONTS_FOLDER_ID : "root"), contentType: photo ? "image/webp" : fontType ?? (pdf ? "application/pdf" : "application/octet-stream"), bytes: prepared.blob.size, width: prepared.width, height: prepared.height, status: "uploading", trashedAt: null, createdAt: now, updatedAt: now };
   try {
     const session = await connection(); signal?.throwIfAborted();
@@ -219,20 +207,13 @@ export async function downloadCloudFile(file: CloudFile, signal?: AbortSignal): 
   return blob;
 }
 
-export async function ensureCloudFontsFolder(): Promise<CloudFolders> {
-  const session = await connection();
-  const result = await runTransaction(session.db, async transaction => {
-    const target = doc(session.db, CLOUD_FOLDERS_DOCUMENT), snapshot = await transaction.get(target);
-    const current = snapshot.exists() ? decodeCloudFolders(snapshot.data()) : emptyCloudFolders();
-    if (current.folders[CLOUD_FONTS_FOLDER_ID]) {
-      if (current.folders[CLOUD_FONTS_FOLDER_ID].trashedAt || current.folders[CLOUD_FONTS_FOLDER_ID].parentId !== "root") throw new Error("The default Fonts folder needs repair before uploading fonts.");
-      return current;
-    }
-    const next = { ...current, revision: current.revision + 1, folders: { ...current.folders, [CLOUD_FONTS_FOLDER_ID]: { name: "Fonts", parentId: "root", trashedAt: null } } };
-    decodeCloudFolders(next); session.assertCurrent(); transaction.set(target, next); return next;
-  });
-  changed(); return result;
+export async function ensureCloudSystemFolders(): Promise<CloudFolders> {
+  const session = await connection(); session.assertCurrent();
+  const response = await httpsCallable<unknown, { folders: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerEnsureCloudFolders")({});
+  session.assertCurrent(); const result = decodeCloudFolders(response.data.folders); changed(); return result;
 }
+export const ensureCloudFontsFolder = ensureCloudSystemFolders;
+export const ensureCloudGalleryFolder = ensureCloudSystemFolders;
 export async function uploadCloudFont(file: File, options: { signal?: AbortSignal; onProgress?: (percent: number) => void } = {}): Promise<CloudFile> {
   if (!Object.hasOwn(CLOUD_FONT_TYPES, file.name.toLowerCase().split(".").pop() ?? "")) throw new Error("Choose a WOFF, WOFF2, TTF or OTF font.");
   return uploadCloudFile(file, options);
@@ -247,7 +228,7 @@ async function maintenance(body?: unknown): Promise<Record<string, unknown>> {
   return result;
 }
 export async function readCloudCleanupStatus(): Promise<CloudCleanupStatus> {
-  try { const result = await maintenance(); return { available: true, automaticCleanupEnabled: result.automaticCleanupEnabled === true, lastRunAt: typeof result.lastRunAt === "string" ? result.lastRunAt : null, message: typeof result.message === "string" ? result.message : "Cleanup service is available." }; }
+  try { const result = await maintenance(); return { available: result.available === true && result.manualDeletionConfigured === true, automaticCleanupEnabled: result.automaticCleanupEnabled === true, lastRunAt: typeof result.lastRunAt === "string" ? result.lastRunAt : null, message: result.manualDeletionConfigured !== true ? "Manual Empty Trash is held for approved setup. The cleanup backend has not confirmed the required configuration." : typeof result.message === "string" ? result.message : "Manual cleanup is configured; permissions are checked on confirmed deletion." }; }
   catch (error) { return { available: false, automaticCleanupEnabled: false, lastRunAt: null, message: error instanceof Error ? error.message : "Cleanup is not enabled." }; }
 }
 export async function permanentDeleteCloudFiles(files: CloudFile[]): Promise<{ deletedIds: string[]; blockedIds: string[]; failedIds: string[] }> {
@@ -267,4 +248,11 @@ export async function createCloudWebsitePhoto(file: CloudFile, options: { signal
   const bytes = await downloadCloudFile(file, options.signal);
   const type = CLOUD_ORIGINAL_PHOTO_TYPES[file.name.toLowerCase().split(".").pop() ?? ""];
   return uploadCloudFile(new File([bytes], file.name, { type }), { ...options, parentId: file.parentId, photoOnly: true });
+}
+
+/** Reuses the verified-owner private-gallery callable, never a public document read. */
+export async function readCloudGallery(): Promise<PrivateGallery | null> {
+  const session = await connection(); session.assertCurrent();
+  const response = await httpsCallable<unknown, { gallery: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerReadGallery")({});
+  session.assertCurrent(); return response.data.gallery === null ? null : decodePrivateGallery(response.data.gallery);
 }

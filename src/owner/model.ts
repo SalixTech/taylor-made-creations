@@ -1,3 +1,4 @@
+import { validElementBox } from "./box-geometry";
 import { validateCommissionFormConfig, projectCommissionFormConfig, type CommissionFormConfig } from "../components/commission-form-config";
 import { DESIGN_COLOR_FIELDS, DESIGN_SELECT_FIELDS, TEXT_FIELDS, IMAGE_FIELDS, LINK_FIELDS, STYLE_FIELDS, type SiteDesign, type ContentOverrides, type ElementAppearance } from "./site-design";
 
@@ -181,12 +182,13 @@ function validateContent(value: unknown, published = false): ValidationResult {
   };
   const appearance = (value: unknown, path: string) => {
     const entry = object(value, path);
-    exact(entry, ["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId"], path);
+    exact(entry, ["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId", "box"], path);
     for (const key of ["textColor", "backgroundColor"]) if (entry[key] !== undefined && (typeof entry[key] !== "string" || !/^#[0-9a-f]{6}$/i.test(entry[key] as string))) issue(`${path}.${key}`, "Choose a six-digit hex color.");
     const options: Record<string, readonly string[]> = { font: ["original", "sans", "serif", "rounded", "mono"], textSize: ["small", "standard", "large"], align: ["left", "center", "right"], headingAlign: ["left", "center", "right"], bodyAlign: ["left", "center", "right"], imageFit: ["contain", "cover"] };
     for (const [key, choices] of Object.entries(options)) if (entry[key] !== undefined && (typeof entry[key] !== "string" || !choices.includes(entry[key] as string))) issue(`${path}.${key}`, "Choose one of the supported appearance options.");
     for (const key of ["imagePositionX", "imagePositionY"]) if (entry[key] !== undefined) number(entry[key], `${path}.${key}`, 100);
     if (entry.fontSize !== undefined) bounded(entry.fontSize, `${path}.fontSize`, 8, 144);
+    if (entry.box !== undefined && !validElementBox(entry.box)) issue(`${path}.box`, "Use a bounded content box with valid dimensions and position.");
     if (entry.widthPercent !== undefined) bounded(entry.widthPercent, `${path}.widthPercent`, 10, 100);
     if (entry.imageWidthPercent !== undefined) bounded(entry.imageWidthPercent, `${path}.imageWidthPercent`, 5, 100);
     if (entry.imageAspectLocked !== undefined && typeof entry.imageAspectLocked !== "boolean") issue(`${path}.imageAspectLocked`, "Choose whether to lock image proportions.");
@@ -520,7 +522,7 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
     if (src.startsWith("data:")) throw new OwnerValidationError([{ path, message: "Upload this photo to authorized image storage before publishing. Browser-local photos cannot be written to the public content document." }]);
     return src;
   };
-  const publicAppearance = (appearance: ElementAppearance): ElementAppearance => Object.fromEntries(["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId"].filter(key => Object.hasOwn(appearance, key)).map(key => [key, appearance[key as keyof ElementAppearance]]));
+  const publicAppearance = (appearance: ElementAppearance): ElementAppearance => Object.fromEntries(["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId", "box"].filter(key => Object.hasOwn(appearance, key)).map(key => [key, key === "box" ? { ...appearance.box } : appearance[key as keyof ElementAppearance]]));
   const { site, home, prices } = content;
   const snapshot: PublicOwnerContent = {
     schemaVersion: 1,

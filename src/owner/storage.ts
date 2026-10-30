@@ -37,6 +37,8 @@ export interface OwnerStorageAdapter {
   subscribe?(callback: () => void): () => void;
 }
 export interface OwnerStore {
+  /** Private immutable recovery only; never a workspace save or publication. */
+  recovery?: import("./cloud-recovery").CloudRecoveryPort;
   load(): Promise<OwnerWorkspace>;
   listNamedDrafts(): Promise<OwnerNamedDraftSummary[]>;
   listTrashedNamedDrafts(): Promise<OwnerNamedDraftSummary[]>;
@@ -47,7 +49,8 @@ export interface OwnerStore {
   saveNamedDraft(name: string, content: OwnerContent, options?: SaveNamedDraftOptions): Promise<OwnerNamedDraft>;
   renameNamedDraft(id: string, name: string, expectedRevision: number): Promise<OwnerNamedDraft>;
   deleteNamedDraft(id: string, expectedRevision: number): Promise<void>;
-  saveDraft(content: OwnerContent, expectedRevision: number): Promise<OwnerWorkspace>;
+  /** An explicit named version must commit atomically with the working draft. */
+  saveDraft(content: OwnerContent, expectedRevision: number, version?: { id: string; name: string }): Promise<OwnerWorkspace>;
   /** Save only this listing privately; never publishes or saves unrelated form edits. */
   savePremadeDraft(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>;
   saveSettingsCard(content: OwnerContent, card: SettingsCardId, expectedRevision: number): Promise<OwnerWorkspace>;
@@ -56,6 +59,10 @@ export interface OwnerStore {
   publishLocal(expectedRevision: number): Promise<OwnerWorkspace>;
   /** Explicitly save + publish to the new site. Never supplied by local-only stores. */
   publishLive?(content: OwnerContent | undefined, expectedRevision: number): Promise<OwnerWorkspace>;
+  readPublication?(): Promise<import("./model").PublishedOwnerSnapshot | null>;
+  publishSelected?(content: OwnerContent, expectedRevision: number, expectedPublicRevision: number, selection: string[], galleryLibrary?: { items: import("./model").GalleryItem[]; expectedRevision: number }): Promise<OwnerWorkspace>;
+  readGallery?(): Promise<import("./private-gallery").PrivateGallery | null>;
+  saveGallery?(items: import("./model").GalleryItem[], expectedRevision: number): Promise<import("./private-gallery").PrivateGallery>;
   /** Save and publish only this selected listing. Requires an existing publication.
    * Never changes other draft fields, other products, navigation or shop visibility. */
   publishPremadeLive?(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>;
@@ -182,7 +189,8 @@ export function createOwnerStore(adapter: OwnerStorageAdapter): OwnerStore {
         throw new OwnerStorageError("read", "The saved workspace could not be loaded. Browser storage may be disabled. Nothing has been reset or overwritten.", { cause: error });
       }
     },
-    async saveDraft(content, expectedRevision) {
+    async saveDraft(content, expectedRevision, version) {
+      if (version) throw new OwnerStorageError("unavailable", "This storage adapter cannot atomically save a version to Drafts. Your work has not been replaced.");
       assertOwnerContent(content);
       // Snapshot immediately, before an awaited transaction can race with form edits.
       const draft = structuredClone(content);

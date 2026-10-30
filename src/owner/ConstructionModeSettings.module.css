@@ -27,3 +27,18 @@
   min-width: 0;
 }
 .actions > button { flex: 0 0 auto; width: auto; }
+.liveStatus { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:14px; color:var(--owner-ink,#302b2c); }
+.liveStatus strong { font-size:15px; font-weight:700; line-height:1.2; text-transform:uppercase; }
+.liveStatus [data-live-mode="on"] { color:#236b3c!important; }
+.liveStatus [data-live-mode="off"] { color:#a31c3c!important; }
+.liveStatus [data-live-mode="unknown"] { color:var(--owner-muted,#6d6064)!important; font-size:15px; text-transform:none; }
+.refreshNote > summary { cursor:pointer; color:var(--owner-muted,#6d6064); font-size:11px; }
+.refreshNote > summary:focus-visible { outline:2px solid var(--owner-wine,#800014); outline-offset:3px; }
+.refreshNote > p { margin:8px 0 0; }
+:global([data-owner-portal][data-color-mode="dark"]) .liveStatus [data-live-mode="on"] { color:#a9edc4!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .liveStatus [data-live-mode="off"] { color:#ffb1c1!important; }
+
+.actions > button[aria-label="Refresh Construction Mode"] { width:36px; flex:0 0 36px; }
+
+/* Lift only the heading text; the shared header row and aligned toggles stay fixed. */
+:global(section):has(>.content)>div:first-child>div:first-child { transform:none; }

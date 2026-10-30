@@ -50,3 +50,21 @@ export async function readCloudFileResponse(request: Request, id: string, kind: 
     } });
   } catch (error) { return apiErrorResponse(error); }
 }
+
+/** Owner-only generation check. Never return Firebase metadata/download tokens. */
+export async function readOwnerCloudPhotoMetadata(request: Request, id: string): Promise<Response> {
+  try {
+    if (!CLOUD_FILE_ID.test(id)) throw new TaylorApiError(404, "Photo unavailable.");
+    if (process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET !== CLOUD_BUCKET || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID !== "taylor-made-creations") throw new TaylorApiError(503, "Shared photo storage is not configured.");
+    await verifyTaylorOwner(request);
+    const header = request.headers.get("authorization")!;
+    const upstream = await fetch(`https://firebasestorage.googleapis.com/v0/b/${CLOUD_BUCKET}/o/${encodeURIComponent(`photos/${id}.webp`)}`, { headers: { Authorization: `Firebase ${header.slice(7)}` }, cache: "no-store", redirect: "error", signal: AbortSignal.any([request.signal, AbortSignal.timeout(8000)]) });
+    if (!upstream.ok) { await upstream.body?.cancel(); throw new TaylorApiError([401,403,404].includes(upstream.status) ? 404 : 503, "Private photo could not be checked."); }
+    const reader = upstream.body?.getReader(); if (!reader) throw new TaylorApiError(502, "Invalid photo metadata.");
+    const parts: Uint8Array[] = []; let count = 0;
+    try { while (true) { const part = await reader.read(); if (part.done) break; count += part.value.byteLength; if (count > 16384) throw new TaylorApiError(502, "Photo metadata is too large."); parts.push(part.value); } } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+    const value = JSON.parse(Buffer.concat(parts).toString("utf8"));
+    if (value.name !== `photos/${id}.webp` || value.bucket !== CLOUD_BUCKET || value.contentType !== "image/webp" || !/^[0-9]{1,32}$/.test(value.generation ?? "") || !/^[0-9]+$/.test(String(value.size)) || !Number.isSafeInteger(Number(value.size)) || Number(value.size) <= 0 || Number(value.size) > CLOUD_PHOTO_MAX_BYTES || value.metadata?.fileId !== id) throw new TaylorApiError(502, "The private photo metadata did not match.");
+    return Response.json({ ok: true, generation: value.generation, bytes: Number(value.size), contentType: "image/webp" }, { headers: { "Cache-Control": "private, no-store, max-age=0", "Vary": "Authorization", "X-Content-Type-Options": "nosniff" } });
+  } catch (error) { return apiErrorResponse(error); }
+}

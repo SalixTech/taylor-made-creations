@@ -1,2 +1,4 @@
 .icon { display:block; flex:0 0 18px; color:#b42338; pointer-events:none; }
 :global([data-color-mode="dark"]) .icon { color:#f27889; }
+
+:global(button):has(> .icon) { min-width:36px; min-height:36px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #ba7280; border-radius:9px; padding:8px; background:transparent; }

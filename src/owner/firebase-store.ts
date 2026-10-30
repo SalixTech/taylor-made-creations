@@ -1,8 +1,10 @@
-import { applySettingsCard } from "./settings-cards";
-import { decodeCloudFile, publishedCloudAssetIds, cloudReferencedAssetIds } from "./cloud-files-model";
+import { decodePrivateGallery } from "./private-gallery";
+import { decodeCloudFile, cloudReferencedAssetIds } from "./cloud-files-model";
 import { doc, getDoc, getDocs, collection, runTransaction, type Firestore } from "firebase/firestore/lite";
 import type { Auth } from "firebase/auth";
-import { publicContentToOwnerContent, assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assertOwnerDraftId, MAX_NAMED_DRAFTS, assertPublishedOwnerSnapshot, createPublishedOwnerSnapshot, createPublishedPremadeSnapshot, OwnerValidationError, type OwnerContent, type OwnerPremade, type OwnerWorkspace, type OwnerNamedDraft, type PublishedOwnerSnapshot } from "./model";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { decodeCloudRecoveryContent, decodeCloudRecoveryEntry } from "./cloud-recovery";
+import { assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assertOwnerDraftId, normalizeOwnerDraftName, MAX_NAMED_DRAFTS, assertPublishedOwnerSnapshot, OwnerValidationError, type OwnerContent, type OwnerPremade, type OwnerWorkspace, type OwnerNamedDraft, type PublishedOwnerSnapshot } from "./model";
 import { createInitialOwnerWorkspace } from "./defaults";
 import { createOwnerStore, OwnerStorageError, type OwnerStore } from "./storage";
 import { SITE_ACCESS_DOCUMENT, decodeSiteAccess, defaultSiteAccess, type SiteAccess } from "./site-access";
@@ -107,7 +109,9 @@ function cloudError(error: unknown, operation: "read" | "write"): Error {
     if (error.code === "conflict" && !error.message.includes("saved draft")) return new OwnerStorageError("conflict", "This cloud workspace changed on another tab or device. Your edits are still on screen. Reload the saved workspace before saving again.", { cause: error });
     return error;
   }
-  const code = typeof error === "object" && error !== null && "code" in error ? String(error.code).replace(/^firestore\//, "") : "";
+  const code = typeof error === "object" && error !== null && "code" in error ? String(error.code).replace(/^(?:firestore|functions)\//, "") : "";
+  if (code === "aborted") return new OwnerStorageError("conflict", "The workspace changed on another device. Reload the saved draft before trying again.", { cause: error });
+  if (["invalid-argument", "resource-exhausted", "failed-precondition"].includes(code) && error instanceof Error) return new OwnerStorageError("write", error.message.replace(/^Firebase:\s*/, ""), { cause: error });
   if (code === "permission-denied" || code === "unauthenticated") return new OwnerStorageError(operation, "Owner access was not accepted. Sign in with the authorized owner account. If this is the first setup, your site developer must deploy the owner-only Firestore rules. Nothing has been reset or replaced.", { cause: error });
   return new OwnerStorageError(operation, operation === "read"
     ? "The cloud workspace could not be loaded. Check your connection and try again. No browser-local copy was opened and nothing has been reset."
@@ -167,15 +171,19 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
       if (!snapshot.exists() || decodeCloudFile(snapshot.data(), id).status !== "ready") throw new OwnerStorageError("write", "A selected cloud file is missing, uploading, or being deleted. Choose an available file before saving.");
     }
   };
-  const preparePhotoIndex = async (transaction: Parameters<Parameters<typeof runTransaction>[1]>[0], publication: EncodedPublishedOwnerSnapshot) => {
-    const ids = publishedCloudAssetIds(decodePublishedOwnerSnapshot(publication).content);
-    for (const id of ids) {
-      const photo = await transaction.get(doc(db, "ownerFiles", id)); requireOwner();
-      if (!photo.exists()) throw new OwnerStorageError("write", "A selected cloud photo is missing. Refresh File Hub before publishing.");
-      const file = decodeCloudFile(photo.data(), id);
-      if (!["photo", "font"].includes(file.kind) || file.status !== "ready") throw new OwnerStorageError("write", "A selected cloud image or font is unavailable, still uploading, or being deleted. Recover or replace it in File Hub before publishing.");
-    }
-    return { schemaVersion: 1, revision: publication.revision, ids };
+  const callBackup = async <T,>(name: string, input: unknown): Promise<T> => {
+    await confirmOwner();
+    const response = await httpsCallable<unknown, T>(getFunctions(auth.app, "us-central1"), name)(input);
+    requireOwner(); return response.data;
+  };
+  let pendingPublication: { key: string; operationId: string } | null = null;
+  const publishContent = async (input: Record<string, unknown>) => {
+    try {
+      const key = JSON.stringify(input);
+      if (pendingPublication?.key !== key) pendingPublication = { key, operationId: crypto.randomUUID() };
+      const result = await callBackup<{ workspace: unknown }>("tmcOwnerPublishContent", { ...input, operationId: pendingPublication.operationId });
+      assertOwnerWorkspace(result.workspace); requireOwner(); pendingPublication = null; notify(); return structuredClone(result.workspace);
+    } catch (error) { throw cloudError(error, "write"); }
   };
   const store = createOwnerStore({
     namedDrafts: {
@@ -234,7 +242,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
           });
           requireOwner(); notify(); return drafts;
         } catch (error) {
-          const code = typeof error === "object" && error !== null && "code" in error ? String(error.code).replace(/^firestore\//, "") : "";
+          const code = typeof error === "object" && error !== null && "code" in error ? String(error.code).replace(/^(?:firestore|functions)\//, "") : "";
           if (code === "permission-denied" && attempted) {
             // The rules can reject an advancing registry before the SDK reports
             // its transaction conflict. Diagnose from validated server reads only;
@@ -301,6 +309,65 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
   });
   return {
     ...store,
+    async saveDraft(content, expectedRevision, version) {
+      if (!version) return store.saveDraft(content, expectedRevision);
+      // An explicit Save draft is one atomic operation: working workspace AND
+      // the version shown in Drafts. Never report success for only half of it.
+      assertOwnerContent(content); assertOwnerDraftId(version.id);
+      const snapshot = structuredClone(content), name = normalizeOwnerDraftName(version.name), id = version.id;
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new OwnerStorageError("conflict", "Reload the saved workspace before saving a draft version.");
+      let attemptedIndexRevision: number | undefined;
+      try {
+        await confirmOwner();
+        const saved = await runTransaction(db, async transaction => {
+          requireOwner();
+          const workspaceSnapshot = await transaction.get(reference); requireOwner();
+          const current = workspaceSnapshot.exists() ? decodeOwnerWorkspace(workspaceSnapshot.data()) : createInitialOwnerWorkspace();
+          const { indexReference, index, drafts } = await readDraftRegistry(transaction);
+          attemptedIndexRevision = index?.revision ?? 0;
+          const previousAttempt = drafts.find(draft => draft.id === id);
+          if (previousAttempt) {
+            if (previousAttempt.name === name && previousAttempt.revision === 1 && JSON.stringify(previousAttempt.content) === JSON.stringify(snapshot) && current.revision === expectedRevision + 1 && JSON.stringify(current.draft) === JSON.stringify(snapshot)) return current;
+            throw new OwnerStorageError("conflict", "This saved draft version already exists in Drafts, but the saved workspace or version has changed. Open Drafts to review it, then reload the saved workspace before saving again. Nothing was duplicated or replaced.");
+          }
+          if (current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "This cloud workspace changed on another tab or device. Your edits are still here. Reload the saved workspace before saving again.");
+          if (drafts.length >= MAX_NAMED_DRAFTS) throw new OwnerStorageError("limit", "All 10 Drafts slots are in use. Open Drafts and archive a version or replace one with Save here before trying again. Your current edits and saved workspace have not changed.");
+          if (drafts.some(draft => draft.name.toLocaleLowerCase("en-US") === name.toLocaleLowerCase("en-US"))) throw new OwnerValidationError([{ path: "draft.name", message: "Another saved draft already has this name. Choose a different name." }]);
+          const draftReference = doc(db, OWNER_DRAFT_COLLECTION, id), archiveReference = doc(db, OWNER_DRAFT_TRASH_COLLECTION, id);
+          const orphan = await transaction.get(draftReference), archived = await transaction.get(archiveReference); requireOwner();
+          if (orphan.exists() || archived.exists()) throw new OwnerStorageError("conflict", "This saved version already exists outside the active Drafts list. Refresh Drafts before trying again; nothing has been overwritten.");
+          const date = new Date().toISOString();
+          const workspace: OwnerWorkspace = { ...current, draft: snapshot, revision: current.revision + 1, updatedAt: date };
+          const draft: OwnerNamedDraft = { id, name, revision: 1, createdAt: date, updatedAt: date, content: snapshot };
+          const encodedWorkspace = encodeOwnerWorkspace(workspace), encodedDraft = encodeOwnerNamedDraft(draft);
+          const registry: OwnerDraftIndex = { schemaVersion: 1, revision: (index?.revision ?? 0) + 1, drafts: { ...(index?.drafts ?? {}), [id]: 1 }, changedDraftId: id };
+          decodeOwnerDraftIndex(registry);
+          await ensurePrivateAssetsReady(transaction, draft);
+          requireOwner();
+          transaction.set(reference, encodedWorkspace); transaction.set(draftReference, encodedDraft); transaction.set(indexReference, registry);
+          return workspace;
+        });
+        requireOwner(); notify(); return saved;
+      } catch (error) {
+        const code = typeof error === "object" && error !== null && "code" in error ? String(error.code).replace(/^firestore\//, "") : "";
+        if (code === "permission-denied" && attemptedIndexRevision !== undefined) {
+          // Firestore can evaluate advancing-revision rules before returning a
+          // transaction conflict. Diagnose from validated reads, never weaken
+          // the rules or retry a potentially committed write automatically.
+          let changed = false;
+          try {
+            await confirmOwner();
+            const [workspace, registry] = await Promise.all([getDoc(reference), getDoc(doc(db, OWNER_DRAFT_INDEX_DOCUMENT))]); requireOwner();
+            const revision = workspace.exists() ? decodeOwnerWorkspace(workspace.data()).revision : 0;
+            const indexRevision = registry.exists() ? decodeOwnerDraftIndex(registry.data()).revision : 0;
+            changed = revision !== expectedRevision || indexRevision !== attemptedIndexRevision;
+          } catch { /* Denied, unavailable or corrupt reads prove no conflict. */ }
+          if (changed) throw new OwnerStorageError("conflict", "The saved draft workspace or Drafts list changed on another tab or device. Review Drafts and reload the saved workspace before retrying. Your edits were not overwritten.", { cause: error });
+        }
+        if (!(error instanceof OwnerStorageError) && !(error instanceof OwnerValidationError) && !["permission-denied", "unauthenticated", "aborted", "invalid-argument", "resource-exhausted", "failed-precondition"].includes(code)) throw new OwnerStorageError("write", "This draft save was not confirmed. Keep your edits open. Choose Save draft again to check the same version without creating a duplicate, or open Drafts to review what was saved. Nothing was published.", { cause: error });
+        throw cloudError(error, "write");
+      }
+    },
     async readLiveSiteAccess() {
       try {
         await confirmOwner();
@@ -346,176 +413,62 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
       } catch (error) { throw cloudError(error, "read"); }
     },
     async updateLiveShopVisibility(showPremades, expectedRevision) {
-      if (typeof showPremades !== "boolean") throw new OwnerValidationError([{ path: "site.showPremades", message: "Choose whether to show the premade shop." }]);
-      try {
-        await confirmOwner();
-        const workspace = await runTransaction(db, async transaction => {
-          requireOwner();
-          const privateSnapshot = await transaction.get(reference); requireOwner();
-          const current = privateSnapshot.exists() ? decodeOwnerWorkspace(privateSnapshot.data()) : createInitialOwnerWorkspace();
-          if (!Number.isSafeInteger(expectedRevision) || current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "The workspace changed before the shop update. Reload before trying again.");
-          const publicReference = doc(db, PUBLIC_CLOUD_DOCUMENT);
-          const publicSnapshot = await transaction.get(publicReference); requireOwner();
-          if (!publicSnapshot.exists()) throw new OwnerStorageError("not-published", "Publish the site once before using Update Live. This button only changes an existing published shop setting.");
-          const published = decodePublishedOwnerSnapshot(publicSnapshot.data());
-          if (published.revision > current.revision) throw new OwnerStorageError("corrupt", "The published revision is ahead of the workspace. Nothing has been overwritten.");
-          const timestamp = new Date().toISOString();
-          const next = { ...current, revision: current.revision + 1, updatedAt: timestamp };
-          // Deliberately start from the existing PUBLIC content, not draft or preview.
-          const nextPublished: PublishedOwnerSnapshot = { ...published, revision: next.revision, publishedAt: timestamp, content: { ...published.content, site: { ...published.content.site, showPremades } } };
-          const privateDocument = encodeOwnerWorkspace(next), publicDocument = encodePublishedOwnerSnapshot(nextPublished);
-          const photoIndex = await preparePhotoIndex(transaction, publicDocument);
-          await ensurePrivateAssetsReady(transaction, next, current);
-          requireOwner(); transaction.set(reference, privateDocument); transaction.set(publicReference, publicDocument);
-          transaction.set(doc(db, "site/publishedAssets"), photoIndex);
-          return structuredClone(next);
-        });
-        requireOwner(); notify(); return workspace;
-      } catch (error) {
-        const code = typeof error === "object" && error !== null && "code" in error ? String(error.code).replace(/^firestore\//, "") : "";
-        if (code === "permission-denied") {
-          // As with full Publish, revision rules may reject before the SDK can
-          // report a transaction race. Read only; never retry an uncertain write.
-          let latestRevision: number | undefined;
-          try {
-            await confirmOwner();
-            const latest = await getDoc(reference); requireOwner();
-            latestRevision = latest.exists() ? decodeOwnerWorkspace(latest.data()).revision : 0;
-          } catch { /* An auth failure or corrupt/unavailable read proves nothing. */ }
-          if (latestRevision !== undefined && Number.isSafeInteger(expectedRevision) && latestRevision !== expectedRevision) throw cloudError(new OwnerStorageError("conflict", "Another device changed this workspace during the shop update."), "write");
-        }
-        throw cloudError(error, "write");
-      }
+      return publishContent({ mode: "shop", showPremades, expectedRevision });
     },
     async publishSettingsCardLive(content, card, expectedRevision) {
-      const selected = structuredClone(content);
-      try {
-        await confirmOwner();
-        const saved = await runTransaction(db, async transaction => {
-          requireOwner();
-          const privateSnapshot = await transaction.get(reference); requireOwner();
-          const current = privateSnapshot.exists() ? decodeOwnerWorkspace(privateSnapshot.data()) : createInitialOwnerWorkspace();
-          if (!Number.isSafeInteger(expectedRevision) || current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "This workspace changed before the settings update. Reload before trying again.");
-          const publicReference = doc(db, PUBLIC_CLOUD_DOCUMENT);
-          const publicSnapshot = await transaction.get(publicReference); requireOwner();
-          if (!publicSnapshot.exists()) throw new OwnerStorageError("not-published", "Publish the site once before saving an individual settings card live. Unrelated draft changes have not been published.");
-          const published = decodePublishedOwnerSnapshot(publicSnapshot.data());
-          if (published.revision > current.revision) throw new OwnerStorageError("corrupt", "The published revision is ahead of the workspace. Nothing has been overwritten.");
-          const timestamp = new Date().toISOString();
-          const next: OwnerWorkspace = { ...current, draft: applySettingsCard(current.draft, selected, card), revision: current.revision + 1, updatedAt: timestamp };
-          const live = applySettingsCard(publicContentToOwnerContent(published.content), selected, card);
-          const privateDocument = encodeOwnerWorkspace(next);
-          // Keep the existing public projection intact, including already-public
-          // listings retained while the shop is switched off. Settings never
-          // re-project unrelated pages, photos, inventory, or fonts.
-          const publicContent = { ...published.content, site: live.site };
-          if (live.commissionForm === undefined) delete publicContent.commissionForm;
-          else publicContent.commissionForm = live.commissionForm;
-          const publicDocument = encodePublishedOwnerSnapshot({ ...published, revision: next.revision, publishedAt: timestamp, content: publicContent });
-          const photoIndex = await preparePhotoIndex(transaction, publicDocument);
-          await ensurePrivateAssetsReady(transaction, next, current);
-          requireOwner(); transaction.set(reference, privateDocument); transaction.set(publicReference, publicDocument);
-          transaction.set(doc(db, "site/publishedAssets"), photoIndex);
-          return structuredClone(next);
-        });
-        requireOwner(); notify(); return saved;
-      } catch (error) { throw cloudError(error, "write"); }
+      assertOwnerContent(content);
+      return publishContent({ mode: "settings", content: structuredClone(content), card, expectedRevision });
     },
     async publishPremadeLive(item, expectedRevision) {
-      // Capture the item only, before any network await. Unrelated form data is
-      // not accepted by this operation and cannot leak into the public document.
-      const selected = structuredClone(item);
-      try {
-        await confirmOwner();
-        const workspace = await runTransaction(db, async transaction => {
-          requireOwner();
-          const privateSnapshot = await transaction.get(reference); requireOwner();
-          const current = privateSnapshot.exists() ? decodeOwnerWorkspace(privateSnapshot.data()) : createInitialOwnerWorkspace();
-          if (!Number.isSafeInteger(expectedRevision) || current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "The workspace changed before this premade was published. Reload before trying again; other products have not been overwritten.");
-          const publicReference = doc(db, PUBLIC_CLOUD_DOCUMENT);
-          const publicSnapshot = await transaction.get(publicReference); requireOwner();
-          if (!publicSnapshot.exists()) throw new OwnerStorageError("not-published", "Publish the site once before publishing an individual premade. This button never publishes unrelated draft edits.");
-          const published = decodePublishedOwnerSnapshot(publicSnapshot.data());
-          if (published.revision > current.revision) throw new OwnerStorageError("corrupt", "The published revision is ahead of the workspace. Nothing has been overwritten.");
-          const timestamp = new Date().toISOString();
-          const premades = current.draft.premades.some(entry => entry.id === selected.id)
-            ? current.draft.premades.map(entry => entry.id === selected.id ? selected : entry)
-            : [...current.draft.premades, selected];
-          const next: OwnerWorkspace = { ...current, draft: { ...current.draft, premades }, revision: current.revision + 1, updatedAt: timestamp };
-          // Validate both documents before queueing either write. Only the
-          // selected listing changes; shop visibility remains its published value.
-          const privateDocument = encodeOwnerWorkspace(next);
-          const publicDocument = encodePublishedOwnerSnapshot(createPublishedPremadeSnapshot(published, selected, next.revision, timestamp));
-          const photoIndex = await preparePhotoIndex(transaction, publicDocument);
-          await ensurePrivateAssetsReady(transaction, next, current);
-          requireOwner(); transaction.set(reference, privateDocument); transaction.set(publicReference, publicDocument);
-          transaction.set(doc(db, "site/publishedAssets"), photoIndex);
-          return structuredClone(next);
-        });
-        requireOwner(); notify(); return workspace;
-      } catch (error) {
-        const code = typeof error === "object" && error !== null && "code" in error ? String(error.code).replace(/^firestore\//, "") : "";
-        if (code === "permission-denied") {
-          let latestRevision: number | undefined;
-          try { await confirmOwner(); const latest = await getDoc(reference); requireOwner(); latestRevision = latest.exists() ? decodeOwnerWorkspace(latest.data()).revision : 0; } catch { /* Read failure proves no conflict. */ }
-          if (latestRevision !== undefined && Number.isSafeInteger(expectedRevision) && latestRevision !== expectedRevision) throw cloudError(new OwnerStorageError("conflict", "Another device changed this workspace during premade publication."), "write");
-        }
-        throw cloudError(error, "write");
-      }
+      return publishContent({ mode: "premade", item: structuredClone(item), expectedRevision });
+    },
+    async readPublication() {
+      try { await confirmOwner(); const snapshot = await getDoc(doc(db, PUBLIC_CLOUD_DOCUMENT)); requireOwner(); return snapshot.exists() ? decodePublishedOwnerSnapshot(snapshot.data()) : null; }
+      catch (error) { throw cloudError(error, "read"); }
+    },
+    async publishSelected(content, expectedRevision, expectedPublicRevision, selection, galleryLibrary) {
+      assertOwnerContent(content);
+      return publishContent({ mode: "selected", content: structuredClone(content), expectedRevision, expectedPublicRevision, selection: [...selection].sort(), ...(galleryLibrary ? { galleryLibrary: structuredClone(galleryLibrary) } : {}) });
+    },
+    async readGallery() {
+      try { const result = await callBackup<{ gallery: unknown }>("tmcOwnerReadGallery", {}); return result.gallery === null ? null : decodePrivateGallery(result.gallery); }
+      catch (error) { throw cloudError(error, "read"); }
+    },
+    async saveGallery(items, expectedRevision) {
+      try { const result = await callBackup<{ gallery: unknown }>("tmcOwnerSaveGallery", { items: structuredClone(items), expectedRevision }); return decodePrivateGallery(result.gallery); }
+      catch (error) { throw cloudError(error, "write"); }
     },
     async publishLive(content, expectedRevision) {
-      // Snapshot before authentication/network awaits so later form edits cannot leak.
       if (content !== undefined) assertOwnerContent(content);
-      const requestedDraft = content === undefined ? undefined : structuredClone(content);
-      try {
-        await confirmOwner();
-        const workspace = await runTransaction(db, async transaction => {
-          requireOwner();
-          const snapshot = await transaction.get(reference);
-          requireOwner();
-          const current = snapshot.exists() ? decodeOwnerWorkspace(snapshot.data()) : createInitialOwnerWorkspace();
-          if (!Number.isSafeInteger(expectedRevision) || current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "The private workspace changed before publication. Reload the saved workspace before publishing again.");
-          const publicReference = doc(db, PUBLIC_CLOUD_DOCUMENT);
-          // Track the public document in the transaction read set as well. Without
-          // this, a concurrent first publication can fail its rules precondition as
-          // permission-denied rather than retrying and reporting the stale draft.
-          const previousPublic = await transaction.get(publicReference);
-          requireOwner();
-          if (previousPublic.exists() && decodePublishedOwnerSnapshot(previousPublic.data()).revision > current.revision) throw new OwnerStorageError("corrupt", "The published snapshot revision is ahead of the private workspace. Nothing has been overwritten; contact your site developer before publishing.");
-          const timestamp = new Date().toISOString();
-          const next: OwnerWorkspace = { ...current, draft: requestedDraft ?? current.draft, revision: current.revision + 1, updatedAt: timestamp };
-          // Validate BOTH documents before queuing either write. Failed transactions
-          // commit neither document, including revision retries and authorization loss.
-          const privateDocument = encodeOwnerWorkspace(next);
-          const publicDocument = encodePublishedOwnerSnapshot(createPublishedOwnerSnapshot(next.draft, next.revision, timestamp));
-          const photoIndex = await preparePhotoIndex(transaction, publicDocument);
-          await ensurePrivateAssetsReady(transaction, next, current);
-          requireOwner();
-          transaction.set(reference, privateDocument);
-          transaction.set(publicReference, publicDocument);
-          transaction.set(doc(db, "site/publishedAssets"), photoIndex);
-          return structuredClone(next);
-        });
-        requireOwner();
-        notify();
-        return workspace;
-      } catch (error) {
-        const code = typeof error === "object" && error !== null && "code" in error ? String(error.code).replace(/^firestore\//, "") : "";
-        if (code === "permission-denied") {
-          // A competing publisher can make revision rules reject a transaction
-          // before Firestore reports its read conflict. Diagnose, never retry or
-          // write: only a validated server revision change proves stale edits.
-          let latestRevision: number | undefined;
-          try {
-            await confirmOwner();
-            const latest = await getDoc(reference);
-            requireOwner();
-            latestRevision = latest.exists() ? decodeOwnerWorkspace(latest.data()).revision : 0;
-          } catch { /* A denied/unavailable/corrupt read proves no conflict. */ }
-          if (latestRevision !== undefined && Number.isSafeInteger(expectedRevision) && latestRevision !== expectedRevision) throw cloudError(new OwnerStorageError("conflict", "Another device changed this workspace during publication."), "write");
-        }
-        throw cloudError(error, "write");
-      }
+      return publishContent({ mode: "full", ...(content === undefined ? {} : { content: structuredClone(content) }), expectedRevision });
+    },
+    recovery: {
+      async checkpointDraft(input) {
+        assertOwnerContent(input.content);
+        // Match the JSON stored in ownerWorkspace/current. The callable SDK
+        // converts optional `undefined` properties to null, whereas our saved
+        // workspace omits them. Sending that null used to reject an otherwise
+        // valid recovery copy (and could never match a saved-draft checkpoint).
+        // Keep the same operation identity so an uncertain retry is idempotent.
+        const request = JSON.parse(JSON.stringify(input)) as typeof input;
+        assertOwnerContent(request.content);
+        const result = await callBackup<{entry:unknown}>("tmcOwnerCheckpointDraft", request);
+        return decodeCloudRecoveryEntry(result.entry);
+      },
+      async listRecovery() {
+        const result = await callBackup<{entries:unknown[]}>("tmcOwnerListRecovery", {});
+        if (!Array.isArray(result.entries) || result.entries.length > 2000) throw new Error("Cloud recovery list is invalid.");
+        return result.entries.map(decodeCloudRecoveryEntry);
+      },
+      async readRecovery(id, expectedRevision) {
+        const result = await callBackup<{content:unknown;cloudRevision:number}>("tmcOwnerReadRecovery", {id,expectedRevision});
+        if (result.cloudRevision !== expectedRevision) throw new Error("The workspace changed. Reload before restoring.");
+        return decodeCloudRecoveryContent(result.content);
+      },
+      async dismissRecovery(id) {
+        const result = await callBackup<{dismissed:boolean;bytesRetained:boolean}>("tmcOwnerDismissRecovery", {id});
+        if (result.dismissed !== true || result.bytesRetained !== true) throw new Error("Recovery dismissal was not confirmed. Refresh before retrying.");
+      },
     },
     dispose() { disposed = true; for (const cleanup of [...cleanups]) cleanup(); cleanups.clear(); },
   };

@@ -1,0 +1,36 @@
+.host { min-width:0; }.launcher,.actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }.launcher { margin:0 0 10px; }.actions label { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--owner-muted,var(--hub-muted,#74686c)); }
+.host button,.host select,.standalone button,.standalone select { min-height:36px; padding:7px 12px; border:1px solid var(--owner-line,var(--hub-line,#ded3d5)); border-radius:9px; background:var(--owner-card,var(--hub-bg,#fff)); color:var(--owner-ink,var(--hub-ink,#342a2c)); font:inherit; font-size:12px; cursor:pointer; }
+.host button:focus-visible,.host select:focus-visible { outline:2px solid #b61837; outline-offset:2px; }.host button:disabled { opacity:.55; cursor:not-allowed; }
+.dialog { width:min(1160px,calc(100vw - 32px)); max-width:none; max-height:calc(100dvh - 32px); padding:0; border:1px solid var(--owner-line,var(--hub-line,#ded3d5)); border-radius:18px; color:var(--owner-ink,var(--hub-ink,#342a2c)); background:var(--owner-card,var(--hub-bg,#fff)); box-shadow:0 24px 90px #0005; overflow:auto; overscroll-behavior:contain; }
+.dialog::backdrop { background:#151016a6; }.dialog>header { position:sticky; top:0; z-index:5; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 20px; background:inherit; border-bottom:1px solid var(--owner-line,var(--hub-line,#ded3d5)); }.dialog>header p { margin:0 0 4px; font-size:9px; letter-spacing:1.2px; }.dialog>header h2 { margin:0; font-size:20px; }.dialog>header button { font-size:24px; width:38px; padding:0; flex-shrink:0; }.toolbar { padding:12px 16px; display:grid; gap:12px; }.body { padding:0 16px 12px; }.caption { font-size:11px; padding:0 20px 12px; color:var(--owner-muted,var(--hub-muted,#74686c)); }.error { font-size:12px; color:#b61837; }.standalone { max-width:1180px; margin:auto; padding:20px; }.standalone>header { display:flex; justify-content:space-between; gap:16px; align-items:center; margin-bottom:16px; }.standalone h1 { margin:0; font-size:25px; }.standalone>nav { margin-bottom:14px; }
+@media(max-width:600px) { .dialog { width:calc(100vw - 12px); max-height:calc(100dvh - 12px); }.body { padding:0 6px 10px; }.actions { justify-content:flex-start; }.actions label { flex-wrap:wrap; }.standalone { padding:10px; }.launcher { justify-content:flex-start; } }
+:global(body):has(.standalone[data-independent-hub-window]) :global(.public-site-frame) > :global(.site-header),:global(body):has(.standalone[data-independent-hub-window]) :global(.public-site-frame) > :global(.preview-banner),:global(body):has(.standalone[data-independent-hub-window]) :global(.public-site-frame) > :global(footer) { display:none; }
+:global(body):has(.dialog[open]) { overflow:hidden; }
+
+.standalone { padding-top:10px; }.standalone>header { margin-bottom:8px; }.standalone>header p { margin:0 0 4px; font-size:10px; }.standalone>header>.actions>button { min-height:44px; }.standalone .toolbar { padding:4px 0 12px; }.launcher { margin:6px 0 10px; }.host { overscroll-behavior-y:auto; }
+
+.confirmDialog { width:min(480px,calc(100vw - 32px)); }.confirmDialog .body { padding:16px 20px; font-size:14px; }.confirmActions { padding:0 20px 20px; }.confirmActions button { padding:9px 14px; border:1px solid var(--owner-line,var(--hub-line,#ddd)); border-radius:9px; color:inherit; background:var(--owner-card,var(--hub-bg,#fff)); cursor:pointer; }
+
+.dialog>header>button { border:0; background:transparent; box-shadow:none; color:inherit; font:inherit; font-size:26px; line-height:1; }
+.dialog>header>button:hover { color:#d32947; }
+
+.archiveToggle { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--owner-muted,var(--hub-muted,#74686c)); }.archiveToggle input { width:16px; height:16px; accent-color:#b61837; }
+
+/* SVG keeps this directional hint readable when the UI font lacks arrow glyphs. */
+.host .popout { display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+.popout svg { display:block; flex:none; }
+
+/* Confirmation content is compact; closing or keeping a draft never saves/discards it. */
+.dialog.confirmDialog .body { min-height:0!important; padding:12px 20px; }
+.dialog.confirmDialog .body>p:last-child { margin-bottom:0; }
+.dialog.confirmDialog>header>button { display:grid!important; place-items:center; padding:0!important; width:34px; height:34px; min-width:34px; background:transparent!important; border:0!important; }
+.dialog.confirmDialog .confirmActions { padding-top:12px; }
+:global([data-color-mode="dark"]) .dialog.confirmDialog>header>button { background:transparent!important; border:0!important; padding:0!important; }
+
+/* Fox12: selected client context stays with the workspace controls. */
+.host .launcher { padding:10px 12px; margin:0 0 8px; gap:10px; }
+.clientIdentity { margin-right:auto; min-width:0; max-width:100%; overflow-wrap:anywhere; color:var(--owner-ink,var(--hub-ink)); font-size:14px; }
+@media(max-width:600px) { .clientIdentity { flex-basis:100%; }.host .launcher { padding:10px; } }
+.clientIdentity { border:1px solid var(--owner-line,var(--hub-line,#505055)); background:var(--owner-card,var(--hub-surface,#242426)); border-radius:9px; padding:8px 12px; }
+
+.clientIdentity { flex:1 1 120px; align-self:stretch; display:flex; align-items:center; }

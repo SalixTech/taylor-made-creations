@@ -1,5 +1,6 @@
+import { assertHubWindowSession, watchHubWindowSession } from "@/client-hub/window-session";
 import { getApps, initializeApp, type FirebaseOptions } from "firebase/app";
-import { browserSessionPersistence, initializeAuth, type Auth, type User } from "firebase/auth";
+import { browserSessionPersistence, initializeAuth, signOut, type Auth, type User } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore/lite";
 
 /** Web-app identifiers only. Never add a service-account key or Admin credential. */
@@ -69,8 +70,11 @@ export class OwnerSessionError extends Error {
 /** Verify with Auth before exposing any private UI; stale async results fail closed. */
 export async function verifyOwnerSession(client: OwnerFirebaseClient, user: User): Promise<void> {
   if (user.uid !== client.ownerUid) throw new OwnerSessionError("denied", "This account does not have owner access. Sign out and use Taylor’s owner account.");
+  assertHubWindowSession("owner", user.uid);
+  watchHubWindowSession("owner", user.uid, () => { if (client.auth.currentUser?.uid === user.uid) void signOut(client.auth).catch(() => {}); });
   await user.reload();
   await user.getIdToken(true);
+  assertHubWindowSession("owner", user.uid);
   if (client.auth.currentUser !== user || client.auth.currentUser.uid !== client.ownerUid) {
     throw new OwnerSessionError("expired", "Your sign-in changed. Please sign in again.");
   }

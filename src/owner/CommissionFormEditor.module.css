@@ -34,3 +34,14 @@
 /* Keep the real form section's accessible legend without repeating its title. */
 .sectionCanvas > fieldset[data-commission-section] > legend { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
 :global([data-owner-portal]) .questionCanvas .editPencil:global([data-owner-button]) { width:32px; height:32px; min-height:32px; padding:6px; display:inline-flex; align-items:center; justify-content:center; }
+.questionSurface [data-commission-question] > label,
+.questionSurface [data-commission-question] > legend { display:block; margin-bottom:10px; }
+
+.questionSurface:focus-visible { outline:2px solid #c6374b; outline-offset:4px; border-radius:4px; }
+.sectionTools { cursor:pointer; }
+
+/* Editing/test mode is a neutral toolbar control, not a blue selection tile. */
+:global([data-owner-portal][data-color-mode="dark"]) .toolbar button[data-form-mode-control] { background:var(--owner-raised,#2c2c2d)!important; color:var(--owner-ink,#d0d0d0)!important; border-color:var(--owner-control-line,#85858c)!important; box-shadow:none!important; }
+
+/* A section toggle remains neutral during mouse-down as well as after click. */
+:global([data-owner-portal][data-color-mode="dark"]) .sectionTools button[data-owner-button]:is(:enabled,:disabled,:hover,:active,:focus-visible,[aria-expanded=true]) { background:var(--owner-raised,#2c2c2d)!important; color:var(--owner-ink,#d0d0d0)!important; border-color:var(--owner-control-line,#85858c)!important; box-shadow:none!important; }

@@ -1,5 +1,6 @@
 "use client";
 
+import { OwnerBoxFields } from "./OwnerCanvasBoxTools";
 import type { OwnerContent } from "./model";
 import { STYLE_FIELDS, type ElementAppearance } from "./site-design";
 import { OwnerSelect } from "./OwnerFields";
@@ -51,6 +52,7 @@ export function OwnerAppearancePanel({ value, kind = "text", label = "Appearance
         <p className={styles.hint}>Move the focal point if the photo is cropped. With “Show the whole photo”, position only changes when there is room around the image.</p>
         {([ ["imagePositionX", "Horizontal focal point"], ["imagePositionY", "Vertical focal point"] ] as const).map(([key, title]) => <div className={styles.range} key={key}><label><span>{title}<output>{value?.[key] ?? 50}%</output></span><input type="range" min={0} max={100} step={1} value={value?.[key] ?? 50} onChange={event => { const position = Number(event.target.value); if (Number.isFinite(position) && position >= 0 && position <= 100) onEdit(appearance => { appearance[key] = position; }); }} /><small>{key === "imagePositionX" ? "Left → right" : "Top → bottom"}</small></label><OwnerNumberInput label={`${title} percentage`} value={value?.[key] ?? 50} min={0} max={100} unit="%" onChange={position => onEdit(appearance => { if (position === undefined) delete appearance[key]; else appearance[key] = position; })} /></div>)}
       </>}
+      {text && <OwnerBoxFields value={value} onChange={next => onEdit(appearance => { Object.assign(appearance, next); })} />}
       <button type="button" className={styles.reset} disabled={!value || !Object.keys(value).length} onClick={onReset}>Reset this appearance</button>
     </div>
   </details>;

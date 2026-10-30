@@ -6,7 +6,6 @@ import { isSafeImageSource, newOwnerId, type OwnerPremade, type OwnerPremadePhot
 import { getPremadeCoverPhoto, getPremadePhotos } from "./premade-gallery";
 import { PhotoUpload } from "./PhotoUpload";
 import { OwnerNumberInput } from "./OwnerDesignInputs";
-import ownerStyles from "./OwnerPortal.module.css";
 import styles from "./PhotoManager.module.css";
 
 /** Photo bytes live in storage; this editor keeps only stable references in the draft. */
@@ -49,9 +48,7 @@ export function PremadePhotoEditor({ item, onChange }: { item: OwnerPremade; onC
     <p className={styles.intro}>Removing a photo only removes its reference from this listing. It does not delete the stored file. One cover photo is required.</p>
     <div className={styles.framing}><div className={styles.thumbnail}><OwnerImage src={cover.src} alt={cover.alt} style={{ objectFit: item.imageFit ?? "contain", objectPosition: `${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%` }} /></div><div>
       <div className={styles.selectWrap}><OwnerSelect label="Photo fit" value={item.imageFit ?? "contain"} onChange={value => onChange({ imageFit: value === "cover" ? "cover" : "contain" })} options={[{ value: "contain", label: "Fit whole photo (no cropping)" }, { value: "cover", label: "Fill frame (crop edges)" }]} /></div>
-      <label className={ownerStyles.field}><span>Horizontal position · {item.imagePositionX ?? 50}%</span><input type="range" min="0" max="100" step="1" value={item.imagePositionX ?? 50} onChange={event => onChange({ imagePositionX: Number(event.target.value) })} /></label>
-      <label className={ownerStyles.field}><span>Vertical position · {item.imagePositionY ?? 50}%</span><input type="range" min="0" max="100" step="1" value={item.imagePositionY ?? 50} onChange={event => onChange({ imagePositionY: Number(event.target.value) })} /></label>
-      <OwnerNumberInput label="Horizontal position" value={item.imagePositionX ?? 50} min={0} max={100} unit="%" onChange={value => onChange({ imagePositionX: value ?? 50 })} /><OwnerNumberInput label="Vertical position" value={item.imagePositionY ?? 50} min={0} max={100} unit="%" onChange={value => onChange({ imagePositionY: value ?? 50 })} />
+      <div className={styles.positionFields}><OwnerNumberInput label="Horizontal position" value={item.imagePositionX ?? 50} min={0} max={100} unit="%" onChange={value => onChange({ imagePositionX: value ?? 50 })} /><OwnerNumberInput label="Vertical position" value={item.imagePositionY ?? 50} min={0} max={100} unit="%" onChange={value => onChange({ imagePositionY: value ?? 50 })} /></div>
       <p className={styles.intro}>Move the framing without changing the stored photo.</p>
     </div></div>
   </div>;

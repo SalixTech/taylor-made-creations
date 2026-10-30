@@ -1,4 +1,5 @@
 "use client";
+import { PencilIcon } from "@/components/PencilIcon";
 
 import { useState } from "react";
 import {
@@ -146,7 +147,7 @@ export function CommissionFormEditor({content,onEdit,onSaveDraft,onPublishLive,b
     <header className={styles.toolbar}>
       <div><h2>Commission form builder</h2><p>Select a pencil to edit a question. Drag a card to change the order.</p></div>
       <div className={styles.actions}>
-        <button type="button" data-owner-button="secondary" className={`${buttonStyles.button} ${buttonStyles.secondary}`} aria-pressed={testing} onClick={()=>setTesting(value=>!value)}>{testing?"Edit form":"Test form"}</button>
+        <button type="button" data-owner-button="secondary" className={`${buttonStyles.button} ${buttonStyles.secondary}`} aria-pressed={testing} data-form-mode-control onClick={()=>setTesting(value=>!value)}>{testing?"Edit form":"Test form"}</button>
         {onSaveDraft&&<button type="button" data-owner-button="secondary" className={`${buttonStyles.button} ${buttonStyles.secondary}`} disabled={locked} onClick={()=>void save("draft")}>Save Draft</button>}
         {onPublishLive&&<button type="button" data-owner-button="primary" className={`${buttonStyles.button} ${buttonStyles.primary}`} disabled={locked} onClick={()=>void save("live")}>Publish Live</button>}
       </div>
@@ -158,13 +159,13 @@ export function CommissionFormEditor({content,onEdit,onSaveDraft,onPublishLive,b
           renderSections:items=><OwnerPriceReorderList items={items} label="Form sections" disabled={locked} itemLabel={item=>config?.sectionTitles?.[item.id]??COMMISSION_SECTIONS.find(section=>section.id===item.id)!.title}
             onReorder={(source,target,after)=>update(next=>{next.sectionOrder=reorderCommissionIds(getCommissionSectionOrder(next),source,target,after);})}
             onStep={(source,direction)=>update(next=>{next.sectionOrder=shifted(getCommissionSectionOrder(next),source as CommissionSectionId,direction);})}>
-            {(item,handle)=><div className={styles.sectionCanvas}><div className={`${styles.canvasTools} ${styles.sectionTools}`}><h3>{config?.sectionTitles?.[item.id]??COMMISSION_SECTIONS.find(section=>section.id===item.id)!.title}</h3>{handle}<button type="button" data-owner-button="secondary" className={`${buttonStyles.button} ${buttonStyles.secondary}`} aria-expanded={section===item.id&&editing==="section"} onClick={()=>chooseSection(item.id)}>Edit section</button></div>{section===item.id&&editing==="section"&&sectionControls}{item.node}</div>}
+            {(item,handle)=><div className={styles.sectionCanvas}><div className={`${styles.canvasTools} ${styles.sectionTools}`} onClick={event=>{if(!locked && !(event.target as Element | null)?.closest?.("button,input,select,textarea,a,[role=button]"))chooseSection(item.id);}}><h3>{config?.sectionTitles?.[item.id]??COMMISSION_SECTIONS.find(section=>section.id===item.id)!.title}</h3>{handle}<button type="button" data-owner-button="secondary" className={`${buttonStyles.button} ${buttonStyles.secondary}`} aria-expanded={section===item.id&&editing==="section"} onClick={()=>chooseSection(item.id)}>{section===item.id&&editing==="section"?"Done":"Edit Section"}</button></div>{section===item.id&&editing==="section"&&sectionControls}{item.node}</div>}
           </OwnerPriceReorderList>,
           renderQuestions:(sectionId,items)=><OwnerPriceReorderList items={items} label={`Questions in ${sectionId}`} disabled={locked} itemLabel={item=>questionLabel(item.id)} onReorder={(source,target,after)=>reorderQuestions(sectionId,source,target,after)} onStep={(source,direction)=>update(next=>{next.questionOrder??={};next.questionOrder[sectionId]=shifted(getCommissionQuestionOrder(next,sectionId),source,direction);})}>
             {(item,handle)=><div className={styles.questionCanvas} data-selected={editing==="question"&&section===sectionId&&selectedId===item.id}>
-              <div className={styles.canvasTools}>{handle}<button type="button" data-owner-button="secondary" className={`${buttonStyles.button} ${buttonStyles.quiet} ${styles.editPencil}`} aria-label={`Edit ${questionLabel(item.id)}`} title={`Edit ${questionLabel(item.id)}`} aria-expanded={editing==="question"&&section===sectionId&&selectedId===item.id} onClick={()=>selectQuestion(sectionId,item.id,true)}><svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m16 3 5 5-12 12-6 1 1-6L16 3Z"/><path d="m13 6 5 5"/></svg></button></div>
+              <div className={styles.canvasTools}>{handle}<button type="button" data-owner-button="secondary" className={`${buttonStyles.button} ${buttonStyles.quiet} ${styles.editPencil}`} aria-label={`Edit ${questionLabel(item.id)}`} title={`Edit ${questionLabel(item.id)}`} aria-expanded={editing==="question"&&section===sectionId&&selectedId===item.id} onClick={()=>selectQuestion(sectionId,item.id,true)}><PencilIcon size={17} /></button></div>
               {editing==="question"&&section===sectionId&&selectedId===item.id&&questionControls}
-              <div className={styles.questionSurface} onClickCapture={event=>{event.preventDefault();event.stopPropagation();selectQuestion(sectionId,item.id);}} onFocusCapture={()=>selectQuestion(sectionId,item.id)}><fieldset disabled aria-label={questionLabel(item.id)}>{item.node}</fieldset></div>
+              <div className={styles.questionSurface} role="button" tabIndex={locked ? -1 : 0} aria-label={`Edit ${questionLabel(item.id)}`} aria-expanded={editing==="question"&&section===sectionId&&selectedId===item.id} onClick={event=>{if(locked || (event.target as Element | null)?.closest?.("button,a,input:not(:disabled),select:not(:disabled),textarea:not(:disabled)"))return;event.stopPropagation();selectQuestion(sectionId,item.id,true);}} onKeyDown={event=>{if(!locked && event.target===event.currentTarget && (event.key==="Enter" || event.key===" ")){event.preventDefault();selectQuestion(sectionId,item.id,true);}}}><fieldset disabled aria-label={questionLabel(item.id)}>{item.node}</fieldset></div>
             </div>}
           </OwnerPriceReorderList>
         }}/>

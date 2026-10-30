@@ -1,11 +1,14 @@
 "use client";
 
+import { AccountThemeSync } from "@/components/AccountThemeSync";
+import { acceptHubWindowSignIn, revokeHubWindows, assertHubWindowSession } from "@/client-hub/window-session";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from "firebase/auth";
 import { getOwnerFirebaseClient, ownerSignInError, OwnerSessionError, readOwnerFirebaseConfig, verifyOwnerSession, type OwnerFirebaseClient, type OwnerFirebaseConfigStatus } from "./firebase-client";
 import { createFirebaseOwnerStore, type FirebaseOwnerStore } from "./firebase-store";
 import type { OwnerStore } from "./storage";
+import type { RecoverySession } from "./draft-recovery";
 import { OwnerBrandLogo } from "./OwnerBrandLogo";
 import styles from "./FirebaseOwnerGate.module.css";
 import { OwnerGateFrame } from "./OwnerGateFrame";
@@ -14,11 +17,11 @@ type GateState =
   | { status: "checking" | "signed-out" | "signing-out" }
   | { status: "setup"; config: Exclude<OwnerFirebaseConfigStatus, { status: "ready" }> }
   | { status: "denied" | "session-error"; message: string; canSignOut: boolean }
-  | { status: "ready"; store: FirebaseOwnerStore; userEmail: string; sessionKey: number };
-export type FirebaseOwnerSession = { store: OwnerStore; userEmail: string; signOut: () => Promise<void> };
+  | { status: "ready"; store: FirebaseOwnerStore; userEmail: string; recoveryIdentity: RecoverySession; sessionKey: number };
+export type FirebaseOwnerSession = { store: OwnerStore; userEmail: string; recoveryIdentity: RecoverySession; signOut: () => Promise<void> };
 
 function SessionContent({ children, ...session }: FirebaseOwnerSession & { children: (session: FirebaseOwnerSession) => ReactNode }) {
-  return <>{children(session)}</>;
+  return <><AccountThemeSync role="owner" accountKey={session.recoveryIdentity.ownerUid} />{children(session)}</>;
 }
 
 /** This UI is only a convenience gate. Deployed Firestore rules enforce access. */
@@ -33,12 +36,14 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
   const generation = useRef(0);
   const signingOut = useRef(false);
   const mounted = useRef(false);
-  const loginPending = useRef(false);
+  const loginPending = useRef(false), authIntent = useRef(0);
+  const signInTransition = useRef<{ settled: Promise<void>; finish: () => void; accepted: boolean } | null>(null);
 
   const clearWorkspace = useCallback(() => { storeRef.current?.dispose(); storeRef.current = null; }, []);
 
   useEffect(() => {
     mounted.current = true;
+    const intentRef = authIntent;
     let active = true;
     let unsubscribe: (() => void) | undefined;
     // The deferred setup also ensures Strict Mode's first cleanup cannot race UI.
@@ -56,13 +61,15 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
           if (signingOut.current) { setState({ status: "signing-out" }); return; }
           if (!user) { setPassword(""); setState({ status: "signed-out" }); return; }
           setState({ status: "checking" });
-          void verifyOwnerSession(client, user).then(() => {
+          const transition = signInTransition.current;
+          const verification = (async () => { if (transition) { await transition.settled; if (!transition.accepted) throw new Error("Sign-in was not accepted."); } if (!active || request !== generation.current || signingOut.current) return; await verifyOwnerSession(client, user); })();
+          void verification.then(() => {
             if (!active || request !== generation.current || signingOut.current) return;
             const store = createFirebaseOwnerStore(client);
             storeRef.current = store;
             setPassword("");
             setMessage(null);
-            setState({ status: "ready", store, userEmail: user.email ?? "Owner account", sessionKey: request });
+            setState({ status: "ready", store, userEmail: user.email ?? "Owner account", recoveryIdentity: { projectId: config.options.projectId!, ownerUid: client.ownerUid, assertCurrent: () => { assertHubWindowSession("owner", user.uid); if (!active || request !== generation.current || signingOut.current || client.auth.currentUser !== user || user.uid !== client.ownerUid) throw new Error("Your owner session changed. Sign in again."); } }, sessionKey: request });
           }).catch(error => {
             if (!active || request !== generation.current || signingOut.current) return;
             clearWorkspace();
@@ -77,15 +84,20 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
       }
     });
     return () => {
-      active = false; mounted.current = false;
+      active = false; mounted.current = false; ++intentRef.current;
       unsubscribe?.(); clearWorkspace(); clientRef.current = null;
     };
+  }, [clearWorkspace]);
+
+  useEffect(() => {
+    const lock = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.role !== "owner" || detail.uid !== clientRef.current?.ownerUid) return; ++authIntent.current; ++generation.current; clearWorkspace(); setPassword(""); setState({ status: "session-error", message: "Signed out in another window. Your private workspace is locked.", canSignOut: true }); };
+    window.addEventListener("tmc-hub-session-lock", lock); return () => window.removeEventListener("tmc-hub-session-lock", lock);
   }, [clearWorkspace]);
 
   const signOut = useCallback(async (): Promise<void> => {
     if (signingOut.current) return;
     signingOut.current = true;
-    ++generation.current;
+    ++authIntent.current; ++generation.current;
     clearWorkspace();
     setPassword(""); setMessage(null);
     // Remove editor/preview (and all its state) before awaiting Firebase sign-out.
@@ -93,10 +105,12 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
     try {
       const client = clientRef.current;
       if (!client) throw new Error("Owner connection is unavailable.");
+      const coordinated = !client.auth.currentUser || revokeHubWindows("owner", client.auth.currentUser.uid);
       await firebaseSignOut(client.auth);
+      if (!coordinated) throw new Error("Cross-window logout could not be persisted.");
       if (mounted.current) setState({ status: "signed-out" });
     } catch {
-      if (mounted.current) setState({ status: "session-error", message: "Sign-out could not be confirmed. Your workspace has been locked on this page. Try signing out again before leaving a shared device.", canSignOut: true });
+      if (mounted.current) setState({ status: "session-error", message: "This workspace is locked, but complete sign-out could not be confirmed for every window. Close other Hub windows on this device and try signing out again before leaving it shared.", canSignOut: true });
     } finally { signingOut.current = false; }
   }, [clearWorkspace]);
 
@@ -104,15 +118,18 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
     event.preventDefault();
     const client = clientRef.current;
     if (!client || loginPending.current || state.status !== "signed-out") return;
+    const intent = ++authIntent.current;
     loginPending.current = true; setBusy(true); setMessage(null);
     const enteredPassword = password;
     setPassword("");
-    try { await signInWithEmailAndPassword(client.auth, email.trim(), enteredPassword); }
-    catch (error) { if (mounted.current) setMessage(ownerSignInError(error)); }
-    finally { loginPending.current = false; if (mounted.current) setBusy(false); }
+    let finish!: () => void;
+    const transition = { settled: new Promise<void>(resolve => { finish = resolve; }), finish: () => finish(), accepted: false }; signInTransition.current = transition;
+    try { const credential = await signInWithEmailAndPassword(client.auth, email.trim(), enteredPassword); if (!mounted.current || intent !== authIntent.current || signingOut.current) { if (client.auth.currentUser === credential.user) await firebaseSignOut(client.auth); throw new Error("The sign-in was cancelled."); } acceptHubWindowSignIn("owner", credential.user.uid); transition.accepted = true; }
+    catch (error) { if (mounted.current && intent === authIntent.current) setMessage(ownerSignInError(error)); }
+    finally { if (signInTransition.current === transition) signInTransition.current = null; transition.finish(); loginPending.current = false; if (mounted.current) setBusy(false); }
   }
 
-  if (state.status === "ready") return <SessionContent key={state.sessionKey} store={state.store} userEmail={state.userEmail} signOut={signOut}>{children}</SessionContent>;
+  if (state.status === "ready") return <SessionContent key={state.sessionKey} store={state.store} userEmail={state.userEmail} recoveryIdentity={state.recoveryIdentity} signOut={signOut}>{children}</SessionContent>;
 
   return <OwnerGateFrame><main className={styles.gate}>
     <section className={styles.card} aria-labelledby="owner-signin-title">

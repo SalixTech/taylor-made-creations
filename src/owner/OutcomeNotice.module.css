@@ -1,0 +1,16 @@
+.message { display:flex; align-items:center; gap:12px; min-width:0; padding:12px 14px; border:1px solid var(--owner-line,#d8d0d2); border-radius:10px; color:var(--owner-ink,#342a2c); background:var(--owner-card,#f8f5f5); font-size:12px; line-height:1.65; overflow-wrap:anywhere; }
+.message>span { flex:1; min-width:0; }
+.message .close { display:inline-grid; place-items:center; flex:0 0 32px; min-width:32px; width:32px; min-height:32px; height:32px; margin:0; padding:0; border:1px solid var(--owner-line,#d8d0d2); border-radius:7px; background:transparent; color:inherit; cursor:pointer; line-height:1; }
+.message .close svg { display:block; margin:0; }
+.message .close:hover { background:var(--owner-raised,#eee8e9); }
+.message .close:focus-visible { outline:2px solid var(--owner-wine,#800014); outline-offset:3px; }
+.message[data-transient-outcome][data-outcome=success] { animation:outcome-lifetime 5s linear forwards; }
+.message[data-transient-outcome][data-outcome=error] { animation:outcome-lifetime 8s linear forwards; }
+@keyframes outcome-lifetime { 0%,94% { opacity:1; } 100% { opacity:0; } }
+@media(prefers-reduced-motion:reduce) { .message[data-transient-outcome] { animation:none; } }
+.message[data-outcome=success] { border-left:3px solid #548264; }
+.message[data-outcome=error] { border-left:3px solid var(--owner-wine,#800014); }
+
+/* Shared feedback cards use the same inset, transparent close affordance. */
+:global([data-owner-portal][data-color-mode]) .message .close:is(:enabled,:disabled) { background-color:transparent!important; border-color:transparent!important; color:inherit!important; }
+:global([data-owner-portal][data-color-mode]) .message .close:enabled:hover { background-color:#ffffff12!important; }

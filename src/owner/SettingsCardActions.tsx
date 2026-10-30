@@ -8,7 +8,7 @@ export type SettingsCardSaveProps = {
   canSaveSettingsLive?: boolean;
   onSaveSettingsCard?: (card: SettingsCardId, mode: "draft" | "live") => Promise<boolean>;
 };
-export function SettingsCardActions({ card, canSaveSettingsDraft = false, canSaveSettingsLive = false, onSaveSettingsCard }: SettingsCardSaveProps & { card: SettingsCardId }) {
+export function SettingsCardActions({ card, canSaveSettingsDraft = false, canSaveSettingsLive = false, onSaveSettingsCard, inline = false }: SettingsCardSaveProps & { card: SettingsCardId; inline?: boolean }) {
   const locked = useRef(false);
   const [busy, setBusy] = useState<"draft" | "live" | null>(null);
   const [message, setMessage] = useState("");
@@ -22,7 +22,7 @@ export function SettingsCardActions({ card, canSaveSettingsDraft = false, canSav
     } catch { setMessage("Could not save this card. Your edits are still here. Please try again."); setFailed(true); }
     finally { locked.current = false; setBusy(null); }
   }
-  return <div className={styles.settingsSave}>
+  return <div className={`${styles.settingsSave} ${inline ? styles.settingsSaveInline : ""}`} data-settings-card-actions={card}>
     <div className={styles.settingsSaveButtons}><button type="button" className={ui.secondary} disabled={!canSaveSettingsDraft || !onSaveSettingsCard || busy !== null} onClick={() => void save("draft")}>{busy === "draft" ? "Saving draft…" : "Save Draft"}</button><button type="button" className={ui.primary} disabled={!canSaveSettingsLive || !onSaveSettingsCard || busy !== null} onClick={() => void save("live")}>{busy === "live" ? "Saving live…" : "Save Live"}</button></div>
     {message && <p className={failed ? ui.error : ui.help} role={failed ? "alert" : "status"}>{message}</p>}
   </div>;

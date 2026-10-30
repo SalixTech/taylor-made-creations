@@ -1,0 +1,29 @@
+.editor { display:grid; gap:18px; min-width:0; margin:0; padding:0; border:0; color:var(--owner-ink,#342a2c); }
+.hint { margin:0; color:var(--owner-muted,#6d6064); font-size:11px; line-height:1.7; }
+.rows { display:grid; gap:16px; min-width:0; }
+.row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; align-items:end; gap:10px; min-width:0; }
+.editor .row .name { display:grid; align-items:start; gap:8px; margin:0; min-width:0; font-size:12px; line-height:1.5; }
+.editor .row .name input { box-sizing:border-box; width:100%; min-width:0; height:44px; min-height:44px; margin:0; padding:10px 12px; border:1px solid var(--owner-control-line,var(--owner-line,#ded3d5)); border-radius:10px; background:var(--owner-card,#fff); color:var(--owner-ink,#342a2c); font:inherit; line-height:1.5; }
+.editor .row .name input:focus-visible { outline:2px solid var(--owner-button-focus,#800014); outline-offset:2px; }
+.editor .row .stage > div { display:grid; grid-template-rows:auto auto; align-content:end; gap:8px; margin:0; min-width:0; font-size:12px; line-height:1.5; }
+.editor .row .stage label { display:block; margin:0; font-size:12px; line-height:1.5; }
+.editor .row .stage [role=combobox] { height:44px; min-height:44px; }
+.editor .row .remove { align-self:end; min-height:44px; padding:10px 12px; }
+.anchor { grid-column:2/-1; display:grid; align-content:end; gap:8px; min-width:0; min-height:44px; }
+.anchorStage { font-size:11px; line-height:1.5; color:var(--owner-muted,#6d6064); }
+.editor .row .visibility { display:flex; align-items:center; gap:8px; min-height:24px; margin:0; color:var(--owner-ink,#342a2c); font-size:11px; line-height:1.5; }
+.editor .row .visibility input { flex:0 0 16px; width:16px; height:16px; min-height:0; margin:0; padding:0; accent-color:var(--owner-button-primary-bg,#800014); }
+.editor .add { justify-self:start; }
+@media(max-width:520px) { .row { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; padding-bottom:15px; border-bottom:1px solid var(--owner-line,#ded3d5); }.editor .row .remove { grid-column:2; justify-self:end; min-height:36px; padding:6px 12px; }.anchor { grid-column:2; }.editor .row .visibility { align-items:flex-start; }.visibility input { margin-top:2px; } }
+@media(max-width:360px) { .row { grid-template-columns:1fr; }.editor .row .remove,.anchor { grid-column:1; }.editor .row .remove { justify-self:start; } }
+/* Beat generic dark-mode stage/card/input heuristics without affecting previews. */
+:global([data-owner-portal][data-color-mode=dark]) .editor .row .stage { background:transparent!important; }
+:global([data-owner-portal][data-color-mode=dark]) .editor .row .name input,
+:global([data-owner-portal][data-color-mode=dark]) .editor .row .stage [role=combobox] { background:var(--owner-card)!important; }
+:global([data-owner-portal][data-color-mode=dark]) .editor .anchorStage { color:var(--owner-muted)!important; }
+/* Each node now uses the same stage control, including protected lifecycle steps. */
+.editor .anchor { grid-column:auto; min-height:44px; gap:4px; }
+.editor .actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.editor .actions > button { margin:0; }
+.editor .anchor .visibility { font-size:10px; }
+@media(max-width:520px) { .editor .row .anchor { grid-column:1/-1; }.editor .actions { align-items:stretch; }.editor .actions > button { flex:1 1 180px; } }

@@ -1,4 +1,5 @@
 "use client";
+import { RefreshIcon } from "@/components/RefreshIcon";
 
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import type { OwnerFont } from "./model";
@@ -50,7 +51,7 @@ export function OwnerFontLibrary({ fonts = [], onChange }: { fonts?: OwnerFont[]
   }
   const available = library.files.filter(file => file.status === "ready" && !file.trashedAt && !isFolderTrashed(library.folders, file.parentId)).flatMap(file => { const font = cloudFileToOwnerFont(file); return font && !fonts.some(existing => existing.id === font.id) ? [font] : []; });
   return <section className={styles.library} aria-label="Uploaded fonts">
-    <div className={styles.heading}><h3>Uploaded fonts</h3><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${styles.fontRefresh}`} aria-label="Refresh fonts" title="Refresh fonts" disabled={library.loading} aria-busy={library.loading} onClick={() => { void library.refresh(); }}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5" /><path d="M19.4 12a7.5 7.5 0 1 0-1.8 5" /></svg></button></div>
+    <div className={styles.heading}><h3>Uploaded fonts</h3><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${styles.fontRefresh}`} aria-label="Refresh fonts" title="Refresh fonts" disabled={library.loading} aria-busy={library.loading} onClick={() => { void library.refresh(); }}><RefreshIcon /></button></div>
     <p className={styles.description}>Add your own font, then choose it for headings, body text or an individual section. Your fonts are shared across your owner devices.</p>
     <FontUpload onUploaded={font => { add(font); void library.refresh(); }} />
     {fonts.length > 0 && <ul className={styles.fontList}>{fonts.map(font => <li key={font.id}><span>{font.name}<small>{font.format.toUpperCase()} · available in this draft</small></span></li>)}</ul>}

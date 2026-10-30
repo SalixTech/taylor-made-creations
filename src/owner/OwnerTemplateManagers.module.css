@@ -64,3 +64,113 @@
 .galleryImagePicker > div > div { min-width:0; }
 .galleryImagePicker > div > div:first-child { display:none; }
 @media(max-width:500px) { .galleryEditSummary { grid-template-columns:80px minmax(0,1fr); gap:12px; } }
+
+/* Settings: a balanced compact first row, then content-height business cards. */
+.settingsTop,.settingsDetails { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; min-width:0; }
+.settingsTop { align-items:stretch; }
+.settingsDetails { align-items:start; }
+.settingsTop > section,.settingsDetails > section { min-width:0; padding:20px; }
+.settingsTop > section > div:first-child { margin-bottom:16px; align-items:center; flex-wrap:nowrap; }
+.settingsTop > section > div:first-child > div { min-width:0; }
+.settingsTop > section > label { margin:0 0 12px; }
+.settingsTop p { line-height:1.55; }
+.settingsDetails > section > label:last-of-type { margin-bottom:12px; }
+.settingsIcon { display:inline-grid; place-items:center; flex:0 0 36px; width:36px; height:36px; border:1px solid var(--owner-control-line,var(--owner-line)); border-radius:8px; padding:0; color:var(--owner-ink); background:transparent; cursor:pointer; }
+.settingsIcon:hover { border-color:currentColor; }
+.settingsIcon:focus-visible,.speciesReview > summary:focus-visible { outline:2px solid var(--owner-wine,#800014); outline-offset:3px; }
+.whimsyEditor { display:grid; gap:12px; }
+.whimsyEditor > p,.whimsyEditor > h3 { margin:0; }
+.whimsyEditor h3 { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:14px; }
+.whimsyEditor h3 small { font-size:11px; font-weight:400; color:var(--owner-muted); }
+.wordList { display:flex; flex-wrap:wrap; gap:8px; list-style:none; margin:0; padding:0; }
+.wordList li { display:inline-flex; align-items:center; gap:10px; border:1px solid var(--owner-line); border-radius:8px; padding:6px 10px; min-width:0; }
+.wordList li > span { overflow-wrap:anywhere; }
+.wordList small { font-size:10px; color:var(--owner-muted); }
+.wordList button { min-height:30px; font-size:11px; padding:4px 7px; }
+.wordForm { display:flex; align-items:end; gap:10px; flex-wrap:wrap; }
+.wordForm label { flex:1 1 200px; display:grid; gap:6px; margin:0; font-size:13px; }
+.wordForm input { min-width:0; width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid var(--owner-control-line,var(--owner-line)); border-radius:8px; background:var(--owner-surface); color:var(--owner-ink); font:inherit; }
+.wordForm input:focus-visible { outline:2px solid var(--owner-wine,#800014); outline-offset:2px; }
+.speciesReview { border-top:1px solid var(--owner-line); padding-top:12px; }
+.speciesReview > summary { cursor:pointer; font-size:13px; font-weight:600; }
+.speciesReview > .wordList { margin-top:12px; }
+@media(max-width:850px) { .settingsTop,.settingsDetails { grid-template-columns:1fr; } }
+
+/* Compact owner controls; retain readable labels and touch targets. */
+.premadeSettings { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; align-items:start; }
+.gallerySummary { display:grid; gap:8px; }
+.gallerySummary p { margin:0; }
+.gallerySummary .galleryNumberActions { margin:0; gap:10px; }
+.photoActions { display:flex; align-items:center; gap:8px; margin-top:12px; }
+.photoActions > button { min-width:38px; min-height:38px; display:inline-grid; place-items:center; padding:8px; }
+.publishListing { padding:12px 0; gap:10px; flex-wrap:wrap; }
+.publishListing p { flex-basis:100%; max-width:none; margin:0; }
+.listingFooter { margin-top:10px; }
+@media(max-width:720px) { .premadeSettings { grid-template-columns:1fr; } }
+.cardTools { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; }
+
+/* Commission form controls: save at lower left, editing tools at lower right. */
+.commissionFormActions { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:14px 24px; margin-top:20px; }
+.settingsSave.settingsSaveInline { margin:0; padding:0; border:0; min-width:0; }
+.commissionFormEditActions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; margin-left:auto; }
+@media(max-width:560px) { .commissionFormActions { flex-direction:column; align-items:flex-start; } .commissionFormEditActions { justify-content:flex-start; margin-left:0; } }
+
+/* Fox9: keep the listing's three actions on one compact row. */
+.listingDeleteInline { margin-left:auto; }
+.gallerySummary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px 20px; }
+.gallerySummary > div:first-child { display:contents; }
+.gallerySummary > div:first-child > button { order:3; margin-left:auto; }
+.gallerySummary .galleryNumberActions { flex:1 1 360px; justify-content:flex-end; }
+@media(max-width:700px) { .gallerySummary .galleryNumberActions { justify-content:flex-start; }.listingDeleteInline { margin-left:0; } }
+
+/* Fox10: compact draft cards, adjacent edit/trash actions and balanced switches. */
+.premadeSettings { align-items:stretch; }
+.premadeSettings > section { height:100%; }
+.listingCard > section { padding:18px; }
+.listingCard:not(.expandedListing) .listingSummary { grid-template-columns:80px minmax(0,1fr); gap:14px; }
+.listingCard:not(.expandedListing) .listingSummary p { margin:5px 0; }
+.listingCard:not(.expandedListing) .listingSummary p:nth-child(2) { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.listingActions { flex:0 1 auto; gap:10px; }
+.listingBadges { flex:0 1 auto; }
+.listingControls > button { padding:8px; min-width:36px; min-height:36px; display:inline-grid; place-items:center; }
+.trashButton { color:#f16d83!important; border-color:color-mix(in srgb,#f16d83 55%,transparent)!important; }
+.previewButton { cursor:zoom-in; padding:0; border:0; display:block; width:100%; }
+.galleryEditPreview.previewButton { width:120px; }
+.numberHelp { font-size:12px; margin-block:12px; }
+.numberHelp summary { cursor:pointer; color:var(--owner-muted); }
+@media(max-width:500px) { .galleryEditPreview.previewButton { width:80px; } }
+.draftGrid { grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr)); }
+/* Compact private drafts keep their pencil/trash pair at the card's top right. */
+.draftGrid .listingCard:not(.expandedListing) > section { position:relative; }
+.draftGrid .listingCard:not(.expandedListing) > section > div:first-child { flex-direction:column; align-items:stretch; gap:10px; }
+.draftGrid .listingCard:not(.expandedListing) > section > div:first-child > div:first-child { padding-right:90px; min-height:36px; min-width:0; flex:0 0 auto; overflow-wrap:anywhere; }
+.draftGrid .listingCard:not(.expandedListing) .listingActions,
+.draftGrid .listingCard:not(.expandedListing) .listingBadges { justify-content:flex-start; }
+.draftGrid .listingCard:not(.expandedListing) .listingControls { position:absolute; top:18px; right:18px; flex-wrap:nowrap; gap:8px; }
+
+/* Fox13: gallery card tracks stay equal even when names and metadata wrap. */
+.manager[data-template-manager="photos"] [data-price-sort-list="Gallery photos"] { align-items:stretch; grid-auto-rows:1fr; }
+.manager[data-template-manager="photos"] [data-price-sort-card] { min-width:0; height:100%; }
+.manager[data-template-manager="photos"] .galleryCard { height:100%; }
+.manager[data-template-manager="photos"] .galleryCard > section { height:100%; box-sizing:border-box; display:flex; flex-direction:column; }
+.manager[data-template-manager="photos"] .galleryCard .photoActions { margin-top:auto; }
+.manager[data-template-manager="photos"] .galleryCard h3 { overflow-wrap:anywhere; }
+/* Fox13 Oops: equal parent heights without redistributing business controls. */
+.settingsDetails { align-items:stretch; }
+.settingsDetails>section { align-self:stretch; }
+.settingsTop>section>div:first-child { min-height:62px; margin-bottom:12px; }
+.settingsTop>section [class*="ConstructionModeSettings_content"] { display:flex; flex-direction:column; gap:10px; }
+.settingsTop>section [class*="ConstructionModeSettings_controls"] { order:-1; }
+.settingsTop>section [class*="ConstructionModeSettings_setting"] { margin:0; padding:0; }
+.settingsTop>section [class*="ConstructionModeSettings_setting"]>label { margin:0; }
+.settingsTop>section [class*="ConstructionModeSettings_liveStatus"] { margin:0; }
+
+/* Share the actual tallest header, including wrapped actions, instead of guessing its height. */
+.settingsCardBody { min-width:0; }
+.settingsCardBody>label { margin:0 0 12px; }
+@media(min-width:851px) {
+  .settingsTop { grid-template-rows:auto 1fr; row-gap:12px; }
+  .settingsTop>section { display:grid; grid-template-rows:subgrid; grid-row:span 2; row-gap:12px; align-content:start; }
+  .settingsTop>section>div:first-child { margin-bottom:0; }
+  .settingsTop>section>div:nth-child(2) { align-self:start; }
+}

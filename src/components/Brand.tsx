@@ -31,3 +31,6 @@ export function Brand({ footer = false, href = "/", name = "Taylor Made Creation
 export function BrandMark({ logo = { src: "/images/logo.png", alt: "" }, privateMedia = false }: { logo?: { src: string; alt: string }; privateMedia?: boolean }) {
   return <div className="brand-mark" aria-hidden="true"><BrandLogo src={logo.src} alt="" privateMedia={privateMedia} /></div>;
 }
+
+/** Supplied circle-spade mark, tinted for the current light/dark theme. */
+export function SpadeMark(){return <span className="tmc-spade-mark" aria-hidden="true" />;}

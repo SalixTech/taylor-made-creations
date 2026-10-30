@@ -1,4 +1,5 @@
 "use client";
+import { PhotoLoading } from "./PhotoLoading";
 
 import Image from "next/image";
 import { lockPageScroll } from "./modal-scroll-lock";
@@ -20,7 +21,7 @@ function PremadeImage({ photo, mode, fit = "contain", position = "50% 50%", thum
   const media = useOwnerMediaSource(photo.src, mode !== "public");
   const src = mode === "public" ? photo.src : media.src;
   if (!isSafeImageSource(photo.src) || failed || media.error) return <span className={styles.unavailable} role="status">{thumbnail ? "Unavailable" : `This photo could not be displayed. ${photo.alt}`}</span>;
-  if (!src) return <span className={styles.unavailable} role="status">{thumbnail ? "Loading…" : "Loading photo…"}</span>;
+  if (!src) return <span className={styles.unavailable} role="status"><PhotoLoading label={thumbnail ? "Loading…" : "Loading photo…"} /></span>;
   return <Image src={src} alt={thumbnail ? "" : photo.alt} fill unoptimized sizes={thumbnail ? "72px" : "(max-width:650px) 94vw, 700px"} style={{ objectFit: fit, objectPosition: position }} onError={() => setFailed(true)} />;
 }
 

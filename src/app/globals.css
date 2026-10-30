@@ -192,7 +192,7 @@
 .selected-design .premade-product{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:clamp(24px,5vw,64px);align-items:start;margin:30px 0}
 .selected-design .premade-product h1{font-size:clamp(32px,4vw,54px);overflow-wrap:anywhere}
 .selected-design .premade-description{white-space:pre-wrap;overflow-wrap:anywhere}
-.selected-design .premade-price{font-size:24px;font-weight:700;color:var(--wine)}
+.selected-design .premade-price,.selected-design[data-site-theme="true"] .premade-price{font-size:24px;font-weight:700;color:var(--site-price-text,var(--wine))}
 .selected-design .storefront-notice{padding:16px;border:1px solid var(--line);background:var(--cream);font-size:14px;line-height:1.6}
 .selected-design .premade-purchase{margin-top:24px}
 .selected-design .premade-purchase h2{font-size:23px}
@@ -212,3 +212,24 @@
 /* Inline author links remain ordinary accessible links, not button-shaped chips. */
 .inline-content-link { color:inherit; text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:3px; overflow-wrap:anywhere; }
 .inline-content-link:hover { text-decoration-thickness:2px; }
+
+/* A mask keeps the supplied premades mark visible in both themes. */
+.tmc-spade-mark{display:block;width:82px;height:82px;margin:0 auto 24px;background:var(--ink,#302c2c);mask:url("/images/tmc-spade-mark.png") center/contain no-repeat;-webkit-mask:url("/images/tmc-spade-mark.png") center/contain no-repeat}
+
+/* Native file inputs keep their accessible input while sharing the studio's
+   themed action button. Hidden custom picker inputs remain unaffected. */
+input[type="file"]::file-selector-button {
+  border:1px solid var(--owner-accent,#8f102b); border-radius:10px;
+  background:var(--owner-accent,#8f102b); color:#fff; padding:9px 14px;
+  margin-right:12px; font:inherit; font-weight:600; cursor:pointer;
+}
+input[type="file"]:disabled::file-selector-button { cursor:not-allowed; opacity:.55; }
+input[type="file"]:focus-visible::file-selector-button { outline:2px solid currentColor; outline-offset:3px; }
+[data-transient-feedback] { animation:tmc-feedback-life 5s linear both; }
+[data-transient-feedback][role="alert"] { animation-duration:8s; }
+@keyframes tmc-feedback-life { 0%,94% { opacity:1; } 100% { opacity:0; } }
+@media (prefers-reduced-motion:reduce) { [data-transient-feedback] { animation:none; } }
+
+/* Resizing may enlarge a field, never crush it into an unusable one-line strip. */
+textarea { min-height:88px!important; min-width:0; max-width:100%; resize:vertical; }
+dialog { border-color:var(--owner-wine,var(--wine,#800014)); }

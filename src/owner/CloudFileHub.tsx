@@ -1,10 +1,14 @@
 "use client";
+import { galleryLinkedFileIds } from "./gallery-folder-links";
+import type { PrivateGallery } from "./private-gallery";
+import { CommissionFileHub } from "./CommissionFileHub";
+import { RefreshButton } from "@/components/RefreshButton";
 
 import Image from "next/image";
 import SiteSelect from "@/components/SiteSelect";
 import { useContext, useEffect, useId, useRef, useState, type DragEvent } from "react";
-import { readCloudFileOrder, saveCloudFileOrder, changeCloudFile, changeCloudFolder, checkCloudStorage, confirmCloudUpload, downloadCloudFile, uploadCloudFile, ensureCloudFontsFolder, permanentDeleteCloudFiles, permanentlyDeleteEmptyCloudFolders, readCloudCleanupStatus, createCloudWebsitePhoto } from "./cloud-files-client";
-import { CLOUD_FOLDER_LIMIT, CLOUD_UPLOAD_ACCEPT, CLOUD_FONTS_FOLDER_ID, isOriginalCloudPhoto, cloudPhotoSource, folderAncestors, isFolderTrashed, validFileName, type CloudFile, type CloudFolder, type CloudFolders } from "./cloud-files-model";
+import { readCloudFileOrder, saveCloudFileOrder, changeCloudFile, changeCloudFolder, confirmCloudUpload, downloadCloudFile, uploadCloudFile, ensureCloudFontsFolder, ensureCloudSystemFolders, readCloudGallery, permanentDeleteCloudFiles, permanentlyDeleteEmptyCloudFolders, readCloudCleanupStatus, createCloudWebsitePhoto } from "./cloud-files-client";
+import { CLOUD_FOLDER_LIMIT, CLOUD_UPLOAD_ACCEPT, CLOUD_FONTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, CLOUD_GALLERY_FOLDER_ID, isProtectedCloudFolder, isOriginalCloudPhoto, cloudPhotoSource, folderAncestors, isFolderTrashed, validFileName, type CloudFile, type CloudFolder, type CloudFolders } from "./cloud-files-model";
 import { emptyCloudFileOrder, orderedCloudKeys } from "./cloud-file-order";
 import { useCloudFiles } from "./use-cloud-files";
 import { useOwnerMediaSource } from "./media-client";
@@ -29,7 +33,7 @@ function folderPath(registry: CloudFolders, id: string): string { return ["My fi
 
 function PrivatePhoto({ file, full = false }: { file: CloudFile; full?: boolean }) {
   const media = useOwnerMediaSource(cloudPhotoSource(file.id));
-  return <div className={full ? styles.fullPreview : styles.preview}>{media.error ? <p className={styles.error} role={full ? "alert" : undefined}>{media.error}</p> : media.src ? <Image unoptimized src={media.src} alt={file.name} width={file.width} height={file.height} /> : <span className={styles.status}>Loading private photo…</span>}</div>;
+  return <div className={full ? styles.fullPreview : styles.preview}>{media.error ? <p className={styles.error} role={full ? "alert" : undefined}>{media.error}</p> : media.src ? <Image unoptimized src={media.src} alt={file.name} width={file.width} height={file.height} /> : <span className={styles.photoBuffer} role="status"><span aria-hidden="true" />Loading photo…</span>}</div>;
 }
 function PhotoThumbnail({ file }: { file: CloudFile }) {
   const target = useRef<HTMLDivElement>(null);
@@ -50,6 +54,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   const accessAllowed = useRef(library.ready);
   useEffect(() => { accessAllowed.current = library.ready; }, [library.ready]);
   const inputId = useId();
+  const systemFoldersEnsured = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadActivity = useContext(UploadActivity);
   const finishUpload = useRef<(() => void) | null>(null);
@@ -61,6 +66,8 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   // Start in the folder view for both the hub and pickers. The optional
   // All photos tab is a flattened view, so using it initially hides folders.
   const [allPhotos, setAllPhotos] = useState(false);
+  const [savedGallery, setSavedGallery] = useState<PrivateGallery | null>(null);
+  const [galleryRead, setGalleryRead] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [trash, setTrash] = useState(false);
   const [layout, setLayout] = useState<"grid" | "list">(manager ? "list" : "grid");
   const [search, setSearch] = useState("");
@@ -69,7 +76,6 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [health, setHealth] = useState("");
   const cleanupGeneration = useRef(0);
   const [cleanup, setCleanup] = useState<{ available: boolean; automaticCleanupEnabled: boolean; lastRunAt: string | null; message: string } | null>(null);
   const [deleting, setDeleting] = useState<{ files: CloudFile[]; folderIds: string[]; title: string } | null>(null);
@@ -95,10 +101,18 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     // Clear private dialogs after the access boundary, not during an ordinary refresh.
     void Promise.resolve().then(() => {
       if (!alive.current) return;
-      setEditing(null); setViewing(null); setDeleting(null); setCleanup(null); setPlacing(null); setOrder(emptyCloudFileOrder()); setOrderReady(false); setDragging(null); setDropTarget(null); dragItem.current = null; setMessage(""); setHealth(""); setError("");
+      setEditing(null); setViewing(null); setDeleting(null); setCleanup(null); setPlacing(null); setOrder(emptyCloudFileOrder()); setOrderReady(false); setDragging(null); setDropTarget(null); dragItem.current = null; setMessage("");  setError("");
     });
   }, [library.ready, library.loading]);
 
+  useEffect(() => {
+    if (!library.ready) { if (!library.loading) systemFoldersEnsured.current = false; return; }
+    if (library.loading || systemFoldersEnsured.current) return;
+    systemFoldersEnsured.current = true;
+    let current = true;
+    void ensureCloudSystemFolders().catch(cause => { if (current) setError(cause instanceof Error ? cause.message : "Protected folders could not be prepared."); });
+    return () => { current = false; };
+  }, [library.ready, library.loading]);
   useEffect(() => {
     if (!library.ready || picker) return;
     let current = true; const generation = ++cleanupGeneration.current;
@@ -115,20 +129,33 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     return () => { live = false; };
   }, [currentParent, library.ready, library.loading, picker]);
 
+  useEffect(() => {
+    let current = true;
+    void Promise.resolve().then(async () => {
+      if (!current) return;
+      setSavedGallery(null);
+      if (!library.ready || library.loading || currentParent !== CLOUD_GALLERY_FOLDER_ID || trash || allPhotos) { setGalleryRead("idle"); return; }
+      setGalleryRead("loading");
+      try { const gallery = await readCloudGallery(); if (current) { setSavedGallery(gallery); setGalleryRead("ready"); } }
+      catch { if (current) setGalleryRead("error"); }
+    });
+    return () => { current = false; };
+  }, [library.ready, library.loading, currentParent, trash, allPhotos]);
+  const linkedGalleryIds = library.ready && currentParent === CLOUD_GALLERY_FOLDER_ID && galleryRead === "ready" && !trash && !allPhotos ? galleryLinkedFileIds(savedGallery, library.files, library.folders) : new Set<string>();
   const query = search.trim().toLocaleLowerCase();
   const folderEntries = Object.entries(library.folders.folders).filter(([id, folder]) => {
     const trashed = isFolderTrashed(library.folders, id);
-    return (!picker || !allPhotos) && (trash ? trashed : !trashed && folder.parentId === currentParent) && (!query || folder.name.toLocaleLowerCase().includes(query));
+    return (!picker || id !== CLOUD_COMMISSIONS_FOLDER_ID) && (!picker || !allPhotos) && (trash ? trashed : !trashed && folder.parentId === currentParent) && (!query || folder.name.toLocaleLowerCase().includes(query));
   }).sort((a, b) => a[1].name.localeCompare(b[1].name));
   const files = library.files.filter(file => {
     const trashed = Boolean(file.trashedAt) || isFolderTrashed(library.folders, file.parentId);
-    return (!picker || file.kind === "photo" && file.status === "ready") && (trash ? trashed : !trashed && (picker && allPhotos || file.parentId === currentParent)) && (!query || file.name.toLocaleLowerCase().includes(query));
+    return (!picker || file.kind === "photo" && file.status === "ready") && (trash ? trashed : !trashed && (picker && allPhotos || file.parentId === currentParent || linkedGalleryIds.has(file.id))) && (!query || file.name.toLocaleLowerCase().includes(query));
   }).sort((a, b) => a.name.localeCompare(b.name));
   const visibleItems: Item[] = [...folderEntries.map(([id, folder]): Item => ({ kind: "folder", id, folder, registry: library.folders })), ...files.map((file): Item => ({ kind: "file", file }))];
   const sortedKeys = orderedCloudKeys(order, visibleItems.map(itemKey));
   const visibleByKey = new Map(visibleItems.map(item => [itemKey(item), item]));
   const orderedItems = !trash && !picker ? sortedKeys.map(key => visibleByKey.get(key)!) : visibleItems;
-  const canReorder = !trash && !picker && !query && orderReady;
+  const canReorder = !trash && !picker && !query && orderReady && linkedGalleryIds.size === 0;
   const currentViewing = viewing && library.files.find(file => file.id === viewing.id && file.status === "ready") || null;
   const readyBytes = library.files.filter(file => file.status === "ready").reduce((sum, file) => sum + file.bytes, 0);
   const pendingCount = library.files.filter(file => file.status === "uploading").length;
@@ -263,7 +290,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   }
   function clearDrag() { dragItem.current = null; setDragging(null); setDropTarget(null); setInsertion(null); }
   function startDrag(event: DragEvent<HTMLElement>, item: Item) {
-    if (unavailable || trash || picker || editing || item.kind === "folder" && item.id === CLOUD_FONTS_FOLDER_ID) { event.preventDefault(); return; }
+    if (unavailable || trash || picker || editing || item.kind === "folder" && isProtectedCloudFolder(item.id)) { event.preventDefault(); return; }
     setPlacing(null); dragItem.current = item; setDragging(itemKey(item));
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData(dragType, itemKey(item));
@@ -271,9 +298,11 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   }
   function canDrop(destination: string) { return canMove(dragItem.current ?? placing, destination); }
   function canMove(item: Item | null, destination: string) {
+    if (item?.kind === "file" && linkedGalleryIds.has(item.file.id)) return false;
+    if (destination === CLOUD_COMMISSIONS_FOLDER_ID) return false;
     if (destination !== "root" && (!library.folders.folders[destination] || isFolderTrashed(library.folders, destination))) return false;
     if (!item) return true;
-    if (item.kind === "folder" && (item.id === CLOUD_FONTS_FOLDER_ID || item.registry.revision !== library.folders.revision || !library.folders.folders[item.id] || isFolderTrashed(library.folders, item.id))) return false;
+    if (item.kind === "folder" && (isProtectedCloudFolder(item.id) || item.registry.revision !== library.folders.revision || !library.folders.folders[item.id] || isFolderTrashed(library.folders, item.id))) return false;
     if (item.kind === "file") {
       const current = library.files.find(file => file.id === item.file.id);
       if (!current || current.trashedAt || current.revision !== item.file.revision || current.parentId !== "root" && !library.folders.folders[current.parentId] || isFolderTrashed(library.folders, current.parentId)) return false;
@@ -320,11 +349,12 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     } else if (item.kind === "folder") drop(event, item.id);
   }
   function placementControls(item: Item) {
-    if (!canReorder || editing || item.kind === "folder" && item.id === CLOUD_FONTS_FOLDER_ID) return null;
-    return <div className={styles.placement}>
-      <button type="button" data-owner-button className={secondary} disabled={unavailable} aria-pressed={placing && itemKey(placing) === itemKey(item) || false} onClick={() => setPlacing(placing && itemKey(placing) === itemKey(item) ? null : item)}>Reorder / move</button>
+    if (!canReorder || editing || item.kind === "folder") return null;
+    return <div className={styles.keyboardPlacement} data-placing={Boolean(placing) || undefined}>
+      
+      <button type="button" data-owner-button className={secondary} disabled={unavailable} aria-pressed={placing && itemKey(placing) === itemKey(item) || false} onClick={() => setPlacing(placing && itemKey(placing) === itemKey(item) ? null : item)} aria-label={`Keyboard placement: ${titleOf(item)}`}>Keyboard placement</button>
       {placing && itemKey(placing) !== itemKey(item) && <><button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void placeItem(placing, item); }}>Place before</button><button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void placeItem(placing, item, true); }}>Place after</button></>}
-      {placing && item.kind === "folder" && canMove(placing, item.id) && <button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void movePlaced(item.id); }}>Move into folder</button>}
+      
     </div>;
   }
   async function movePlaced(destination: string) {
@@ -359,28 +389,28 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
         <button type="button" className={styles.folderLink} disabled={unavailable || Boolean(editing) || Boolean(placing && !canMove(placing, id))}
           aria-label={`${placing ? "Move selected item to" : "Open folder"}: ${name}`}
           aria-current={!trash && currentParent === id ? "location" : undefined}
-          title={id === CLOUD_FONTS_FOLDER_ID ? "Fonts folder (protected)" : folderPath(library.folders, id)}
+          title={isProtectedCloudFolder(id) ? `${name} folder (protected)` : folderPath(library.folders, id)}
           onClick={() => { if (placing) void movePlaced(id); else { setExpandedFolders(current => ({ ...current, ...Object.fromEntries(folderAncestors(library.folders, id).map(key => [key, true])), root: true })); navigate(id); } }}>
-          <FolderSymbol /><span>{name}</span>{id === CLOUD_FONTS_FOLDER_ID && <span aria-label="Protected folder">🔒</span>}
+          <FolderSymbol /><span>{name}</span>{isProtectedCloudFolder(id) && <span aria-label="Protected folder">🔒</span>}
         </button>
       </div>
       {expanded && children.length > 0 && depth < CLOUD_FOLDER_LIMIT && <div className={styles.folderChildren}>{children.map(([key]) => folderBranch(key, depth + 1))}</div>}
     </div>;
   }
   const targets = [{ id: "root", label: "My files" }, ...Object.entries(library.folders.folders).filter(([id]) => !isFolderTrashed(library.folders, id) && !(editing?.target?.kind === "folder" && folderAncestors(library.folders, id).includes(editing.target.id))).map(([id]) => ({ id, label: folderPath(library.folders, id) })).sort((a, b) => a.label.localeCompare(b.label))];
+  if (!picker && currentParent === CLOUD_COMMISSIONS_FOLDER_ID && library.ready) return <CommissionFileHub onBack={() => navigate("root")} />;
   return <section className={`${styles.hub} ${manager ? styles.manager : ""}`} aria-label={picker ? "Cloud photo library" : "File Hub"} onKeyDown={event => { if (event.key === "Escape") { clearDrag(); setPlacing(null); } }} onDragEnd={clearDrag} onDragOver={event => dragOver(event, currentParent)} onDrop={event => drop(event, currentParent)}>
-    <div className={styles.heading}><div>{manager ? <h2>File Hub</h2> : <h3>Cloud photo library</h3>}<small>{picker ? "Your uploaded photos" : "Your files, organized your way"}</small></div><div className={styles.headingActions}><button type="button" data-owner-button className={secondary} disabled={busy || library.loading} onClick={refreshFiles}>{library.loading ? "Reading files…" : "Refresh files"}</button>{!picker && <button type="button" data-owner-button className={`${secondary} ${styles.trashView}`} aria-label="Trash" title="View Trash" disabled={busy} aria-pressed={trash} onClick={() => { setTrash(true); setSearch(""); setError(""); }}><TrashIcon /></button>}</div></div>
+    <div className={styles.heading}><div>{manager ? <h2>File Hub</h2> : <h3>Cloud photo library</h3>}<small>{picker ? "Your uploaded photos" : "Your files, organized your way"}</small></div><div className={styles.headingActions}><RefreshButton label="Refresh files" busy={library.loading} disabled={busy} onClick={refreshFiles} />{!picker && <button type="button" data-owner-button className={`${secondary} ${styles.trashView}`} aria-label="Trash" title="View Trash" disabled={busy} aria-pressed={trash} onClick={() => { setTrash(true); setSearch(""); setError(""); }}><TrashIcon /></button>}</div></div>
     {picker && <p className={styles.copy}>Upload a photo, then choose Use photo.</p>}
-    <div className={styles.toolbar}><div className={styles.tabs} aria-label="File section">{picker && <button type="button" data-owner-button className={secondary} disabled={busy} aria-pressed={allPhotos && !trash} onClick={() => { setParentId("root"); setAllPhotos(true); setTrash(false); setSearch(""); }}>All photos</button>}<button type="button" data-owner-button className={secondary} disabled={busy} aria-pressed={!allPhotos && !trash} onClick={() => navigate("root")}>My files</button>{!picker && <button type="button" data-owner-button className={secondary} disabled={unavailable || Boolean(editing)} onClick={() => { void openFonts(); }} aria-pressed={!trash && currentParent === CLOUD_FONTS_FOLDER_ID}>Fonts</button>}</div><div className={styles.tabs} aria-label="File layout"><button type="button" data-owner-button className={secondary} aria-pressed={layout === "grid"} onClick={() => setLayout("grid")}>Grid</button><button type="button" data-owner-button className={secondary} aria-pressed={layout === "list"} onClick={() => setLayout("list")}>List</button></div></div>
+    <div className={styles.toolbar}><div className={styles.tabs} aria-label="File section">{picker && <button type="button" data-owner-button className={secondary} disabled={busy} aria-pressed={allPhotos && !trash} onClick={() => { setParentId("root"); setAllPhotos(true); setTrash(false); setSearch(""); }}>All photos</button>}<button type="button" data-owner-button className={secondary} disabled={busy} aria-pressed={!allPhotos && !trash} onClick={() => navigate("root")}>My files</button>{!picker && <button type="button" data-owner-button className={secondary} disabled={unavailable || Boolean(editing)} onClick={() => { void openFonts(); }} aria-pressed={!trash && currentParent === CLOUD_FONTS_FOLDER_ID}>Fonts</button>}</div><div className={styles.tabs} aria-label="File layout"><button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => navigate("root")}>My files</button><button type="button" data-owner-button className={secondary} aria-pressed={layout === "grid"} onClick={() => setLayout("grid")}>Grid</button><button type="button" data-owner-button className={secondary} aria-pressed={layout === "list"} onClick={() => setLayout("list")}>List</button></div></div>
     <div className={manager && !picker ? styles.explorer : undefined}>
     {manager && !picker && library.ready && <details className={styles.folderSidebar} open>
       <summary>Folders</summary>
       <nav aria-label="File hierarchy" onDragOver={event => event.stopPropagation()} onDrop={event => { event.preventDefault(); event.stopPropagation(); clearDrag(); }}>{folderBranch("root")}</nav>
     </details>}
     <div className={styles.filePane}>
-    {!trash && !allPhotos && currentParent !== "root" && <button type="button" data-owner-button className={secondary} disabled={unavailable} data-drop-target={dropTarget === library.folders.folders[currentParent].parentId} onClick={() => { const up = library.folders.folders[currentParent].parentId; if (placing) void movePlaced(up); else navigate(up); }} onDragOver={event => dragOver(event, library.folders.folders[currentParent].parentId)} onDrop={event => drop(event, library.folders.folders[currentParent].parentId)}>↑ {placing ? "Move selected item up one folder" : "Up one folder"}</button>}
     {library.ready && placing && <div className={styles.moveStatus} data-file-move-toolbar><p className={styles.hint} role="status">Moving “{titleOf(placing)}”. Choose a position or destination folder.</p><button type="button" data-owner-button className={secondary} onClick={() => setPlacing(null)}>Cancel move</button></div>}
-    {!trash && !allPhotos && <nav className={styles.breadcrumbs} aria-label="Folder path"><button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { if (placing) void movePlaced("root"); else navigate("root"); }} onDragOver={event => dragOver(event, "root")} onDrop={event => drop(event, "root")} data-drop-target={dropTarget === "root"}>My files</button>{breadcrumbs.map(id => <span key={id}>/ <button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { if (placing) void movePlaced(id); else navigate(id); }} aria-current={currentParent === id ? "location" : undefined} onDragOver={event => dragOver(event, id)} onDrop={event => drop(event, id)} data-drop-target={dropTarget === id}>{library.folders.folders[id].name}</button></span>)}</nav>}
+    {!trash && !allPhotos && breadcrumbs.length > 0 && <nav className={styles.breadcrumbs} aria-label="Folder path">{breadcrumbs.map(id => <span key={id}>/ <button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { if (placing) void movePlaced(id); else navigate(id); }} aria-current={currentParent === id ? "location" : undefined} onDragOver={event => dragOver(event, id)} onDrop={event => drop(event, id)} data-drop-target={dropTarget === id}>{library.folders.folders[id].name}</button></span>)}</nav>}
     {!trash && <div className={styles.tools}>
       <input ref={fileInput} id={inputId} type="file" className={styles.fileInput} accept={picker ? photoAccept : CLOUD_UPLOAD_ACCEPT} multiple disabled={unavailable} aria-label={picker ? "Upload cloud photos" : "Upload cloud files"} onChange={event => { void uploadFiles(Array.from(event.target.files ?? [])); }} />
       <button type="button" data-owner-button className={primary} disabled={unavailable} onClick={() => fileInput.current?.click()}>{picker ? "Upload photos" : "Upload files"}</button>
@@ -388,12 +418,14 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
       <label className={styles.search}><input aria-label="Find files in this view" type="search" placeholder={picker && allPhotos ? "Find a cloud photo…" : "Find in this folder…"} value={search} onChange={event => setSearch(event.target.value)} /></label>
     </div>}
     {trash && <label className={styles.search}><input aria-label="Find files in Trash" type="search" placeholder="Find in Trash…" value={search} onChange={event => setSearch(event.target.value)} /></label>}
-    {trash && <div className={styles.trashBar}><div><p className={styles.copy}>{cleanup?.automaticCleanupEnabled ? "Unused files in Trash are automatically deleted after 30 days. Files used by your live site, workspace, or saved drafts are protected." : "Restore items or delete them permanently. Automatic 30-day cleanup is not active yet."}</p>{cleanup && !cleanup.available && <p className={styles.hint}>{cleanup.message}</p>}</div><button type="button" data-owner-button className={danger} disabled={unavailable || !cleanup?.available || (!trashFiles.length && !folderEntries.length)} onClick={() => askDelete()}>Empty Trash</button></div>}
-    {!trash && <p className={styles.hint}>Drop files here to upload{!picker ? ", drag a card to an edge to reorder, or to the center of a folder to move. Reorder / move also works by touch or keyboard" : ""}.</p>}
+    {trash && <div className={styles.trashBar}><div><p className={styles.copy}>{cleanup?.automaticCleanupEnabled ? "Unused files in Trash are automatically deleted after 30 days. Files used by your live site, workspace, or saved drafts are protected." : cleanup?.available ? "Restore items or delete them permanently. Automatic 30-day cleanup is not active yet." : "Restore items from Trash at any time. Permanent cleanup is not enabled on this deployment; Empty Trash is unavailable and no files will be deleted."}</p>{cleanup && !cleanup.available && <p className={styles.hint}>{cleanup.message}</p>}</div><button type="button" data-owner-button className={danger} disabled={unavailable || !cleanup?.available || (!trashFiles.length && !folderEntries.length)} onClick={() => askDelete()}>Empty Trash</button></div>}
+    {!trash && <p className={styles.hint}>Drop files here to upload{!picker ? ", drag a card to an edge to reorder, or to the center of a folder to move. Keyboard: Tab to a file’s placement control, then choose its destination" : ""}.</p>}
     {library.ready && upload && <div className={styles.uploadState}><p className={styles.status} role="status">Uploading {upload.index} of {upload.count}: {upload.name} · {upload.percent}%{upload.percent === 100 ? " · confirming saved metadata…" : ""}</p><progress max={100} value={upload.percent} aria-label={`Uploading ${upload.name}`} /><button type="button" data-owner-button className={secondary} onClick={() => active.current?.abort()}>Stop upload</button></div>}
     {library.error && <p className={styles.error} role="alert">{library.error} No local fallback was used.</p>}
     {library.ready && error && !editing && !deleting && <p className={styles.error} role="alert">{error}</p>}
     {library.ready && message && <p className={styles.success} role="status">{message}</p>}
+    {galleryRead === "loading" && <p role="status">Reading saved gallery links…</p>}
+    {galleryRead === "error" && <p className={styles.error} role="alert">Saved gallery links could not be read. Folder photos are still shown; refresh to try again.</p>}
     {library.loading && <p className={styles.status} role="status">Reading your private Firebase file list…</p>}
     {library.ready && !library.loading && !folderEntries.length && !files.length && editing?.mode !== "new" && <div className={styles.empty}>{query ? "No files match this search." : trash ? "Cloud Trash is empty." : picker ? "No cloud photos in this view yet. Your current image remains selected." : "This folder is empty. Upload a file or create a folder to begin."}</div>}
     {library.ready && <ul className={`${styles.list} ${layout === "grid" ? styles.grid : styles.details}`} onDragOver={event => dragOver(event, currentParent)} onDrop={event => drop(event, currentParent)} data-drop-target={dropTarget === currentParent} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropTarget(null); }}>
@@ -401,21 +433,22 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
       {orderedItems.map(item => {
         if (item.kind === "folder") {
         const { id, folder } = item;
-        return <li className={styles.item} key={id} draggable={!unavailable && !trash && !picker && !editing && id !== CLOUD_FONTS_FOLDER_ID} onDragStart={event => startDrag(event, item)} onDragOver={event => cardOver(event, item)} onDrop={event => cardDrop(event, item)} data-insert={insertion?.startsWith(`${itemKey(item)}:`) ? insertion.split(":").at(-1) : undefined} data-dragging={dragging === itemKey(item)} data-drop-target={dropTarget === id} onDoubleClick={() => { if (!trash && !editing) navigate(id); }}><div className={styles.preview}><FolderSymbol /></div><div className={styles.identity}>{editing?.mode === "rename" && editing.target && itemKey(editing.target) === itemKey(item) ? inlineName() : <p className={styles.name}>{folder.name}</p>}<small className={styles.meta}>{trash ? folderPath(library.folders, folder.parentId) : id === CLOUD_FONTS_FOLDER_ID ? "Fonts folder · Protected" : "Folder"}</small></div><div className={styles.actions}>{placementControls(item)}{trash ? <><button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void restore(item); }}>Restore folder</button>{id !== CLOUD_FONTS_FOLDER_ID && <button type="button" data-owner-button className={danger} disabled={unavailable || !cleanup?.available || id === CLOUD_FONTS_FOLDER_ID} aria-label={`Delete permanently: ${titleOf(item)}`} onClick={() => askDelete(item)}>Delete</button>}</> : <><button type="button" data-owner-button className={primary} disabled={busy} onClick={() => navigate(id)}>Open</button>{id !== CLOUD_FONTS_FOLDER_ID && <><button type="button" data-owner-button className={secondary} aria-label={`Rename: ${titleOf(item)}`} disabled={unavailable || id === CLOUD_FONTS_FOLDER_ID} onClick={() => edit("rename", item)}>Rename</button><button type="button" data-owner-button className={secondary} aria-label={`Move: ${titleOf(item)}`} disabled={unavailable || id === CLOUD_FONTS_FOLDER_ID} onClick={() => edit("move", item)}>Move</button><button type="button" data-owner-button className={`${secondary} ${buttons.icon}`} aria-label={`Move to Trash: ${titleOf(item)}`} title={`Move to Trash: ${titleOf(item)}`} disabled={unavailable || id === CLOUD_FONTS_FOLDER_ID} onClick={() => edit("trash", item)}><TrashIcon /></button></>}</>}</div></li>;
+        return <li className={styles.item} key={id} draggable={!unavailable && !trash && !picker && !editing && !isProtectedCloudFolder(id)} onDragStart={event => startDrag(event, item)} onDragOver={event => cardOver(event, item)} onDrop={event => cardDrop(event, item)} data-insert={insertion?.startsWith(`${itemKey(item)}:`) ? insertion.split(":").at(-1) : undefined} data-dragging={dragging === itemKey(item)} data-drop-target={dropTarget === id} onDoubleClick={() => { if (!trash && !editing) navigate(id); }}><div className={styles.preview}><FolderSymbol /></div><div className={styles.identity}>{editing?.mode === "rename" && editing.target && itemKey(editing.target) === itemKey(item) ? inlineName() : <p className={styles.name}>{folder.name}</p>}<small className={styles.meta}>{trash ? folderPath(library.folders, folder.parentId) : isProtectedCloudFolder(id) ? `${folder.name} folder · Protected` : "Folder"}</small></div><div className={styles.actions}>{placementControls(item)}{trash ? <><button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void restore(item); }}>Restore folder</button>{!isProtectedCloudFolder(id) && <button type="button" data-owner-button className={danger} disabled={unavailable || !cleanup?.available || isProtectedCloudFolder(id)} aria-label={`Delete permanently: ${titleOf(item)}`} onClick={() => askDelete(item)}>Delete</button>}</> : <><button type="button" data-owner-button className={primary} disabled={busy} onClick={() => navigate(id)}>Open</button>{!isProtectedCloudFolder(id) && <><button type="button" data-owner-button className={secondary} aria-label={`Rename: ${titleOf(item)}`} disabled={unavailable || isProtectedCloudFolder(id)} onClick={() => edit("rename", item)}>Rename</button><button type="button" data-owner-button className={secondary} aria-label={`Move: ${titleOf(item)}`} disabled={unavailable || isProtectedCloudFolder(id)} onClick={() => edit("move", item)}>Move</button><button type="button" data-owner-button className={`${secondary} ${buttons.icon}`} aria-label={`Move to Trash: ${titleOf(item)}`} title={`Move to Trash: ${titleOf(item)}`} disabled={unavailable || isProtectedCloudFolder(id)} onClick={() => edit("trash", item)}><TrashIcon /></button></>}</>}</div></li>;
       }
-        const file = item.file, src = file.kind === "photo" ? cloudPhotoSource(file.id) : "";
-        return <li className={styles.item} key={file.id} draggable={!unavailable && !trash && !picker && !editing} onDragStart={event => startDrag(event, item)} onDragOver={event => cardOver(event, item)} onDrop={event => cardDrop(event, item)} data-insert={insertion?.startsWith(`${itemKey(item)}:`) ? insertion.split(":").at(-1) : undefined} data-dragging={dragging === itemKey(item)} data-selected={Boolean(src) && selected === src}>
+        const file = item.file, linked = linkedGalleryIds.has(file.id), src = file.kind === "photo" ? cloudPhotoSource(file.id) : "";
+        return <li className={styles.item} key={file.id} draggable={!linked && !unavailable && !trash && !picker && !editing} onDragStart={event => startDrag(event, item)} onDragOver={event => cardOver(event, item)} onDrop={event => cardDrop(event, item)} data-insert={insertion?.startsWith(`${itemKey(item)}:`) ? insertion.split(":").at(-1) : undefined} data-dragging={dragging === itemKey(item)} data-selected={Boolean(src) && selected === src}>
           {file.kind === "photo" && file.status === "ready" ? <PhotoThumbnail file={file} /> : <div className={styles.preview}><span className={styles.fileType}>{file.status === "uploading" ? "PENDING" : file.name.split(".").pop()?.toUpperCase().slice(0,8) || "FILE"}</span></div>}
-          <div className={styles.identity}>{editing?.mode === "rename" && editing.target && itemKey(editing.target) === itemKey(item) ? inlineName() : <p className={styles.name}>{file.name}</p>}<small className={styles.meta}>{bytesLabel(file.bytes)}{file.kind === "photo" ? ` · ${file.width} × ${file.height}` : isOriginalCloudPhoto(file) ? " · Original image" : file.kind === "font" ? " · Font" : " · Private file"}{file.status === "uploading" ? " · Upload not confirmed" : ""}</small>{(allPhotos || trash) && <small className={styles.meta}>{folderPath(library.folders, file.parentId)}</small>}</div>
+          <div className={styles.identity}>{editing?.mode === "rename" && editing.target && itemKey(editing.target) === itemKey(item) ? inlineName() : <p className={styles.name}>{file.name}</p>}<small className={styles.meta}>{bytesLabel(file.bytes)}{file.kind === "photo" ? ` · ${file.width} × ${file.height} · Website photo` : isOriginalCloudPhoto(file) ? " · Original image" : file.kind === "font" ? " · Font" : " · Private file"}{file.status === "uploading" ? " · Upload not confirmed" : ""}</small>{linked && <small className={styles.meta}>Linked from {folderPath(library.folders, file.parentId)}</small>}{(allPhotos || trash) && <small className={styles.meta}>{folderPath(library.folders, file.parentId)}</small>}</div>
           <div className={styles.actions}>
-            {placementControls(item)}
+            {!linked && placementControls(item)}
+            {linked && <button type="button" data-owner-button className={secondary} onClick={() => navigate(file.parentId)}>Open original folder</button>}
             {file.status === "ready" && file.kind === "photo" && <button type="button" data-owner-button className={secondary} aria-label={`View photo: ${file.name}`} onClick={() => setViewing(file)}>View</button>}
-            {file.status === "ready" && !picker && !trash && isOriginalCloudPhoto(file) && <button type="button" data-owner-button className={primary} aria-label={`Create website photo: ${file.name}`} disabled={unavailable} onClick={() => { void makeWebsitePhoto(file); }}>Create website photo</button>}
+            {file.status === "ready" && !picker && !trash && isOriginalCloudPhoto(file) && <button type="button" data-owner-button className={primary} aria-label={`Create optimized website copy: ${file.name}`} disabled={unavailable} onClick={() => { void makeWebsitePhoto(file); }}>Create optimized website copy</button>}
             {file.status === "ready" && !picker && <button type="button" data-owner-button className={secondary} aria-label={`Download file: ${file.name}`} disabled={unavailable} onClick={() => { void download(file); }}>{file.kind === "pdf" ? "Download PDF" : "Download"}</button>}
             {trash ? <><button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void restore(item); }}>Restore file</button><button type="button" data-owner-button className={danger} disabled={unavailable || !cleanup?.available} aria-label={`Delete permanently: ${titleOf(item)}`} onClick={() => askDelete(item)}>Delete</button></> : <>
               {picker && file.status === "ready" && onSelect && <button type="button" data-owner-button className={primary} disabled={unavailable} aria-pressed={selected === src} aria-label={`Use photo: ${file.name}`} onClick={() => onSelect(src)}>{selected === src ? "Selected photo" : "Use photo"}</button>}
               {file.status === "uploading" && <button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void run(async () => { await confirmCloudUpload(file); }, "Completed upload verified and added to your cloud files."); }}>Check completed upload</button>}
-              {!picker && <><button type="button" data-owner-button className={secondary} aria-label={`Rename: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("rename", item)}>Rename</button><button type="button" data-owner-button className={secondary} aria-label={`Move: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("move", item)}>Move</button><button type="button" data-owner-button className={`${secondary} ${buttons.icon}`} aria-label={`Move to Trash: ${titleOf(item)}`} title={`Move to Trash: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("trash", item)}><TrashIcon /></button></>}
+              {!picker && !linked && <><button type="button" data-owner-button className={secondary} aria-label={`Rename: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("rename", item)}>Rename</button><button type="button" data-owner-button className={secondary} aria-label={`Move: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("move", item)}>Move</button><button type="button" data-owner-button className={`${secondary} ${buttons.icon}`} aria-label={`Move to Trash: ${titleOf(item)}`} title={`Move to Trash: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("trash", item)}><TrashIcon /></button></>}
             </>}
           </div>
         </li>;
@@ -423,10 +456,9 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     </ul>}
     {library.ready && <p className={styles.usage} title="File Hub recorded usage, including Trash. Your storage billing total may differ.">{library.files.filter(file => file.status === "ready").length} {library.files.filter(file => file.status === "ready").length === 1 ? "file" : "files"} · {bytesLabel(readyBytes)}, including Trash.{pendingCount ? ` ${pendingCount} pending ${pendingCount === 1 ? "upload" : "uploads"}.` : ""}</p>}
     </div></div>
-    {library.ready && manager && <div className={styles.tools}><button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { void run(async () => { const result = await checkCloudStorage(); if (alive.current) setHealth(result); }); }}>Check storage access</button><p className={styles.status} role="status">{health || "Storage read access has not been checked here. File-list reads do not prove upload access or backups."}</p></div>}
     {library.ready && deleting && <Dialog title={deleting.title} dismissDisabled={busy} onClose={() => { if (!operation.current) { setDeleting(null); setError(""); } }} actions={<><button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { setDeleting(null); setError(""); }}>Cancel</button><button type="button" data-owner-button className={danger} disabled={busy || !cleanup?.available} onClick={() => { void deleteConfirmed(); }}>{busy ? "Deleting…" : "Delete permanently"}</button></>}><p className={styles.copy}>{deleting.files.length} {deleting.files.length === 1 ? "file" : "files"}{deleting.folderIds.length ? ` in ${deleting.folderIds.length} ${deleting.folderIds.length === 1 ? "folder" : "folders"}` : ""}. This removes the stored files and cannot be undone from File Hub. Files used by your live site, workspace, or saved drafts are protected, as are pending or changed uploads.</p>{error && <p className={styles.error} role="alert">{error}</p>}</Dialog>}
     {library.ready && currentViewing && <Dialog title={currentViewing.name} wide onClose={() => setViewing(null)} actions={<button type="button" data-owner-button className={secondary} onClick={() => setViewing(null)}>Close photo</button>}><PrivatePhoto file={currentViewing} full /><p className={styles.copy}>{currentViewing.width} × {currentViewing.height} · {bytesLabel(currentViewing.bytes)}. Viewing does not change a page or publish this photo.</p></Dialog>}
-    {library.ready && editing && editing.mode !== "new" && editing.mode !== "rename" && <Dialog title={`${editing.mode === "move" ? "Move" : "Move to Trash:"} ${editing.target ? titleOf(editing.target) : ""}`} dismissDisabled={busy} onClose={() => { if (!operation.current) { setEditing(null); setError(""); } }} actions={<><button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { setEditing(null); setError(""); }}>Cancel</button><button type="button" data-owner-button className={editing.mode === "trash" ? danger : primary} disabled={busy || library.loading} aria-busy={busy} onClick={() => { void saveEdit(); }}>{busy ? "Saving…" : editing.mode === "trash" ? "Move to Trash" : "Save change"}</button></>}>
+    {library.ready && editing && editing.mode !== "new" && editing.mode !== "rename" && <Dialog title={`${editing.mode === "move" ? "Move" : "Move to Trash:"} ${editing.target ? titleOf(editing.target) : ""}`} dismissDisabled={busy} onClose={() => { if (!operation.current) { setEditing(null); setError(""); } }} actions={<><button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { setEditing(null); setError(""); }}>Cancel</button><button type="button" data-owner-button className={primary} disabled={busy || library.loading} aria-busy={busy} onClick={() => { void saveEdit(); }}>{busy ? "Saving…" : editing.mode === "trash" ? "Move to Trash" : "Save change"}</button></>}>
       {editing.mode === "move" && <fieldset className={styles.destination} disabled={busy}><legend>Destination folder</legend><SiteSelect id={`${inputId}-move`} value={editing.parentId} onChange={value => setEditing(current => current ? { ...current, parentId: value } : null)} options={targets.map(target => ({ value: target.id, label: target.label }))} /></fieldset>}
       {editing.mode === "trash" && <p className={styles.copy}>{editing.target?.kind === "folder" ? "The folder and everything inside it will appear in Trash. " : "This file will appear in Trash. "}No bytes are deleted. Existing page and published photo references are kept. You can restore it later.</p>}
       {editing.mode === "move" && <p className={styles.copy}>Moving only changes its folder. Stable photo references and existing pages are unchanged.</p>}

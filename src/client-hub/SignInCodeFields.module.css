@@ -1,0 +1,20 @@
+.root { min-width: 0; flex: 1; }
+.segments { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+.part { display: flex; align-items: center; gap: .35rem; min-width: 0; flex: 1; }
+.part:last-child { flex: .76; }
+.part input { min-width: 0; width: 100%; min-height: 3.4rem; padding: .7rem .2rem; border: 1px solid var(--hub-line, #d0bcc2); border-radius: .7rem; background: var(--hub-bg, #fff); color: inherit; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.15rem; font-weight: 700; letter-spacing: .07em; }
+.part input:focus-visible, .legacy:focus-visible { outline: 3px solid #a53b62; outline-offset: 3px; }
+.part input[aria-invalid="true"], .legacy[aria-invalid="true"] { border-color: #ad173e; }
+.part input:disabled, .legacy:disabled { opacity: .65; }
+.hyphen { opacity: .65; font-weight: 700; }
+.legacy { width: 100%; min-height: 3.4rem; padding: .8rem; border: 1px solid var(--hub-line, #d0bcc2); border-radius: .7rem; color: inherit; background: var(--hub-bg, #fff); font: inherit; }
+.modeSwitch { display: inline-flex; margin-top: .8rem; padding: .2rem 0; background: transparent; color: inherit; border: 0; text-decoration: underline; text-underline-offset: .2rem; font: inherit; font-size: .78rem; cursor: pointer; }
+.modeSwitch:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+@media (max-width: 400px) { .segments,.part { gap: .2rem; } .part input { font-size: 1rem; letter-spacing: 0; } }
+
+.control { display: flex; align-items: flex-start; gap: .5rem; min-width: 0; }
+.reveal { align-self: flex-start; min-height: 3.4rem; padding: .5rem .65rem; border: 1px solid var(--hub-line, #d0bcc2); border-radius: .7rem; background: var(--hub-surface, #f4edf0); color: var(--hub-ink, #381b26); font: inherit; font-size: .75rem; cursor: pointer; }
+.reveal:focus-visible { outline: 3px solid #a53b62; outline-offset: 3px; }
+
+.control .reveal { margin:0; height:3.4rem; min-height:3.4rem; box-sizing:border-box; align-self:flex-start; }
+.control .part input { height:3.4rem; box-sizing:border-box; margin:0; }

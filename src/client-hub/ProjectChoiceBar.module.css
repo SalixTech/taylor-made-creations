@@ -1,0 +1,44 @@
+.root { width:100%; min-width:0; --choice-muted:var(--hub-muted,#62565d); }
+.choices { display:flex; gap:10px; padding:4px; margin:0; list-style:none; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x proximity; }
+.choices li { flex:0 0 210px; min-width:0; scroll-snap-align:start; }
+.choices button { position:relative; display:flex; align-items:center; justify-content:flex-start; gap:11px; width:100%; min-height:70px; border:1px solid var(--owner-line,var(--hub-line,#ded3d5)); padding:11px 13px; border-radius:12px; font:inherit; text-align:left; overflow-wrap:anywhere; color:var(--owner-ink,var(--hub-ink,#342a2c)); background:var(--owner-card,var(--hub-bg,#d0d0d0)); cursor:pointer; }
+.choices button[aria-pressed=true] { border-color:color-mix(in srgb,#7f0011 55%,var(--owner-line,var(--hub-line,#ded3d5))); background:color-mix(in srgb,var(--owner-card,var(--hub-bg,#d0d0d0)) 94%,#7f0011); }
+.choices button:focus-visible { outline:2px solid #00b1f5; outline-offset:2px; }
+.choices button:disabled { cursor:not-allowed; opacity:.65; }
+.avatar { display:grid; place-items:center; flex:0 0 36px; height:36px; border-radius:11px; border:1px solid var(--owner-line,var(--hub-line,#ded3d5)); background:color-mix(in srgb,#7f0011 8%,transparent); color:var(--owner-ink,var(--hub-ink,#342a2c)); font-size:16px; }
+.identity { display:grid; gap:4px; min-width:0; flex:1; }
+.identity strong { font-size:12px; line-height:1.4; font-weight:650; }
+.identity small { font-size:11px; line-height:1.5; font-weight:400; color:var(--choice-muted); }
+.selected { flex:none; color:#7f0011; font-size:15px; }
+@media(max-width:460px) { .choices li { flex-basis:min(210px,80vw); } }
+
+:global([data-owner-portal][data-color-mode=dark]) .root { --choice-muted:var(--owner-muted); }
+
+.choices button:disabled { background:var(--owner-card,var(--hub-bg,#d0d0d0)); color:var(--owner-ink,var(--hub-ink,#342a2c)); }
+
+/* Fox10: a quiet branded commission card, without a grey selector panel. */
+.choices button { isolation:isolate; min-height:104px; background:linear-gradient(115deg,#7f0011,#2c2c2d); color:#d0d0d0; border-color:#7f0011; }
+.choices button[aria-pressed=true] { background:linear-gradient(135deg,#7f0011,#2c2c2d); border:2px solid #00b1f5; }
+.avatar { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:76px; height:76px; border:0; opacity:.16; z-index:-1; }
+.avatar>span { width:100%!important; height:100%!important; }
+.identity small { color:#d0d0d0; }
+.selected { color:#d0d0d0; }
+
+/* Fox11: wrap cards instead of hiding an overflowing horizontal rail. */
+.choices { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); overflow-x:visible; overflow-y:visible; scroll-snap-type:none; }
+.choices li { min-width:0; }
+.choices button { height:100%; }
+/* Fox13: the current commission uses the same blue marker as Taylor's cards. */
+.selected { display:block; width:8px; height:8px; border-radius:50%; background:#00b1f5; flex:0 0 8px; }
+.choices li { display:flex; flex-direction:column; gap:7px; }
+.cardAction { display:flex; justify-content:flex-end; }
+.choices .cardAction button { min-height:32px; height:auto; width:auto; padding:6px 10px; font-size:11px; background:var(--hub-surface,#2c2c2d); border:1px solid var(--hub-line,#505055); }
+.choices>li>button { height:104px; flex:0 0 104px; }
+
+/* Keep each action inside its own card, without nesting interactive buttons. */
+.choices li.withAction { position:relative; }
+.choices>li.withAction>button { height:148px; flex-basis:148px; padding-bottom:48px; }
+.withAction .cardAction { position:absolute; right:12px; bottom:12px; z-index:1; }
+.choices .withAction .cardAction button { background:#2c2c2d; color:#d0d0d0; border-color:#77777d; }
+/* Only the selected marker moves; card dimensions and actions stay unchanged. */
+.selected { position:absolute; top:10px; right:10px; }

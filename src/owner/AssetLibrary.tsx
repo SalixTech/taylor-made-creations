@@ -1,4 +1,5 @@
 "use client";
+import { RefreshButton } from "@/components/RefreshButton";
 
 import { TrashIcon } from "./TrashIcon";
 import { CloudFileHub } from "./CloudFileHub";
@@ -100,7 +101,7 @@ export function LegacyAssetLibrary({ selected = "", onSelect, manager = false }:
     } finally { active.current = null; if (alive.current) setBusy(false); }
   }
   return <section className={`${styles.library} ${manager ? styles.manager : ""}`} aria-label="Temporary photo library">
-    <div className={styles.heading}><h3>Temporary photo library</h3><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} disabled={library.loading || busy} aria-busy={library.loading} onClick={library.refresh}>Refresh library</button></div>
+    <div className={styles.heading}><h3>Temporary photo library</h3><RefreshButton label="Refresh library" busy={library.loading} disabled={busy} onClick={library.refresh} /></div>
     <p className={styles.description}>{onSelect ? <>Upload first, then choose <strong>Use photo</strong>. Uploading does not replace the current image or publish it. </> : <>Manage reusable temporary photos without changing your pages. </>}Delete moves a library item to recoverable Trash; the image file and any existing page references are kept. This temporary library is on the development server, not connected cloud storage.</p>
     <div className={styles.libraryTools}><div className={styles.tabs} aria-label="Photo library section"><button ref={!trash ? sectionButton : undefined} type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} aria-pressed={!trash} onClick={() => { setTrash(false); setError(""); }}>Photos ({library.assets.filter(photo => !photo.trashedAt).length})</button><button ref={trash ? sectionButton : undefined} type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} aria-pressed={trash} aria-label={`Trash (${library.assets.filter(photo => photo.trashedAt).length})`} title="View temporary photo Trash" onClick={() => { setTrash(true); setError(""); }}><TrashIcon /><span aria-hidden="true">{library.assets.filter(photo => photo.trashedAt).length}</span></button></div>{manager && <div className={styles.tabs} aria-label="Photo layout"><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} aria-pressed={layout === "grid"} onClick={() => setLayout("grid")}>Grid</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} aria-pressed={layout === "list"} onClick={() => setLayout("list")}>List</button></div>}</div>
     {!trash && library.available !== false && <PhotoUpload legacy multiple staged libraryOnly={manager} label="Upload to temporary library" onUploaded={photos => { for (const photo of photos) library.add({ ...photo.media, name: photo.name, createdAt: new Date().toISOString(), trashedAt: null }); }} />}
@@ -132,5 +133,5 @@ export function LegacyAssetLibrary({ selected = "", onSelect, manager = false }:
 
 /** The current chooser uses cloud storage. Legacy files are not deleted or rewritten. */
 export function AssetLibrary(props: { selected?: string; onSelect?: (src: string) => void; manager?: boolean }) {
-  return <CloudFileHub {...props} />;
+  return props.manager ? <CloudFileHub {...props} /> : <details className={styles.collapsedLibrary}><summary>Cloud photo library</summary><CloudFileHub {...props} /></details>;
 }

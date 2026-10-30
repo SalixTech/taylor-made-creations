@@ -1,5 +1,8 @@
 "use client";
+import { PhotoLoading } from "./PhotoLoading";
 
+import { GeometryBox } from "./GeometryBox";
+import { validElementBox } from "@/owner/box-geometry";
 import CommissionForm from "./CommissionForm";
 import { Dialog as OwnerDialog } from "@/owner/OwnerDialog";
 import Image from "next/image";
@@ -10,7 +13,7 @@ import { PremadeGallery } from "@/components/PremadeGallery";
 import { useOwnerMediaSource } from "@/owner/media-client";
 import { parseInlineLinks, templateSupportsInlineLinks } from "@/owner/inline-links";
 import { getOwnerSocialLinks } from "@/owner/social-links";
-import { Brand, BrandMark } from "@/components/Brand";
+import { Brand, SpadeMark } from "@/components/Brand";
 import { PremadeTags, PremadePurchaseInfo, PremadeListingLink } from "./PremadeProduct";
 import { premadeHref, thirdPartyListingUrl } from "./storefront-model";
 import { SiteFontLoader } from "./SiteFontLoader";
@@ -33,18 +36,19 @@ function useDestination(content: OwnerContent, href: string) {
 }
 function ContentLink({ content, href, children, className, editTarget, appearance, navPageId }: { content: OwnerContent; href: string; children: ReactNode; className?: string; editTarget?: string; appearance?: ElementAppearance; navPageId?: string }) {
   const { mode, onNavigate, editable } = useContext(RenderContext);
-  const edit = { "data-owner-nav-page": mode === "editor" && editable ? navPageId : undefined, ...(editTarget ? editorTarget(mode === "editor" && editable, editTarget, "link label and destination") : {}), ...appearanceProps(appearance) };
+  const edit = { "data-owner-nav-page": mode === "editor" && editable ? navPageId : undefined, ...(editTarget ? editorTarget(mode === "editor" && editable && !validElementBox(appearance?.box), editTarget, "link label and destination") : {}), ...appearanceProps(appearance) };
   const destination = useDestination(content, href);
-  if (!destination) return mode === "public" ? null : <span className={styles.muted} {...edit}>{children} <small>(destination unavailable)</small></span>;
-  if (destination.kind !== "page") return <a {...edit} href={destination.href} className={className} download={destination.kind === "download" || undefined} target={destination.kind === "external" && destination.href.startsWith("https:") ? "_blank" : undefined} rel={destination.kind === "external" ? "noopener noreferrer" : undefined}>{children}</a>;
-  return <Link {...edit} href={destination.href} className={className} onClick={event => {
+  const wrapped = (element: ReactNode) => <GeometryBox inline box={appearance?.box} target={editTarget} editable={mode === "editor" && editable}>{element}</GeometryBox>;
+  if (!destination) return mode === "public" ? null : wrapped(<span className={styles.muted} {...edit}>{children} <small>(destination unavailable)</small></span>);
+  if (destination.kind !== "page") return wrapped(<a {...edit} href={destination.href} className={className} download={destination.kind === "download" || undefined} target={destination.kind === "external" && destination.href.startsWith("https:") ? "_blank" : undefined} rel={destination.kind === "external" ? "noopener noreferrer" : undefined}>{children}</a>);
+  return wrapped(<Link {...edit} href={destination.href} className={className} onClick={event => {
     if (mode !== "editor") return;
     event.preventDefault();
     const url = new URL(destination.href, "https://preview.invalid");
     const slug = url.pathname.replace(/^\/taylor\/preview\/?/, "");
     const target = getPreviewPage(content, slug ? [decodeURIComponent(slug)] : []);
     if (target) onNavigate?.(target);
-  }}>{children}</Link>;
+  }}>{children}</Link>);
 }
 
 function InlineLinkedText({ content, text }: { content: OwnerContent; text: string }) {
@@ -63,21 +67,31 @@ function appearanceProps(appearance?: ElementAppearance) {
 
 function TemplateText({ content, field, variables }: { content: OwnerContent; field: string; variables?: Record<string, string> }) {
   const { mode, editable } = useContext(RenderContext);
-  return <span {...editorTarget(mode === "editor" && editable, `template-text:${field}`, "page text")} {...appearanceProps(content.contentOverrides?.styles?.[field])}>{templateSupportsInlineLinks(field) ? <InlineLinkedText content={content} text={getTemplateText(content, field, variables)} /> : getTemplateText(content, field, variables)}</span>;
+  const appearance = content.contentOverrides?.styles?.[field], target = `template-text:${field}`;
+  const text = templateSupportsInlineLinks(field) ? <InlineLinkedText content={content} text={getTemplateText(content, field, variables)} /> : getTemplateText(content, field, variables);
+  return <GeometryBox inline box={appearance?.box} target={target} editable={mode === "editor" && editable}><span {...editorTarget(mode === "editor" && editable && !validElementBox(appearance?.box), target, "page text")} {...appearanceProps(appearance)}>{text}</span></GeometryBox>;
 }
 function TemplateLink({ content, field, className = "text-link", children }: { content: OwnerContent; field: string; className?: string; children?: ReactNode }) {
   const link = getTemplateLink(content, field);
   return <ContentLink content={content} href={link.href} className={className} editTarget={`template-link:${field}`} appearance={content.contentOverrides?.styles?.[field]}>{children ?? link.label}</ContentLink>;
 }
+function CoreText({ content, styleKey, children }: { content: OwnerContent; styleKey: string; children: ReactNode }) {
+  const { mode, editable } = useContext(RenderContext), appearance = content.contentOverrides?.styles?.[styleKey];
+  return <GeometryBox inline box={appearance?.box} target={`core-text:${styleKey}`} editable={mode === "editor" && editable}><span {...editorTarget(mode === "editor" && editable && !validElementBox(appearance?.box), `core-text:${styleKey}`, "text box")} {...appearanceProps(appearance)}>{children}</span></GeometryBox>;
+}
 function TemplateImage({ content, field }: { content: OwnerContent; field: string }) {
   const { mode, editable } = useContext(RenderContext);
   const photo = getTemplateImage(content, field);
-  return <div {...editorTarget(mode === "editor" && editable, `template-image:${field}`, "template image")}><PreviewImage key={photo.src} src={photo.src} alt={photo.alt} appearance={content.contentOverrides?.styles?.[field]} /></div>;
+  const appearance = content.contentOverrides?.styles?.[field];
+  return <GeometryBox box={appearance?.box} target={`template-image:${field}`} editable={mode === "editor" && editable}><div {...editorTarget(mode === "editor" && editable && !validElementBox(appearance?.box), `template-image:${field}`, "template image")}><PreviewImage key={photo.src} src={photo.src} alt={photo.alt} appearance={appearance} /></div></GeometryBox>;
 }
 
 function Intro({ content, page, eyebrow, title, children, editTarget = "page" }: { content: OwnerContent; page: OwnerPage; eyebrow: ReactNode; title: string; children?: ReactNode; editTarget?: string }) {
   const { mode, editable } = useContext(RenderContext);
-  return <div className="page-intro" {...editorTarget(mode === "editor" && editable, editTarget, editTarget === "prices" ? "prices and options" : "page heading")}><p className="eyebrow">{eyebrow}</p><h1 {...appearanceProps(page.titleAppearance ?? content.contentOverrides?.styles?.[`${page.builtinKey}.title`])}>{title}</h1>{children && <div className="intro-copy">{children}</div>}</div>;
+  const appearance = page.titleAppearance ?? content.contentOverrides?.styles?.[`${page.builtinKey}.title`];
+  const boxed = validElementBox(appearance?.box);
+  const titleAppearance = boxed ? { ...appearance, widthPercent: undefined, heightPercent: undefined } : appearance;
+  return <div className="page-intro" {...editorTarget(mode === "editor" && editable, editTarget, editTarget === "prices" ? "prices and options" : "page heading")}><p className="eyebrow">{eyebrow}</p><h1 {...appearanceProps(titleAppearance)}><GeometryBox inline box={appearance?.box} target="page-title" editable={mode === "editor" && editable}><span {...editorTarget(mode === "editor" && editable && !boxed, "page-title", "page title")}>{title}</span></GeometryBox></h1>{children && <div className="intro-copy">{children}</div>}</div>;
 }
 
 function PreviewImage({ src, alt, hero = false, imageStyle, appearance, layoutAppearance = true }: { src: string; alt: string; hero?: boolean; imageStyle?: CSSProperties; appearance?: ElementAppearance; layoutAppearance?: boolean }) {
@@ -85,7 +99,7 @@ function PreviewImage({ src, alt, hero = false, imageStyle, appearance, layoutAp
   const [failed, setFailed] = useState(false);
   const media = useOwnerMediaSource(src, mode !== "public");
   if (!isSafeImageSource(src) || failed || media.error) return <div className={styles.unavailable} role="status">This photo could not be displayed. {alt}</div>;
-  if (!media.src) return <div className={styles.unavailable} role="status">Loading photo…</div>;
+  if (!media.src) return <div className={styles.unavailable} role="status"><PhotoLoading /></div>;
   const imageAppearance = appearance && !layoutAppearance ? { ...appearance, widthPercent: undefined, heightPercent: undefined } : appearance;
   return <div data-owner-image-frame className={`${styles.image} ${hero ? styles.hero : ""}`} {...appearanceProps(imageAppearance)} style={{ ...getElementAppearanceStyle(imageAppearance), ...getImageFrameStyle(appearance) }}>
     <Image src={media.src} alt={alt} fill unoptimized loading={hero ? "eager" : "lazy"} fetchPriority={hero ? "high" : undefined} style={{ ...imageStyle, ...getImageAppearanceStyle(appearance) }} sizes={hero ? "(max-width:1140px) 95vw, 1084px" : "(max-width:650px) 94vw, 700px"} onError={() => setFailed(true)} />
@@ -96,7 +110,10 @@ function PreviewImage({ src, alt, hero = false, imageStyle, appearance, layoutAp
 export function ContentBlocks({ blocks, content, presentation }: { blocks: readonly PageBlock[]; content: OwnerContent; presentation?: "terms" | "care" }) {
   const { mode, editable } = useContext(RenderContext);
   return <div className={presentation ? styles.structuredBlocks : styles.blocks}>{blocks.map(block => {
-    const edit = { ...editorTarget(mode === "editor" && editable, `block:${block.id}`, `${block.type} block`), ...appearanceProps(block.appearance) };
+    const boxed = validElementBox(block.appearance?.box);
+    const originalAppearance = boxed ? { ...block.appearance, widthPercent: undefined, heightPercent: undefined } : block.appearance;
+    const edit = { ...editorTarget(mode === "editor" && editable && !boxed, `block:${block.id}`, `${block.type} block`), ...appearanceProps(originalAppearance) };
+    const element = (() => {
     if (block.type === "heading") return block.level === 3 ? <h3 key={block.id} {...edit} id={`block-${block.id}`} className={styles.block}>{block.text}</h3> : <h2 key={block.id} {...edit} id={`block-${block.id}`} className={styles.block}>{block.text}</h2>;
     if (block.type === "divider") return <hr key={block.id} {...edit} className={styles.divider} />;
     if (block.type === "spacer") return <div key={block.id} {...edit} aria-hidden={mode === "editor" && editable ? undefined : true} style={{ ...getElementAppearanceStyle(block.appearance), height: block.size === "small" ? 16 : block.size === "large" ? 64 : 32 }} />;
@@ -124,6 +141,8 @@ export function ContentBlocks({ blocks, content, presentation }: { blocks: reado
     </figure>;
     if (block.type === "link") return <div key={block.id} {...edit} className={styles.block}><ContentLink content={content} href={block.href} className="text-link">{block.label} →</ContentLink></div>;
     return null;
+    })();
+    return boxed ? <GeometryBox key={block.id} box={block.appearance?.box} target={`block:${block.id}`} editable={mode === "editor" && editable}>{element}</GeometryBox> : element;
   })}</div>;
 }
 
@@ -132,12 +151,12 @@ function HomePreview({ content, page }: { content: OwnerContent; page: OwnerPage
   const photoCredit = getTemplateText(content, "home.photoCredit");
   const { mode, editable } = useContext(RenderContext);
   return <>
-    <section className="home-intro" {...editorTarget(mode === "editor" && editable, "home-copy", "home page introduction")}><p className="eyebrow" {...appearanceProps(content.contentOverrides?.styles?.["home.eyebrow"])}>{home.eyebrow}</p><h1><span className="original-style-title" {...appearanceProps(content.contentOverrides?.styles?.["home.title"])}>{home.title}</span></h1><p {...appearanceProps(content.contentOverrides?.styles?.["home.description"])}><InlineLinkedText content={content} text={home.description} /></p>
+    <section className="home-intro" {...editorTarget(mode === "editor" && editable, "home-copy", "home page introduction")}><p className="eyebrow"><CoreText content={content} styleKey="home.eyebrow">{home.eyebrow}</CoreText></p><h1><span className="original-style-title"><CoreText content={content} styleKey="home.title">{home.title}</CoreText></span></h1><p><CoreText content={content} styleKey="home.description"><InlineLinkedText content={content} text={home.description} /></CoreText></p>
       <div className="actions"><TemplateLink content={content} field="home.galleryButton" className="button" /><TemplateLink content={content} field="home.pricesButton" /></div>
     </section>
-    <section className="home-art" aria-label={`${content.site.name} fursuit collage`} {...editorTarget(mode === "editor" && editable, "home-image", "home page photo and caption")}><PreviewImage key={home.image.src} src={home.image.src} alt={home.image.alt} hero appearance={content.contentOverrides?.styles?.["home.image"]} />
-      {(home.caption.trim() || photoCredit.trim()) && <div className="image-caption">{home.caption.trim() && <span {...appearanceProps(content.contentOverrides?.styles?.["home.caption"])}><InlineLinkedText content={content} text={home.caption} /></span>}{photoCredit.trim() && <span className="image-caption-credit"><TemplateText content={content} field="home.photoCredit" /></span>}</div>}
-    </section>
+    <GeometryBox box={content.contentOverrides?.styles?.["home.image"]?.box} target="home-image" editable={mode === "editor" && editable}><section className="home-art" aria-label={`${content.site.name} fursuit collage`} {...editorTarget(mode === "editor" && editable && !validElementBox(content.contentOverrides?.styles?.["home.image"]?.box), "home-image", "home page photo and caption")}><PreviewImage key={home.image.src} src={home.image.src} alt={home.image.alt} hero appearance={content.contentOverrides?.styles?.["home.image"]} />
+      {(home.caption.trim() || photoCredit.trim()) && <div className="image-caption">{home.caption.trim() && <CoreText content={content} styleKey="home.caption"><InlineLinkedText content={content} text={home.caption} /></CoreText>}{photoCredit.trim() && <span className="image-caption-credit"><TemplateText content={content} field="home.photoCredit" /></span>}</div>}
+    </section></GeometryBox>
     <section className="commission-strip"><div><p className="eyebrow"><TemplateText content={content} field="home.stripEyebrow" /></p><h2><TemplateText content={content} field="home.stripTitle" /></h2><p><TemplateText content={content} field="home.stripBody" /></p></div><TemplateLink content={content} field="home.commissionsButton" className="button outline" /></section>
     <section className="home-links"><TemplateLink content={content} field="home.pricesCard" className=""><span><TemplateText content={content} field="home.pricesEyebrow" /></span><h3>{getTemplateLink(content, "home.pricesCard").label}</h3><p><TemplateText content={content} field="home.pricesBody" /></p></TemplateLink><TemplateLink content={content} field="home.careCard" className=""><span><TemplateText content={content} field="home.careEyebrow" /></span><h3>{getTemplateLink(content, "home.careCard").label}</h3><p><TemplateText content={content} field="home.careBody" /></p></TemplateLink></section>
     {page.blocks.length > 0 && <div className="page-shell"><ContentBlocks blocks={page.blocks} content={content} /></div>}
@@ -147,7 +166,7 @@ function HomePreview({ content, page }: { content: OwnerContent; page: OwnerPage
 function PricesPreview({ content, page }: { content: OwnerContent; page: OwnerPage }) {
   const { mode, editable } = useContext(RenderContext);
   const examplesPage = content.pages.find(item => item.builtinKey === "examples" && !item.trashedAt);
-  return <div className="page-shell"><Intro content={content} page={page} eyebrow={<TemplateText content={content} field="prices.eyebrow" />} title={page.title} editTarget="prices"><p {...appearanceProps(content.contentOverrides?.styles?.["prices.intro"])}><InlineLinkedText content={content} text={content.prices.intro} /></p></Intro>
+  return <div className="page-shell"><Intro content={content} page={page} eyebrow={<TemplateText content={content} field="prices.eyebrow" />} title={page.title} editTarget="prices"><p><CoreText content={content} styleKey="prices.intro"><InlineLinkedText content={content} text={content.prices.intro} /></CoreText></p></Intro>
     <div className="price-grid" {...editorTarget(mode === "editor" && editable, "prices", "prices and options")}>{content.prices.groups.map((group, index) => <section className="price-card" key={group.id}>
       <span className="eyebrow">{String(index + 1).padStart(2, "0")}</span><h2>{group.title}</h2><p>{group.note}</p>
       {examplesPage && <ContentLink content={content} className="text-link example-link" href={`/${examplesPage.slug}#${encodeURIComponent(group.title.toLowerCase())}`}><TemplateText content={content} field="prices.exampleLabel" variables={{ category: group.title.toLowerCase() }} /></ContentLink>}
@@ -195,7 +214,7 @@ function PremadesPreview({ content, page }: { content: OwnerContent; page: Owner
       {mode === "editor" && editable && !item.visible && <p className={styles.editorNotice}>Hidden listing · only visible while editing</p>}
       <PremadeGallery key={`${item.id}-${item.coverPhotoId ?? item.image}`} item={item} mode={mode} listingHref={mode === "public" ? (!content.site.catalogMode && thirdPartyListingUrl(item)) || premadeHref(page, item) : undefined} external={mode === "public" && !content.site.catalogMode && Boolean(thirdPartyListingUrl(item))} /><PremadeTags item={item} /><h2>{mode === "public" ? <PremadeListingLink content={content} page={page} item={item}>{item.name}</PremadeListingLink> : item.name}</h2><p>{item.description}</p>{item.price !== null && <p className={styles.price}>{money(item.price)} USD</p>}{mode === "public" ? <PremadeListingLink content={content} page={page} item={item} /> : <PremadePurchaseInfo content={content} item={item} preview />}
     </article>)}</div>
-      : <div className="empty-state"><BrandMark logo={getTemplateImage(content, "site.logo")} privateMedia={mode !== "public"} /><h2><TemplateText content={content} field="premades.emptyTitle" /></h2><p><TemplateText content={content} field="premades.emptyBody" /></p><TemplateLink content={content} field="premades.galleryLink" /></div>}
+      : <div className="empty-state"><SpadeMark /><h2><TemplateText content={content} field="premades.emptyTitle" /></h2><p><TemplateText content={content} field="premades.emptyBody" /></p><TemplateLink content={content} field="premades.galleryLink" /></div>}
     <ContentBlocks blocks={page.blocks} content={content} />
   </div>;
 }

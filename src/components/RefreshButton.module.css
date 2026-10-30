@@ -1,0 +1,6 @@
+button.refresh { display:inline-flex; align-items:center; justify-content:center; flex:0 0 36px; width:36px; height:36px; min-width:36px; min-height:36px; padding:7px; border:1px solid #d7cdd0; border-radius:50%; background:transparent; color:#800014; cursor:pointer; }
+button.refresh:hover:not(:disabled) { background:#80001410; border-color:#a6818a; }
+button.refresh:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
+button.refresh:disabled { opacity:.55; cursor:wait; }
+:global([data-color-mode="dark"]) button.refresh,:global([data-owner-theme="dark"]) button.refresh { background:#ffffff05; color:#f4edf0; border-color:#ffffff30; }
+button.refresh svg { display:block; flex:none; }

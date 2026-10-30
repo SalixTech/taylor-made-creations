@@ -5,4 +5,8 @@
 @media(max-width:550px){.detailsList .item{grid-template-columns:110px minmax(0,1fr)}.detailsList .item>.itemAction{grid-column:2}.manager .preview{height:125px}.detailsList .preview{height:95px}}
 @media(prefers-reduced-motion:reduce){.photoActions{transition:none}}
 
-.fontRefresh{width:38px!important;min-width:38px!important;height:38px;padding:0!important;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}.fontRefresh svg{display:block}.fontRefresh[aria-busy=true] svg{animation:fontRefreshSpin .8s linear infinite}@keyframes fontRefreshSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.fontRefresh[aria-busy=true] svg{animation:none}}
+.fontRefresh{border-radius:50%!important;width:38px!important;min-width:38px!important;height:38px;padding:0!important;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}.fontRefresh svg{display:block}.fontRefresh[aria-busy=true] svg{animation:fontRefreshSpin .8s linear infinite}@keyframes fontRefreshSpin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.fontRefresh[aria-busy=true] svg{animation:none}}
+
+.collapsedLibrary { border:1px solid var(--owner-line,#443438); border-radius:10px; padding:14px; min-width:0; }
+.collapsedLibrary > summary { cursor:pointer; font-weight:600; }
+.collapsedLibrary[open] > summary { margin-bottom:16px; }

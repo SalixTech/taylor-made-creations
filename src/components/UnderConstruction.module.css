@@ -7,3 +7,8 @@
 .hint { font-size:12px; margin:22px auto 0; }
 .copyright { text-align:center; font-size:11px; margin:0; padding:18px 22px; border-top:1px solid var(--line); }
 @media(max-width:560px) { .card { width:100%; padding:55px 24px; }.card h1 { letter-spacing:-.6px; }.copy { font-size:14px; } }
+
+.accessLinks { display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:12px; }
+
+/* Fixed construction branding remains legible in public dark mode. */
+:global([data-color-mode="dark"]) .card h1 span,:global([data-color-mode="dark"]) .card :global(.eyebrow){color:#f4a6b4}

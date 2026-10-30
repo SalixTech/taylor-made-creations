@@ -1,0 +1,17 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { readSiteTheme, saveSiteTheme } from "@/components/theme-settings-client";
+import { THEME_AREAS, type ThemeChoice, type ThemeDefaults } from "@/components/theme-settings";
+import { applySiteThemeDefaults } from "@/components/theme-runtime";
+import { RefreshButton } from "@/components/RefreshButton";
+import { OwnerSelect } from "./OwnerFields";
+import buttons from "./OwnerButton.module.css";
+const names = { public: "Main website", owner: "Taylor’s Space", hub: "Client Hub" };
+export function StudioThemeSettings() {
+  const [saved, setSaved] = useState<ThemeDefaults | null>(null), [draft, setDraft] = useState<ThemeDefaults | null>(null), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+  const active = useRef(true), sequence = useRef(0), pending = useRef(false);
+  async function load() { if (pending.current) return; pending.current = true; const run = ++sequence.current; setBusy(true); setMessage(""); try { const result = await readSiteTheme(); if (active.current && run === sequence.current) { setSaved(result); setDraft(result); applySiteThemeDefaults(result); } } catch { if (active.current && run === sequence.current) setMessage("Display defaults could not load. Refresh to try again."); } finally { pending.current = false; if (active.current && run === sequence.current) setBusy(false); } }
+  useEffect(() => { const lifecycle = sequence; active.current = true; void Promise.resolve().then(() => { if (active.current) return load(); }); return () => { active.current = false; lifecycle.current++; }; }, []);
+  async function save() { if (!saved || !draft || pending.current) return; pending.current = true; setBusy(true); setMessage(""); const run = ++sequence.current; try { const result = await saveSiteTheme(saved, draft); if (active.current && run === sequence.current) { setSaved(result); setDraft(result); applySiteThemeDefaults(result); setMessage("Saved Successfully"); } } catch (error) { if (active.current && run === sequence.current) setMessage(error instanceof Error ? error.message : "Display defaults were not saved. Try again."); } finally { pending.current = false; if (active.current && run === sequence.current) setBusy(false); } }
+  return <section className="studio-theme-settings" aria-label="Site display defaults"><header><div><h3>Light & dark mode</h3><p>Site defaults. Signed-in users keep their own saved choice.</p></div><RefreshButton disabled={busy} onClick={() => void load()} label="Refresh display defaults" /></header>{draft && <fieldset disabled={busy} style={{border:0,padding:0,margin:0,minWidth:0}}><OwnerSelect label="Global default" value={draft.defaultMode} onChange={value => !busy && setDraft({ ...draft, defaultMode: value as "light" | "dark" })} options={[{value:"light",label:"Light"},{value:"dark",label:"Dark"}]} /><div className="studio-theme-areas">{THEME_AREAS.map(area => <OwnerSelect key={area} label={names[area]} value={draft.modes[area]} onChange={value => !busy && setDraft({ ...draft, modes: { ...draft.modes, [area]: value as ThemeChoice } })} options={[{value:"inherit",label:"Global default"},{value:"light",label:"Light"},{value:"dark",label:"Dark"}]} />)}</div><button type="button" data-owner-button className={`${buttons.button} ${buttons.primary}`} disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button></fieldset>}{message && <p role={message === "Saved Successfully" ? "status" : "alert"}>{message}</p>}</section>;
+}

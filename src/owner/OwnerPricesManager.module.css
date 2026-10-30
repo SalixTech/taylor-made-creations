@@ -24,3 +24,12 @@
 
 /* Expansion belongs on the direct grid child, not the nested content card. */
 .gridList > .sortCard[data-expanded="true"] { grid-column:1 / -1; }
+
+/* Search results are individually bounded themed cards, not a flat menu. */
+.itemChooserPanel{--owner-control-focus:var(--owner-wine,#800014);--owner-button-focus:var(--owner-wine,#800014)}
+.itemChoices{gap:10px;padding:4px;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr))}
+.itemChoices button{min-height:64px;border:1px solid var(--owner-line,#d8c4cc);border-radius:10px;background:var(--owner-surface,#fff);padding:14px;cursor:pointer;font:inherit;font-size:13px}
+.itemChoices button:hover:not(:disabled){border-color:var(--owner-wine,#800014);background:var(--owner-raised,#faf8f9)}
+.itemChoices button:focus-visible{outline:2px solid var(--owner-wine,#800014);outline-offset:1px}
+.itemChoices button span{font-weight:600;overflow-wrap:anywhere;min-width:0}
+.itemChoices button small{font-weight:700;color:var(--owner-ink,#393536)}

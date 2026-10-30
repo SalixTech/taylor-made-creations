@@ -1,0 +1,16 @@
+"use client";
+import styles from "./LabelPresentationEditor.module.css";
+import buttons from "./OwnerButton.module.css";
+export type LabelAppearanceDraft={name:string;hex:string;rgb:string[];defaultColor:boolean};
+export const labelHexValid=(hex:string)=>/^#[\da-f]{6}$/i.test(hex);
+export const labelRgbOf=(hex:string)=>[1,3,5].map(offset=>String(parseInt(hex.slice(offset,offset+2),16)));
+export const labelRgbValid=(rgb:string[])=>rgb.every(value=>/^\d{1,3}$/.test(value)&&Number(value)<=255);
+export const labelNameValid=(name:string)=>name.trim().length>0&&name.trim().length<=60&&!/[\x00-\x1f\x7f]/.test(name);
+export const labelAppearanceValid=(value:LabelAppearanceDraft)=>labelNameValid(value.name)&&(value.defaultColor||labelHexValid(value.hex)&&labelRgbValid(value.rgb));
+export function initialLabelAppearance(name="",color:string|null=null):LabelAppearanceDraft {const hex=color??"#7f0011";return{name,hex,rgb:labelRgbOf(hex),defaultColor:color===null};}
+/** Shared fields for account defaults and commission-only labels; no writes here. */
+export function labelAppearanceFields(value:LabelAppearanceDraft,disabled:boolean,update:(patch:Partial<LabelAppearanceDraft>)=>void,help:string){
+ const setHex=(hex:string)=>update({hex,defaultColor:false,...(labelHexValid(hex)?{rgb:labelRgbOf(hex)}:{})});
+ const setRgb=(index:number,text:string)=>{const rgb=[...value.rgb];rgb[index]=text;update({rgb,defaultColor:false,...(labelRgbValid(rgb)?{hex:`#${rgb.map(part=>Number(part).toString(16).padStart(2,"0")).join("").toUpperCase()}`}:{})});};
+ return <div className={styles.fields}><label>Label name<input value={value.name} maxLength={60} disabled={disabled} autoComplete="off" onChange={event=>update({name:event.target.value})}/></label><p className={styles.hint}>{help}</p><div className={styles.colors}><label>Color picker<input type="color" value={labelHexValid(value.hex)?value.hex:"#7f0011"} disabled={disabled} onChange={event=>setHex(event.target.value)}/></label><label>Hex color<input value={value.hex} maxLength={7} disabled={disabled} aria-invalid={!value.defaultColor&&!labelHexValid(value.hex)} onChange={event=>setHex(event.target.value)}/></label></div><details className={styles.advanced}><summary>Advanced RGB values</summary><div className={styles.rgb}>{["Red","Green","Blue"].map((label,index)=><label key={label}>{label}<input type="number" inputMode="numeric" min={0} max={255} step={1} value={value.rgb[index]} disabled={disabled} aria-invalid={!value.defaultColor&&!labelRgbValid(value.rgb)} onChange={event=>setRgb(index,event.target.value)}/></label>)}</div></details><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={disabled} onClick={()=>update({defaultColor:true,hex:"#7f0011",rgb:labelRgbOf("#7f0011")})}>Use default color</button><p className={styles.hint}>{value.defaultColor?<><span className={styles.swatch} style={{display:"inline-block",verticalAlign:"middle",marginRight:8,backgroundColor:"#7f0011"}} aria-hidden="true"/>Default color #7F0011</>:labelAppearanceValid(value)?`Custom color ${value.hex.toUpperCase()}`:"Use a name of 1–60 characters, #RRGGBB and whole RGB values from 0 to 255."}</p></div>;
+}
