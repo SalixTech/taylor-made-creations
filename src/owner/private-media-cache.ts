@@ -1,4 +1,6 @@
 "use client";
+import { betaAssetMetadata, readBetaWebsiteAsset, betaAssetSourceId } from "./beta-assets-client";
+import { WEBSITE_WORKSPACE, workspaceBrowserKey } from "./website-workspace-config";
 import { PrivatePhotoMemoryCache } from "@/client-hub/private-photo-cache";
 import { CLOUD_PHOTO_SOURCE, CLOUD_PHOTO_MAX_BYTES } from "./cloud-files-model";
 import type { taylorOwnerSession } from "./taylor-services-client";
@@ -22,7 +24,7 @@ export async function loadOwnerPrivateMedia(source: string, session: Session, si
   session.assertCurrent(); const user = session.auth.currentUser;
   // Test/development sessions without an SDK user cannot retain private bytes.
   if (!user) return readBytes(source, session, signal);
-  const scope = { user, accountKey: `owner:${user.uid}` };
+  const scope = { user, accountKey: workspaceBrowserKey(`owner:${user.uid}`) };
   if (!watched.has(session.auth)) {
     watched.set(session.auth, scope);
     session.auth.onAuthStateChanged(() => { const current = watched.get(session.auth); if (current && session.auth.currentUser !== current.user) cache.clearIfCurrent(current); });
@@ -39,6 +41,7 @@ export async function loadOwnerPrivateMedia(source: string, session: Session, si
   }), signal).then(blob => { session.assertCurrent(); return blob; });
 }
 async function metadata(id: string, session: Session, signal: AbortSignal): Promise<{ generation: string; bytes: number }> {
+  if (WEBSITE_WORKSPACE === "beta") { const value = await betaAssetMetadata(id, session, signal); if (value.file.kind !== "photo") throw new Error("Invalid beta photo."); return { generation: value.generation, bytes: value.file.bytes }; }
   const response = await fetch(`/api/taylor/cloud-media-check/${id}`, { headers: { Authorization: `Bearer ${session.token}` }, credentials: "same-origin", cache: "no-store", signal });
   if (!response.ok) throw new Error("This private photo could not be checked. Refresh to try again.");
   const data = await response.json();
@@ -46,6 +49,7 @@ async function metadata(id: string, session: Session, signal: AbortSignal): Prom
   return data;
 }
 async function readBytes(source: string, session: Session, signal: AbortSignal): Promise<Blob> {
+  if (WEBSITE_WORKSPACE === "beta") return readBetaWebsiteAsset(betaAssetSourceId(source, "photo"), session, signal);
   const response = await fetch(source, { headers: { Authorization: `Bearer ${session.token}` }, cache: "no-store", credentials: "same-origin", signal });
   if (!response.ok || response.headers.get("content-type") !== "image/webp") {
     const body = await response.json().catch(() => null);

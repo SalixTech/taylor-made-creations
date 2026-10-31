@@ -29,3 +29,5 @@
 .odd:not(.compact) > .card:first-child { grid-column:1 / -1; width:calc((100% - 26px) / 2); justify-self:center; }
 @media(max-width:650px) { .odd:not(.compact) > .card:first-child { grid-column:auto; width:100%; } }
 @container site-editor (max-width:650px) { .odd:not(.compact) > .card:first-child { grid-column:auto; width:100%; } }
+
+.caption{justify-content:flex-end;}.caption[hidden]{display:none;}

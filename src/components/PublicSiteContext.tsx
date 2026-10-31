@@ -1,12 +1,13 @@
 "use client";
 
+import { workspaceBrowserKey } from "@/owner/website-workspace-config";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { assertPublishedOwnerSnapshot, publicContentToOwnerContent } from "@/owner/model";
 import type { PublicSiteState } from "@/server/published-site";
 
-const publicationEvent = "tmc:published";
-const publicationChannel = "tmc-publication";
+const publicationEvent = workspaceBrowserKey("tmc:published");
+const publicationChannel = workspaceBrowserKey("tmc-publication");
 const baseline: PublicSiteState = { status: "baseline", reason: "unconfigured" };
 export const PUBLIC_REFRESH_MS = 30_000;
 const MIN_REFRESH_MS = 2_000;

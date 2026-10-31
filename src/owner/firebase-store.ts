@@ -1,3 +1,4 @@
+import { workspaceDocument, workspaceBrowserKey, workspaceCallableInput } from "./website-workspace-config";
 import { CONSTRUCTION_WHIMSY_DOCUMENT, decodeConstructionWhimsy, defaultConstructionWhimsy, type ConstructionWhimsy } from "./construction-whimsy";
 import { decodePrivateGallery } from "./private-gallery";
 import { decodeCloudFile, cloudReferencedAssetIds } from "./cloud-files-model";
@@ -10,15 +11,15 @@ import { createInitialOwnerWorkspace } from "./defaults";
 import { createOwnerStore, OwnerStorageError, type OwnerStore } from "./storage";
 import { SITE_ACCESS_DOCUMENT, decodeSiteAccess, defaultSiteAccess, type SiteAccess } from "./site-access";
 
-export const OWNER_CLOUD_DOCUMENT = "ownerWorkspace/current";
-export const OWNER_DRAFT_INDEX_DOCUMENT = "ownerDraftIndex/current";
-export const OWNER_DRAFT_COLLECTION = "ownerDrafts";
-export const OWNER_DRAFT_TRASH_COLLECTION = "ownerDraftTrash";
+export const OWNER_CLOUD_DOCUMENT = workspaceDocument("ownerWorkspace/current");
+export const OWNER_DRAFT_INDEX_DOCUMENT = workspaceDocument("ownerDraftIndex/current");
+export const OWNER_DRAFT_COLLECTION = workspaceDocument("ownerDrafts");
+export const OWNER_DRAFT_TRASH_COLLECTION = workspaceDocument("ownerDraftTrash");
 export const MAX_NAMED_DRAFT_CLOUD_BYTES = 700_000;
 export const MAX_OWNER_CLOUD_BYTES = 700_000;
-export const PUBLIC_CLOUD_DOCUMENT = "site/published";
+export const PUBLIC_CLOUD_DOCUMENT = workspaceDocument("site/published");
 export const MAX_PUBLIC_CLOUD_BYTES = 700_000;
-const CLOUD_CHANGED = "tmc-private-owner-cloud-changed";
+const CLOUD_CHANGED = workspaceBrowserKey("tmc-private-owner-cloud-changed");
 export type EncodedOwnerWorkspace = { schemaVersion: 1; revision: number; payload: string };
 export type EncodedPublishedOwnerSnapshot = { schemaVersion: 1; revision: number; payload: string };
 export type OwnerDraftIndex = { schemaVersion: 1; revision: number; drafts: Record<string, number>; changedDraftId: string };
@@ -168,13 +169,13 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
       // Existing references are protected by cleanup's transaction read of this
       // private document. Only newly introduced references need another lookup.
       if (previousIds.has(id)) continue;
-      const snapshot = await transaction.get(doc(db, "ownerFiles", id)); requireOwner();
+      const snapshot = await transaction.get(doc(db, workspaceDocument("ownerFiles"), id)); requireOwner();
       if (!snapshot.exists() || decodeCloudFile(snapshot.data(), id).status !== "ready") throw new OwnerStorageError("write", "A selected cloud file is missing, uploading, or being deleted. Choose an available file before saving.");
     }
   };
   const callBackup = async <T,>(name: string, input: unknown): Promise<T> => {
     await confirmOwner();
-    const response = await httpsCallable<unknown, T>(getFunctions(auth.app, "us-central1"), name)(input);
+    const response = await httpsCallable<unknown, T>(getFunctions(auth.app, "us-central1"), name)(workspaceCallableInput(input as object));
     requireOwner(); return response.data;
   };
   let pendingPublication: { key: string; operationId: string } | null = null;
@@ -372,7 +373,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
     async readLiveConstructionWhimsy() {
       try {
         await confirmOwner();
-        const snapshot = await getDoc(doc(db, CONSTRUCTION_WHIMSY_DOCUMENT)); requireOwner();
+        const snapshot = await getDoc(doc(db, workspaceDocument(CONSTRUCTION_WHIMSY_DOCUMENT))); requireOwner();
         return snapshot.exists() ? decodeConstructionWhimsy(snapshot.data()) : defaultConstructionWhimsy();
       } catch (cause) { throw new OwnerStorageError("read", "Construction Whimsy could not be checked. No setting was changed.", { cause }); }
     },
@@ -382,7 +383,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
         await confirmOwner();
         const saved = await runTransaction(db, async transaction => {
           requireOwner();
-          const reference = doc(db, CONSTRUCTION_WHIMSY_DOCUMENT);
+          const reference = doc(db, workspaceDocument(CONSTRUCTION_WHIMSY_DOCUMENT));
           const snapshot = await transaction.get(reference); requireOwner();
           const current = snapshot.exists() ? decodeConstructionWhimsy(snapshot.data()) : defaultConstructionWhimsy();
           if (current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "Construction Whimsy changed on another device. Check again before updating it.");
@@ -398,7 +399,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
     async readLiveSiteAccess() {
       try {
         await confirmOwner();
-        const snapshot = await getDoc(doc(db, SITE_ACCESS_DOCUMENT)); requireOwner();
+        const snapshot = await getDoc(doc(db, workspaceDocument(SITE_ACCESS_DOCUMENT))); requireOwner();
         return snapshot.exists() ? decodeSiteAccess(snapshot.data()) : defaultSiteAccess();
       } catch (cause) {
         throw new OwnerStorageError("read", "Construction Mode could not be checked. No setting was changed. Check your connection and owner session, then choose Check again.", { cause });
@@ -410,7 +411,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
         await confirmOwner();
         const saved = await runTransaction(db, async transaction => {
           requireOwner();
-          const accessReference = doc(db, SITE_ACCESS_DOCUMENT);
+          const accessReference = doc(db, workspaceDocument(SITE_ACCESS_DOCUMENT));
           const accessSnapshot = await transaction.get(accessReference); requireOwner();
           const current = accessSnapshot.exists() ? decodeSiteAccess(accessSnapshot.data()) : defaultSiteAccess();
           if (current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "Construction Mode changed on another device. Check again before updating it; your draft has not changed.");

@@ -7,7 +7,7 @@ import type { BuiltinPageKey, OwnerContent } from "./model";
 /** Catalog IDs are the entire editable template surface. No arbitrary DOM/CSS paths. */
 export type TemplateGroup = "site" | BuiltinPageKey;
 export type TemplateImage = { src: string; alt: string };
-export type TemplateLink = { label: string; href: string };
+export type TemplateLink = { label: string; href: string; buttonDesignId?:string };
 export type ContentOverrides = { text?: Record<string, string>; images?: Record<string, TemplateImage>; links?: Record<string, TemplateLink>; styles?: Record<string, ElementAppearance> };
 export const DESIGN_COLOR_FIELDS = [
   { key: "background", label: "Page background", defaultValue: "#ffffff" },

@@ -16,7 +16,8 @@ export const BUILTIN_ROUTES = {
 export type BuiltinPageKey = keyof typeof BUILTIN_ROUTES;
 export type TextBlock = { id: string; type: "text"; heading: string; body: string };
 export type ImageBlock = { id: string; type: "image"; src: string; alt: string; caption: string };
-export type LinkBlock = { id: string; type: "link"; label: string; href: string };
+export type LinkBlock = { id: string; type: "link"; label: string; href: string; buttonDesignId?:string };
+export type ButtonDesign={id:string;name:string;preset:"solid"|"outline"|"plain";artwork?:{src:string}};
 export type HeadingBlock = { id: string; type: "heading"; text: string; level: 2 | 3 };
 export type ListBlock = { id: string; type: "list"; items: string[]; style: "bullet" | "numbered" };
 export type DividerBlock = { id: string; type: "divider" };
@@ -66,6 +67,8 @@ export type OwnerContent = {
   design?: SiteDesign;
   chromeLayout?: CanvasLayout;
   fonts?: OwnerFont[];
+  buttonDesigns?:ButtonDesign[];
+  gallerySettings?:{showNumbers:boolean};
   contentOverrides?: ContentOverrides;
   /** Form structure and wording only. Client answers and consent are never stored here. */
   commissionForm?: CommissionFormConfig;
@@ -129,11 +132,15 @@ export function newOwnerId(prefix = "item"): string {
 }
 export function isSafeLink(href: string): boolean {
   if (!href || href.length > 2048 || /[\u0000-\u0020\u007f\\]/.test(href)) return false;
+  if (/^\/api\/cloud-documents(?:[/?#]|$)/i.test(href)) return isWebsiteDocumentHref(href);
+  if (/^\/api\/(?:cloud-files|owner-files|private-files)(?:[/?#]|$)/i.test(href)) return false;
   if (href.startsWith("/")) return !href.startsWith("//") && !/%(?:0[0-9a-f]|1[0-9a-f]|20|5c)/i.test(href);
   if (/^#[A-Za-z][A-Za-z0-9_-]*$/.test(href)) return true;
   if (href.startsWith("mailto:")) return EMAIL_PATTERN.test(href.slice(7));
   try { const url = new URL(href); return /^https:\/\//i.test(href) && url.protocol === "https:" && !url.username && !url.password; } catch { return false; }
 }
+export function isSafeButtonArtwork(src:string):boolean{return isSafeImageSource(src)&&(/^\/api\/(?:cloud-media|media)\/[0-9a-f-]+$/.test(src)||/^\/images\/[^?#%]+\.(?:png|jpe?g|webp|gif|avif)$/i.test(src)||/^data:image\/(?:png|jpeg|webp|gif|avif);base64,/.test(src));}
+export function isWebsiteDocumentHref(href:string):boolean{return /^\/api\/cloud-documents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(href);}
 export function isSafeImageSource(src: string): boolean {
   if (!src || src.length > MAX_IMAGE_SOURCE_LENGTH) return false;
   if (/^data:image\/(?:png|jpeg|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(src)) return true;
@@ -205,7 +212,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (entry.fontId !== undefined && (typeof entry.fontId !== "string" || !Array.isArray(root.fonts) || !root.fonts.some(font => font && typeof font === "object" && font.id === entry.fontId))) issue(`${path}.fontId`, "Choose a font uploaded to this draft.");
   };
   const root = object(value, "content");
-  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm", "chromeLayout"], "content");
+  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm", "chromeLayout", "buttonDesigns", "gallerySettings"], "content");
   if (root.commissionForm !== undefined) issues.push(...validateCommissionFormConfig(root.commissionForm).issues);
   if (root.schemaVersion !== OWNER_SCHEMA_VERSION) issue("schemaVersion", "This content version is not supported.");
   if (root.fonts !== undefined) list(root.fonts, "fonts", MAX_CONTENT_BYTES).forEach((value, index) => {
@@ -229,6 +236,10 @@ function validateContent(value: unknown, published = false): ValidationResult {
     for (const field of DESIGN_SELECT_FIELDS) if (design[field.key] !== undefined && !field.options.some(option => option.value === design[field.key])) issue(`${path}.${field.key}`, "Choose one of the supported design options.");
   };
   if (root.design !== undefined) validateDesign(root.design, "design");
+  const buttonIds=new Set<string>();
+  if(root.buttonDesigns!==undefined)list(root.buttonDesigns,"buttonDesigns",100).forEach((value,index)=>{const path=`buttonDesigns[${index}]`,entry=object(value,path);exact(entry,["id","name","preset","artwork"],path);id(entry.id,`${path}.id`,"buttonDesigns");if(typeof entry.id==="string")buttonIds.add(entry.id);text(entry.name,`${path}.name`,100);if(!["solid","outline","plain"].includes(entry.preset as string))issue(`${path}.preset`,"Choose a button preset.");if(entry.artwork!==undefined){const artwork=object(entry.artwork,`${path}.artwork`);exact(artwork,["src"],`${path}.artwork`);if(typeof artwork.src!=="string"||!isSafeButtonArtwork(artwork.src))issue(`${path}.artwork.src`,"Choose an uploaded raster button image.");}});
+  if(root.gallerySettings!==undefined){const settings=object(root.gallerySettings,"gallerySettings");exact(settings,["showNumbers"],"gallerySettings");bool(settings.showNumbers,"gallerySettings.showNumbers");}
+  const buttonRef=(value:unknown,path:string)=>{if(value!==undefined&&(typeof value!=="string"||!buttonIds.has(value)))issue(path,"Choose an existing reusable button design.");};
   if (root.contentOverrides !== undefined) {
     const overrides = object(root.contentOverrides, "contentOverrides");
     exact(overrides, ["text", "images", "links", "styles"], "contentOverrides");
@@ -250,7 +261,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (overrides.links !== undefined) {
       const fields = object(overrides.links, "contentOverrides.links"); exact(fields, LINK_FIELDS.map(field => field.key), "contentOverrides.links");
       for (const [key, value] of Object.entries(fields)) {
-        const path = `contentOverrides.links.${key}`; const entry = object(value, path); exact(entry, ["label", "href"], path); text(entry.label, `${path}.label`, 150);
+        const path = `contentOverrides.links.${key}`; const entry = object(value, path); exact(entry, ["label", "href", "buttonDesignId"], path);buttonRef(entry.buttonDesignId,`${path}.buttonDesignId`); text(entry.label, `${path}.label`, 150);
         countText(entry.href); if (typeof entry.href !== "string" || !isSafeLink(entry.href)) issue(`${path}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed.");
       }
     }
@@ -381,7 +392,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
       if (block.type === "section") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); }
       else if (block.type === "text") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "body", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); text(block.body, `${b}.body`, 20000, false); }
       else if (block.type === "image") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "src", "alt", "caption", "appearance"], b); image(block.src, `${b}.src`); text(block.alt, `${b}.alt`, 500); text(block.caption, `${b}.caption`, 1000, false); }
-      else if (block.type === "link") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "label", "href", "appearance"], b); text(block.label, `${b}.label`, 150); if (typeof block.href !== "string" || !isSafeLink(block.href)) issue(`${b}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed."); }
+      else if (block.type === "link") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "label", "href", "buttonDesignId", "appearance"], b);buttonRef(block.buttonDesignId,`${b}.buttonDesignId`); text(block.label, `${b}.label`, 150); if (typeof block.href !== "string" || !isSafeLink(block.href)) issue(`${b}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed."); }
       else if (block.type === "heading") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "text", "level", "appearance"], b); text(block.text, `${b}.text`, 200); if (block.level !== 2 && block.level !== 3) issue(`${b}.level`, "Choose heading level 2 or 3."); }
       else if (block.type === "list") {
         exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "items", "style", "appearance"], b);
@@ -579,7 +590,7 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
         if (block.type === "section") return {...blockLayout(block),id:block.id,type:block.type,heading:block.heading};
         if (block.type === "text") return { ...blockLayout(block), id: block.id, type: block.type, heading: block.heading, body: block.body };
         if (block.type === "image") return { ...blockLayout(block), id: block.id, type: block.type, src: publicImage(block.src, `pages.${page.id}.${block.id}.src`), alt: block.alt, caption: block.caption };
-        if (block.type === "link") return { ...blockLayout(block), id: block.id, type: block.type, label: block.label, href: block.href };
+        if (block.type === "link") return { ...blockLayout(block), id: block.id, type: block.type, label: block.label, href: block.href, ...(block.buttonDesignId?{buttonDesignId:block.buttonDesignId}:{}) };
         if (block.type === "heading") return { ...blockLayout(block), id: block.id, type: block.type, text: block.text, level: block.level };
         if (block.type === "list") return { ...blockLayout(block), id: block.id, type: block.type, items: [...block.items], style: block.style };
         if (block.type === "divider") return { ...blockLayout(block), id: block.id, type: block.type };
@@ -606,8 +617,10 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
     if (content.contentOverrides.styles !== undefined) snapshot.contentOverrides.styles = Object.fromEntries(Object.entries(content.contentOverrides.styles).filter(([key]) => STYLE_FIELDS.some(field => field.key === key && isActive(field.group)) || canvasStyleKeyIsPublic(key,snapshot)).map(([key,value]) => [key,publicAppearance(value)]));
     if (content.contentOverrides.text !== undefined) snapshot.contentOverrides.text = Object.fromEntries(TEXT_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.text!, field.key)).map(field => [field.key, content.contentOverrides!.text![field.key]]));
     if (content.contentOverrides.images !== undefined) snapshot.contentOverrides.images = Object.fromEntries(IMAGE_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.images!, field.key)).map(field => { const value = content.contentOverrides!.images![field.key]; return [field.key, { src: publicImage(value.src, `contentOverrides.images.${field.key}.src`), alt: value.alt }]; }));
-    if (content.contentOverrides.links !== undefined) snapshot.contentOverrides.links = Object.fromEntries(LINK_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.links!, field.key)).map(field => { const value = content.contentOverrides!.links![field.key]; return [field.key, { label: value.label, href: value.href }]; }));
+    if (content.contentOverrides.links !== undefined) snapshot.contentOverrides.links = Object.fromEntries(LINK_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.links!, field.key)).map(field => { const value = content.contentOverrides!.links![field.key]; return [field.key, { label: value.label, href: value.href, ...(value.buttonDesignId?{buttonDesignId:value.buttonDesignId}:{}) }]; }));
   }
+  if(content.gallerySettings!==undefined)snapshot.gallerySettings={showNumbers:content.gallerySettings.showNumbers};
+  if(content.buttonDesigns!==undefined){const used=new Set([...Object.values(snapshot.contentOverrides?.links??{}).map(link=>link.buttonDesignId),...snapshot.pages.flatMap(page=>page.blocks.flatMap(block=>block.type==="link"?[block.buttonDesignId]:[]))]);snapshot.buttonDesigns=content.buttonDesigns.filter(design=>used.has(design.id)).map(design=>({id:design.id,name:design.name,preset:design.preset,...(design.artwork?{artwork:{src:publicImage(design.artwork.src,`buttonDesigns.${design.id}.artwork.src`)}}:{})}));}
   projectCanvasLayouts(snapshot);
   if (snapshot.fonts !== undefined) {
     const used = new Set([snapshot.design?.bodyFontId, snapshot.design?.headingFontId, snapshot.design?.mobileDesign?.bodyFontId, snapshot.design?.mobileDesign?.headingFontId, ...Object.values(snapshot.contentOverrides?.styles ?? {}).flatMap(style => [style.fontId,style.mobile?.fontId]), ...snapshot.pages.flatMap(page => [page.titleAppearance?.fontId,page.titleAppearance?.mobile?.fontId, ...page.blocks.flatMap(block => [block.appearance?.fontId,block.appearance?.mobile?.fontId])])].filter(Boolean));
@@ -648,7 +661,7 @@ export function assertPublicOwnerContent(value: unknown): asserts value is Publi
   const content = expanded as OwnerContent;
   // Turning the published shop off retains its already-public inventory so a
   // flag-only Update Live can turn it back on without publishing draft edits.
-  const imageSources = [...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(item => item.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
+  const imageSources = [...(content.buttonDesigns??[]).flatMap(design=>design.artwork?[design.artwork.src]:[]),...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(item => item.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
   if (imageSources.some(src => src.startsWith("data:"))) throw new OwnerValidationError([{ path: "content", message: "Published photos must use local site assets or secure HTTPS image storage, never browser data images." }]);
   if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 700_000) throw new OwnerValidationError([{ path: "content", message: "The published content exceeds the 700 KB limit." }]);
 }

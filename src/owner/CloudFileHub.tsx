@@ -1,4 +1,5 @@
 "use client";
+import {WEBSITE_WORKSPACE} from "./website-workspace-config";
 import { galleryLinkedFileIds } from "./gallery-folder-links";
 import type { PrivateGallery } from "./private-gallery";
 import { CommissionFileHub } from "./CommissionFileHub";
@@ -50,6 +51,12 @@ function FolderSymbol() { return <svg viewBox="0 0 48 38" width="44" height="36"
 /** Owner-only File Hub and reusable cloud-photo picker. Uploading never publishes or selects a photo. */
 export function CloudFileHub({ selected = "", onSelect, manager = false }: { selected?: string; onSelect?: (src: string) => void; manager?: boolean }) {
   const library = useCloudFiles();
+  // Beta is a website-only workspace, never an entry to live commission files.
+  function websiteFolder(id: string): boolean {
+    if (WEBSITE_WORKSPACE !== "beta" || id === "root") return true;
+    if (id === CLOUD_COMMISSIONS_FOLDER_ID) return false;
+    try { return !folderAncestors(library.folders, id).includes(CLOUD_COMMISSIONS_FOLDER_ID); } catch { return false; }
+  }
   const picker = Boolean(onSelect);
   const accessAllowed = useRef(library.ready);
   useEffect(() => { accessAllowed.current = library.ready; }, [library.ready]);
@@ -120,7 +127,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     return () => { current = false; };
   }, [library.ready, picker]);
 
-  const currentParent = parentId === "root" || library.folders.folders[parentId] && !isFolderTrashed(library.folders, parentId) ? parentId : "root";
+  const currentParent = websiteFolder(parentId) && (parentId === "root" || library.folders.folders[parentId] && !isFolderTrashed(library.folders, parentId)) ? parentId : "root";
   const breadcrumbs = folderAncestors(library.folders, currentParent).reverse();
   useEffect(() => {
     let live = true;
@@ -145,11 +152,11 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   const query = search.trim().toLocaleLowerCase();
   const folderEntries = Object.entries(library.folders.folders).filter(([id, folder]) => {
     const trashed = isFolderTrashed(library.folders, id);
-    return (!picker || id !== CLOUD_COMMISSIONS_FOLDER_ID) && (!picker || !allPhotos) && (trash ? trashed : !trashed && folder.parentId === currentParent) && (!query || folder.name.toLocaleLowerCase().includes(query));
+    return websiteFolder(id) && (!picker || id !== CLOUD_COMMISSIONS_FOLDER_ID) && (!picker || !allPhotos) && (trash ? trashed : !trashed && folder.parentId === currentParent) && (!query || folder.name.toLocaleLowerCase().includes(query));
   }).sort((a, b) => a[1].name.localeCompare(b[1].name));
   const files = library.files.filter(file => {
     const trashed = Boolean(file.trashedAt) || isFolderTrashed(library.folders, file.parentId);
-    return (!picker || file.kind === "photo" && file.status === "ready") && (trash ? trashed : !trashed && (picker && allPhotos || file.parentId === currentParent || linkedGalleryIds.has(file.id))) && (!query || file.name.toLocaleLowerCase().includes(query));
+    return websiteFolder(file.parentId) && (!picker || file.kind === "photo" && file.status === "ready") && (trash ? trashed : !trashed && (picker && allPhotos || file.parentId === currentParent || linkedGalleryIds.has(file.id))) && (!query || file.name.toLocaleLowerCase().includes(query));
   }).sort((a, b) => a.name.localeCompare(b.name));
   const visibleItems: Item[] = [...folderEntries.map(([id, folder]): Item => ({ kind: "folder", id, folder, registry: library.folders })), ...files.map((file): Item => ({ kind: "file", file }))];
   const sortedKeys = orderedCloudKeys(order, visibleItems.map(itemKey));
@@ -159,7 +166,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   const currentViewing = viewing && library.files.find(file => file.id === viewing.id && file.status === "ready") || null;
   const readyBytes = library.files.filter(file => file.status === "ready").reduce((sum, file) => sum + file.bytes, 0);
   const pendingCount = library.files.filter(file => file.status === "uploading").length;
-  const trashFiles = library.files.filter(file => Boolean(file.trashedAt) || isFolderTrashed(library.folders, file.parentId));
+  const trashFiles = library.files.filter(file => websiteFolder(file.parentId) && (Boolean(file.trashedAt) || isFolderTrashed(library.folders, file.parentId)));
   const unavailable = busy || library.loading || !library.ready;
 
   function refreshFiles() {
@@ -168,7 +175,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     const generation = ++cleanupGeneration.current;
     void readCloudCleanupStatus().then(status => { if (alive.current && accessAllowed.current && generation === cleanupGeneration.current) setCleanup(status); }).catch(() => { if (alive.current && accessAllowed.current && generation === cleanupGeneration.current) setCleanup({ available: false, automaticCleanupEnabled: false, lastRunAt: null, message: "Trash cleanup could not be checked. Your files are kept." }); });
   }
-  function navigate(id: string) { if (operation.current) return; if (editing) { setError("Save or cancel the current change before opening another folder."); return; } setParentId(id); setAllPhotos(false); setTrash(false); setSearch(""); setError(""); }
+  function navigate(id: string) { if (!websiteFolder(id)) return; if (operation.current) return; if (editing) { setError("Save or cancel the current change before opening another folder."); return; } setParentId(id); setAllPhotos(false); setTrash(false); setSearch(""); setError(""); }
   function edit(mode: Editing["mode"], target: Item | null = null) {
     if (operation.current || !library.ready || editing) return;
     setError(""); setMessage("");
@@ -224,7 +231,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
         if (!alive.current || controller.signal.aborted) break;
         setUpload({ name: file.name, index: index + 1, count: incoming.length, percent: 0 });
         try {
-          await uploadCloudFile(file, { parentId: destination, signal: controller.signal, photoOnly: picker, preserveOriginal: !picker, onProgress: percent => { if (alive.current && !controller.signal.aborted) setUpload({ name: file.name, index: index + 1, count: incoming.length, percent }); } });
+          await uploadCloudFile(file, { parentId: destination, signal: controller.signal, photoOnly: picker, preserveOriginal: WEBSITE_WORKSPACE==="beta"?false:!picker, onProgress: percent => { if (alive.current && !controller.signal.aborted) setUpload({ name: file.name, index: index + 1, count: incoming.length, percent }); } });
           if (controller.signal.aborted || !alive.current) break;
           completed++;
         } catch (failure) { if (controller.signal.aborted) break; failures.push(`${file.name}: ${failure instanceof Error ? failure.message : "Upload was not confirmed."}`); }
@@ -316,6 +323,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = dragItem.current ? "move" : "copy"; setDropTarget(destination);
   }
   function drop(event: DragEvent<HTMLElement>, destination: string) {
+    if (!websiteFolder(destination)) { event.preventDefault(); return; }
     event.preventDefault(); event.stopPropagation();
     const item = dragItem.current; const permitted = canDrop(destination);
     clearDrag();
@@ -358,6 +366,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     </div>;
   }
   async function movePlaced(destination: string) {
+    if (!websiteFolder(destination)) return;
     const item = placing;
     if (!item || unavailable || editing || trash || !canMove(item, destination)) return;
     setPlacing(null);
@@ -375,7 +384,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   }
   function folderBranch(id: string, depth = 0) {
     const children = Object.entries(library.folders.folders)
-      .filter(([key, folder]) => folder.parentId === id && !isFolderTrashed(library.folders, key))
+      .filter(([key, folder]) => websiteFolder(key) && folder.parentId === id && !isFolderTrashed(library.folders, key))
       .sort((a, b) => a[1].name.localeCompare(b[1].name));
     const name = id === "root" ? "My files" : library.folders.folders[id].name;
     const expanded = expandedFolders[id] ?? (id === "root" || breadcrumbs.includes(id));
@@ -397,8 +406,8 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
       {expanded && children.length > 0 && depth < CLOUD_FOLDER_LIMIT && <div className={styles.folderChildren}>{children.map(([key]) => folderBranch(key, depth + 1))}</div>}
     </div>;
   }
-  const targets = [{ id: "root", label: "My files" }, ...Object.entries(library.folders.folders).filter(([id]) => !isFolderTrashed(library.folders, id) && !(editing?.target?.kind === "folder" && folderAncestors(library.folders, id).includes(editing.target.id))).map(([id]) => ({ id, label: folderPath(library.folders, id) })).sort((a, b) => a.label.localeCompare(b.label))];
-  if (!picker && currentParent === CLOUD_COMMISSIONS_FOLDER_ID && library.ready) return <CommissionFileHub onBack={() => navigate("root")} />;
+  const targets = [{ id: "root", label: "My files" }, ...Object.entries(library.folders.folders).filter(([id]) => websiteFolder(id) && !isFolderTrashed(library.folders, id) && !(editing?.target?.kind === "folder" && folderAncestors(library.folders, id).includes(editing.target.id))).map(([id]) => ({ id, label: folderPath(library.folders, id) })).sort((a, b) => a.label.localeCompare(b.label))];
+  if (WEBSITE_WORKSPACE === "main" && !picker && currentParent === CLOUD_COMMISSIONS_FOLDER_ID && library.ready) return <CommissionFileHub onBack={() => navigate("root")} />;
   return <section className={`${styles.hub} ${manager ? styles.manager : ""}`} aria-label={picker ? "Cloud photo library" : "File Hub"} onKeyDown={event => { if (event.key === "Escape") { clearDrag(); setPlacing(null); } }} onDragEnd={clearDrag} onDragOver={event => dragOver(event, currentParent)} onDrop={event => drop(event, currentParent)}>
     <div className={styles.heading}><div>{manager ? <h2>File Hub</h2> : <h3>Cloud photo library</h3>}<small>{picker ? "Your uploaded photos" : "Your files, organized your way"}</small></div><div className={styles.headingActions}><RefreshButton label="Refresh files" busy={library.loading} disabled={busy} onClick={refreshFiles} />{!picker && <button type="button" data-owner-button className={`${secondary} ${styles.trashView}`} aria-label="Trash" title="View Trash" disabled={busy} aria-pressed={trash} onClick={() => { setTrash(true); setSearch(""); setError(""); }}><TrashIcon /></button>}</div></div>
     {picker && <p className={styles.copy}>Upload a photo, then choose Use photo.</p>}

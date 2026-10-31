@@ -90,6 +90,6 @@ export function useAddClientLabel(): string {
 }
 const SPACE_NAMES=['Taylor’s Space','Spade’s Space','Spoodle’s Space','Tay’s Space'] as const;
 const SITE_IDENTITIES=['a Red Folf','the Red Folf','Spartan','a Furry','a Fursuit Maker','a Puppy'] as const;
-export function chooseOwnerWhimsyIdentity(random=Math.random){const pick=<T,>(values:readonly T[])=>{const draw=random();return values[Number.isFinite(draw)?Math.max(0,Math.min(values.length-1,Math.floor(draw*values.length))):0];};return{space:pick(SPACE_NAMES),identity:pick(SITE_IDENTITIES)};}
+export function chooseOwnerWhimsyIdentity(random=Math.random){const pick=<T,>(values:readonly T[])=>{const draw=random();return values[Number.isFinite(draw)?Math.max(0,Math.min(values.length-1,Math.floor(draw*values.length))):0];};const space=pick(SPACE_NAMES),identity=pick(SITE_IDENTITIES),rare=random();return{space,identity:Number.isFinite(rare)&&rare>=0&&rare<1/200?"Salix's Friend":identity};}
 /** One draw per workspace visit, stable while editing; the existing whimsy switch owns it. */
 export function useOwnerWhimsyIdentity(){const enabled=useOwnerWhimsy(),[choice,setChoice]=useState<{space:string;identity:string}>({space:'Taylor’s Space',identity:'a Red Folf'}),chosen=useRef(false);useEffect(()=>{let active=true;if(enabled&&!chosen.current)void Promise.resolve().then(()=>{if(active){chosen.current=true;setChoice(chooseOwnerWhimsyIdentity());}});return()=>{active=false;};},[enabled]);return enabled?choice:{space:'Taylor’s Space',identity:'a Red Folf'};}

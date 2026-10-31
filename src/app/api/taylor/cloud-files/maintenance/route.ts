@@ -1,3 +1,4 @@
+import { websiteDeployment } from "@/server/website-deployment";
 import { apiErrorResponse, privateJson, TaylorApiError, verifyTaylorOwner } from "@/server/taylor-auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -5,6 +6,7 @@ export const dynamic = "force-dynamic";
 const endpoint = "https://us-central1-taylor-made-creations.cloudfunctions.net/tmcFileMaintenance";
 async function forward(request: Request) {
   try {
+    const { workspace } = websiteDeployment(request.headers.get("host"));
     await verifyTaylorOwner(request);
     let body: string | undefined;
     if (request.method === "POST") {
@@ -17,7 +19,7 @@ async function forward(request: Request) {
       body = Buffer.concat(chunks).toString("utf8");
       try { JSON.parse(body); } catch { throw new TaylorApiError(400, "Invalid cleanup request."); }
     }
-    const response = await fetch(endpoint, { method: request.method, headers: { Authorization: request.headers.get("authorization")!, ...(body ? { "Content-Type": "application/json" } : {}) }, body, redirect: "error", cache: "no-store", signal: AbortSignal.any([request.signal, AbortSignal.timeout(110_000)]) });
+    const response = await fetch(endpoint, { method: request.method, headers: { Authorization: request.headers.get("authorization")!, ...(workspace === "beta" ? { "X-TMC-Website-Workspace": "beta" } : {}), ...(body ? { "Content-Type": "application/json" } : {}) }, body, redirect: "error", cache: "no-store", signal: AbortSignal.any([request.signal, AbortSignal.timeout(110_000)]) });
     if (response.status === 404 || response.status === 503) throw new TaylorApiError(503, "File cleanup has not been enabled on this deployment. Files remain in Trash.");
     const payload = await response.json().catch(() => null);
     if (!payload || typeof payload !== "object") throw new TaylorApiError(503, "File cleanup could not be reached. Refresh before retrying.");

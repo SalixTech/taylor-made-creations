@@ -1,0 +1,2 @@
+/** Structural byte check, not PDF sanitization. Public downloads are attachment-only. */
+export function assertWebsitePdfBytes(bytes:Uint8Array){if(bytes.byteLength<16||bytes.byteLength>12*1024*1024)throw Error('Website PDFs must be complete and no larger than 12 MiB.');const start=new TextDecoder().decode(bytes.subarray(0,16)),end=new TextDecoder().decode(bytes.subarray(Math.max(0,bytes.length-2048)));if(!/^%PDF-(?:1\.[0-9]|2\.[0-9])(?:\r|\n|\s)/.test(start)||!/%%EOF\s*$/.test(end))throw Error('This is not a complete PDF document.');}

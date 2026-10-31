@@ -35,6 +35,7 @@ export function decodePublishedRestDocument(value: unknown): PublishedOwnerSnaps
  * The safe access document and deployed rules, not a build-time flag, authorize
  * publication. Missing configuration never opens the bundled baseline site. */
 export async function readPublishedSite({ projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, fetcher = fetch }: { projectId?: string; fetcher?: typeof fetch } = {}): Promise<PublicSiteState> {
+  if ((process.env.TMC_WEBSITE_WORKSPACE ?? "main") !== "main" || (process.env.NEXT_PUBLIC_TMC_WEBSITE_WORKSPACE ?? "main") !== "main") return { status: "locked" };
   if (!projectId || !/^[a-z][a-z0-9-]{4,29}$/.test(projectId)) return { status: "locked" };
   const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents/site`;
   const read = (path: string) => fetcher(`${base}/${path}`, {

@@ -1,3 +1,4 @@
+import { workspaceBrowserKey } from "./website-workspace-config";
 import type { ConstructionWhimsy } from "./construction-whimsy";
 import { applySettingsCard, type SettingsCardId } from "./settings-cards";
 import { createDefaultOwnerContent, createInitialOwnerWorkspace } from "./defaults";
@@ -5,8 +6,8 @@ import { assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assert
 import type { OwnerContent, OwnerPremade, OwnerWorkspace, OwnerNamedDraft, OwnerNamedDraftSummary, SaveNamedDraftOptions } from "./model";
 import type { SiteAccess } from "./site-access";
 
-export const OWNER_STORAGE_EVENT = "tmc-owner-workspace-changed";
-export const OWNER_DATABASE_NAME = "tmc-owner-local-preview-v1";
+export const OWNER_STORAGE_EVENT = workspaceBrowserKey("tmc-owner-workspace-changed");
+export const OWNER_DATABASE_NAME = workspaceBrowserKey("tmc-owner-local-preview-v1");
 const OBJECT_STORE = "workspaces";
 const WORKSPACE_KEY = "owner";
 

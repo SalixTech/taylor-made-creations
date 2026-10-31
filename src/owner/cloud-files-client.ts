@@ -1,18 +1,20 @@
 "use client";
 
+import { WEBSITE_WORKSPACE, workspaceDocument, workspaceObject, workspaceCallableInput, workspaceBrowserKey } from "./website-workspace-config";
+
 import { decodePrivateGallery, type PrivateGallery } from "./private-gallery";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { collection, doc, getDoc, getDocs, runTransaction } from "firebase/firestore/lite";
 import { getMetadata, getStorage, ref, uploadBytesResumable } from "firebase/storage";
 import { taylorOwnerSession } from "./taylor-services-client";
 import { notifyPrivateAssetLibraryChanged } from "./asset-library-client";
-import { assertActiveFolder, assertCloudId, CLOUD_BUCKET, CLOUD_FILE_MAX_BYTES, CLOUD_FONT_MAX_BYTES, CLOUD_FONTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, isProtectedCloudFolder, CLOUD_FONT_TYPES, CLOUD_PRIVATE_EXTENSIONS, CLOUD_ORIGINAL_PHOTO_TYPES, isOriginalCloudPhoto, CLOUD_PHOTO_MAX_BYTES, CLOUD_PHOTO_INPUT_MAX_BYTES, cloudObjectPath, cloudPhotoSource, decodeCloudFile, decodeCloudFolders, emptyCloudFolders, validFileName, type CloudFile, type CloudFolders } from "./cloud-files-model";
+import { assertActiveFolder, assertCloudId, CLOUD_BUCKET, CLOUD_DOCUMENT_MAX_BYTES, CLOUD_DOCUMENTS_FOLDER_ID, CLOUD_FILE_MAX_BYTES, CLOUD_FONT_MAX_BYTES, CLOUD_FONTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, isProtectedCloudFolder, CLOUD_FONT_TYPES, CLOUD_PRIVATE_EXTENSIONS, CLOUD_ORIGINAL_PHOTO_TYPES, isOriginalCloudPhoto, CLOUD_PHOTO_MAX_BYTES, CLOUD_PHOTO_INPUT_MAX_BYTES, cloudObjectPath, cloudPhotoSource, decodeCloudFile, decodeCloudFolders, emptyCloudFolders, validFileName, type CloudFile, type CloudFolders } from "./cloud-files-model";
 
 import { decodeCloudFileOrder, emptyCloudFileOrder, reorderCloudKeys, type CloudFileOrder } from "./cloud-file-order";
 
-export const CLOUD_FILES_EVENT = "cloud-files";
-export const CLOUD_FILES_COLLECTION = "ownerFiles";
-export const CLOUD_FOLDERS_DOCUMENT = "ownerFileFolders/current";
+export const CLOUD_FILES_EVENT = workspaceBrowserKey("cloud-files");
+export const CLOUD_FILES_COLLECTION = workspaceDocument("ownerFiles");
+export const CLOUD_FOLDERS_DOCUMENT = workspaceDocument("ownerFileFolders/current");
 const changed = () => notifyPrivateAssetLibraryChanged(CLOUD_FILES_EVENT);
 const message = (error: unknown) => {
   const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
@@ -41,7 +43,7 @@ export async function readCloudFiles(): Promise<{ files: CloudFile[]; folders: C
 export async function readCloudFileOrder(parentId: string): Promise<CloudFileOrder> {
   if (parentId !== "root") assertCloudId(parentId);
   const session = await connection();
-  const snapshot = await getDoc(doc(session.db, "ownerFileOrder", parentId));
+  const snapshot = await getDoc(doc(session.db, workspaceDocument("ownerFileOrder"), parentId));
   session.assertCurrent();
   return snapshot.exists() ? decodeCloudFileOrder(snapshot.data()) : emptyCloudFileOrder();
 }
@@ -52,7 +54,7 @@ export async function saveCloudFileOrder(parentId: string, expected: CloudFileOr
     const known = await getDocs(collection(session.db, CLOUD_FILES_COLLECTION));
     session.assertCurrent();
     await runTransaction(session.db, async transaction => {
-      const orderRef = doc(session.db, "ownerFileOrder", parentId);
+      const orderRef = doc(session.db, workspaceDocument("ownerFileOrder"), parentId);
       const [orderSnapshot, folderSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(doc(session.db, CLOUD_FOLDERS_DOCUMENT))]);
       const folders = folderSnapshot.exists() ? decodeCloudFolders(folderSnapshot.data()) : emptyCloudFolders();
       assertActiveFolder(folders, parentId);
@@ -75,7 +77,8 @@ export async function saveCloudFileOrder(parentId: string, expected: CloudFileOr
 export async function checkCloudStorage(): Promise<string> {
   const session = await connection();
   await getDocs(collection(session.db, CLOUD_FILES_COLLECTION)); session.assertCurrent();
-  try { await getMetadata(ref(session.storage, "photos/00000000-0000-0000-0000-000000000000.webp")); }
+  if (WEBSITE_WORKSPACE === "beta") return "Beta file-list read succeeded. Direct Storage access is intentionally disabled. Uploads and downloads are confirmed only by a successful authenticated gateway operation.";
+  try { await getMetadata(ref(session.storage, workspaceObject("photos/00000000-0000-0000-0000-000000000000.webp"))); }
   catch (error) { if (!error || typeof error !== "object" || !("code" in error) || error.code !== "storage/object-not-found") throw message(error); }
   session.assertCurrent();
   return "Firestore file-list read and Storage read probe succeeded. Upload writing is confirmed only after a successful upload. Backups are not configured by this patch.";
@@ -108,7 +111,7 @@ export async function changeCloudFolder(registry: CloudFolders, id: string, chan
   if (isProtectedCloudFolder(id)) throw new Error("This protected folder stays at the top of File Hub.");
   try {
     const session = await connection(); session.assertCurrent();
-    const response = await httpsCallable<unknown, { folders: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerChangeCloudFolder")({ folderId: id, expectedRevision: registry.revision, change });
+    const response = await httpsCallable<unknown, { folders: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerChangeCloudFolder")(workspaceCallableInput({ folderId: id, expectedRevision: registry.revision, change }));
     session.assertCurrent(); const result = decodeCloudFolders(response.data.folders); changed(); return result;
   } catch (error) { changed(); throw message(error); }
 }
@@ -127,7 +130,7 @@ async function normalizePhoto(file: File): Promise<{ blob: Blob; width: number; 
     return { blob, width: canvas.width, height: canvas.height };
   } finally { image.close(); }
 }
-export async function uploadCloudFile(file: File, options: { parentId?: string; signal?: AbortSignal; onProgress?: (percent: number) => void; photoOnly?: boolean; preserveOriginal?: boolean } = {}): Promise<CloudFile> {
+export async function uploadCloudFile(file: File, options: { parentId?: string; signal?: AbortSignal; onProgress?: (percent: number) => void; photoOnly?: boolean; preserveOriginal?: boolean; websiteDocument?: boolean } = {}): Promise<CloudFile> {
   const { signal, onProgress } = options;
   signal?.throwIfAborted();
   const extension = file.name.toLowerCase().split(".").pop() ?? "";
@@ -135,14 +138,15 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
   const originalPhoto = Object.hasOwn(CLOUD_ORIGINAL_PHOTO_TYPES, extension);
   const photo = !options.preserveOriginal && ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"].includes(file.type);
   const pdf = extension === "pdf";
+  if(options.websiteDocument&&(!pdf||file.type!=="application/pdf"||options.photoOnly||options.preserveOriginal))throw new Error("Choose a PDF for this website document.");
   if (options.photoOnly && !photo) throw new Error("Choose a supported photo.");
   let prepared: { blob: Blob; width: number; height: number };
   if (photo) prepared = await normalizePhoto(file);
   else {
-    if (!file.size || file.size > (fontType ? CLOUD_FONT_MAX_BYTES : CLOUD_FILE_MAX_BYTES)) throw new Error(fontType ? "Fonts must be no larger than 4 MB." : "Choose a non-empty file no larger than 500 MB.");
+    if (!file.size || file.size > (options.websiteDocument?CLOUD_DOCUMENT_MAX_BYTES:fontType ? CLOUD_FONT_MAX_BYTES : CLOUD_FILE_MAX_BYTES)) throw new Error(options.websiteDocument?"Website PDFs must be no larger than 12 MiB.":fontType ? "Fonts must be no larger than 4 MB." : "Choose a non-empty file no larger than 500 MB.");
     if (!fontType && !CLOUD_PRIVATE_EXTENSIONS.includes(extension) && !(options.preserveOriginal && originalPhoto)) throw new Error("This file type is not supported. Executables, scripts and web pages are not accepted.");
     if (pdf && new TextDecoder().decode(await file.slice(0, 5).arrayBuffer()) !== "%PDF-") throw new Error("This file is not a readable PDF.");
-    if (fontType) {
+    if (fontType && WEBSITE_WORKSPACE === "main") {
       const session = await connection();
       const check = await fetch("/api/taylor/cloud-fonts/validate", { method: "POST", headers: { Authorization: `Bearer ${session.token}`, "Content-Type": fontType }, body: file, signal, cache: "no-store", credentials: "same-origin" });
       session.assertCurrent();
@@ -151,13 +155,14 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
     prepared = { blob: file, width: 0, height: 0 };
   }
   signal?.throwIfAborted();
+  if(WEBSITE_WORKSPACE==="beta"&&!photo&&!fontType&&!options.websiteDocument)throw new Error("Beta accepts website photos, fonts and explicitly selected website PDFs. Private originals are not uploaded through this website gateway.");
   const name = file.name.replace(/[\u0000-\u001f\u007f/\\]/g, " ").trim().slice(0, 150) || "Uploaded file";
   if (!validFileName(name)) throw new Error("Choose a file with a valid name.");
-  if (fontType && !options.parentId) await ensureCloudFontsFolder();
+  if ((fontType||options.websiteDocument) && !options.parentId) await ensureCloudSystemFolders();
   const id = crypto.randomUUID(), now = new Date().toISOString();
   if (options.parentId === CLOUD_COMMISSIONS_FOLDER_ID) throw new Error("Use the private commission sharing controls for commission files.");
   if (name.length > 42) throw new Error("Use a file name of 42 characters or fewer.");
-  const record: CloudFile = { id, schemaVersion: 1, revision: 1, kind: photo ? "photo" : fontType ? "font" : pdf ? "pdf" : "file", name, parentId: options.parentId ?? (fontType ? CLOUD_FONTS_FOLDER_ID : "root"), contentType: photo ? "image/webp" : fontType ?? (pdf ? "application/pdf" : "application/octet-stream"), bytes: prepared.blob.size, width: prepared.width, height: prepared.height, status: "uploading", trashedAt: null, createdAt: now, updatedAt: now };
+  const record: CloudFile = { id, schemaVersion: 1, revision: 1, kind: options.websiteDocument?"document":photo ? "photo" : fontType ? "font" : pdf ? "pdf" : "file", name, parentId: options.parentId ?? (options.websiteDocument?CLOUD_DOCUMENTS_FOLDER_ID:fontType ? CLOUD_FONTS_FOLDER_ID : "root"), contentType: photo ? "image/webp" : fontType ?? (pdf ? "application/pdf" : "application/octet-stream"), bytes: prepared.blob.size, width: prepared.width, height: prepared.height, status: "uploading", trashedAt: null, createdAt: now, updatedAt: now };
   try {
     const session = await connection(); signal?.throwIfAborted();
     const target = doc(session.db, CLOUD_FILES_COLLECTION, id);
@@ -168,7 +173,11 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
       session.assertCurrent(); signal?.throwIfAborted(); transaction.set(target, fileData(record));
     });
     session.assertCurrent(); signal?.throwIfAborted();
-    const task = uploadBytesResumable(ref(session.storage, cloudObjectPath(record)), prepared.blob, { contentType: record.contentType, cacheControl: "private, no-store, max-age=0", contentDisposition: photo || fontType ? "inline" : "attachment", customMetadata: { fileId: id } });
+    if(WEBSITE_WORKSPACE==="beta"||record.kind==="document"){
+      const bytes=new Uint8Array(await prepared.blob.arrayBuffer());let binary="";for(let index=0;index<bytes.length;index+=32768)binary+=String.fromCharCode(...bytes.subarray(index,index+32768));session.assertCurrent();signal?.throwIfAborted();
+      const result=await httpsCallable<unknown,{file:unknown}>(getFunctions(session.auth.app,"us-central1"),"tmcOwnerWebsiteAssets")({workspace:WEBSITE_WORKSPACE,action:"upload",fileId:record.id,expectedRevision:record.revision,base64:btoa(binary)});session.assertCurrent();signal?.throwIfAborted();const raw=result.data.file as Record<string,unknown>;const {id:returnedId,...data}=raw;if(returnedId!==record.id)throw new Error("The website upload returned another file identity.");const confirmed=decodeCloudFile(data,record.id);if(confirmed.status!=="ready"||confirmed.kind!==record.kind||confirmed.bytes!==record.bytes||confirmed.contentType!==record.contentType)throw new Error("The website upload could not be verified.");onProgress?.(100);changed();return confirmed;
+    }
+    const task = uploadBytesResumable(ref(session.storage, workspaceObject(cloudObjectPath(record))), prepared.blob, { contentType: record.contentType, cacheControl: "private, no-store, max-age=0", contentDisposition: photo || fontType ? "inline" : "attachment", customMetadata: { fileId: id } });
     const cancel = () => { task.cancel(); };
     const unsubscribe = session.auth.onAuthStateChanged(() => { try { session.assertCurrent(); } catch { cancel(); } });
     signal?.addEventListener("abort", cancel, { once: true });
@@ -183,7 +192,8 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
 export async function confirmCloudUpload(file: CloudFile): Promise<CloudFile> {
   try {
     const session = await connection();
-    const metadata = await getMetadata(ref(session.storage, cloudObjectPath(file))); session.assertCurrent();
+    if(WEBSITE_WORKSPACE==="beta"||file.kind==="document"){const{betaAssetMetadata}=await import("./beta-assets-client");const result=await betaAssetMetadata(file.id,session);session.assertCurrent();if(result.file.status!=="ready"||result.file.kind!==file.kind||result.file.bytes!==file.bytes)throw new Error("This beta upload is not yet confirmed.");changed();return result.file;}
+    const metadata = await getMetadata(ref(session.storage, workspaceObject(cloudObjectPath(file)))); session.assertCurrent();
     if (metadata.size !== file.bytes || metadata.contentType !== file.contentType || metadata.customMetadata?.fileId !== file.id) throw new Error("Uploaded bytes do not match this file’s metadata. Nothing was activated.");
     const result = await runTransaction(session.db, async transaction => {
       const target = doc(session.db, CLOUD_FILES_COLLECTION, file.id), snapshot = await transaction.get(target);
@@ -199,6 +209,7 @@ export async function confirmCloudUpload(file: CloudFile): Promise<CloudFile> {
 }
 export async function downloadCloudFile(file: CloudFile, signal?: AbortSignal): Promise<Blob> {
   const session = await connection();
+  if(WEBSITE_WORKSPACE==="beta"||file.kind==="document"){const{readBetaWebsiteAsset}=await import("./beta-assets-client");const blob=await readBetaWebsiteAsset(file.id,session,signal);session.assertCurrent();if(blob.size!==file.bytes||blob.type!==file.contentType)throw new Error("The beta file changed. Refresh before downloading it.");return blob;}
   const url = file.kind === "photo" ? cloudPhotoSource(file.id) : file.kind === "font" ? `/api/cloud-fonts/${file.id}` : `/api/cloud-files/${file.id}?kind=${file.kind}`;
   const response = await fetch(url, { headers: { Authorization: `Bearer ${session.token}` }, cache: "no-store", credentials: "same-origin", signal });
   if (!response.ok || response.headers.get("content-type") !== file.contentType) throw new Error("This private file could not be downloaded. Check access and try again.");
@@ -209,7 +220,7 @@ export async function downloadCloudFile(file: CloudFile, signal?: AbortSignal): 
 
 export async function ensureCloudSystemFolders(): Promise<CloudFolders> {
   const session = await connection(); session.assertCurrent();
-  const response = await httpsCallable<unknown, { folders: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerEnsureCloudFolders")({});
+  const response = await httpsCallable<unknown, { folders: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerEnsureCloudFolders")(workspaceCallableInput({}));
   session.assertCurrent(); const result = decodeCloudFolders(response.data.folders); changed(); return result;
 }
 export const ensureCloudFontsFolder = ensureCloudSystemFolders;
@@ -253,6 +264,6 @@ export async function createCloudWebsitePhoto(file: CloudFile, options: { signal
 /** Reuses the verified-owner private-gallery callable, never a public document read. */
 export async function readCloudGallery(): Promise<PrivateGallery | null> {
   const session = await connection(); session.assertCurrent();
-  const response = await httpsCallable<unknown, { gallery: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerReadGallery")({});
+  const response = await httpsCallable<unknown, { gallery: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerReadGallery")(workspaceCallableInput({}));
   session.assertCurrent(); return response.data.gallery === null ? null : decodePrivateGallery(response.data.gallery);
 }

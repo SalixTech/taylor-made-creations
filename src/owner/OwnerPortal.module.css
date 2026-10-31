@@ -465,3 +465,13 @@
 /* Page controls are separate from the bordered list, not attached to its top edge. */
 .pageManagement{min-width:0}.pageManagementActions{margin:0 0 18px;gap:16px;align-items:center}.pageManagement .pageRow .moveButtons{margin-left:0}.pageManagement .pageRow .textButton{color:var(--owner-ink)!important}.pageManagement [data-owner-trash-icon]{color:var(--owner-ink)!important}.pageManagement button:has(>[data-owner-trash-icon]){border-color:var(--owner-line);background:transparent;color:var(--owner-ink)}
 .portal[data-owner-portal][data-color-mode] .pageManagement .pageRow .textButton,.portal[data-owner-portal][data-color-mode] .pageManagement [data-owner-trash-icon]{color:var(--owner-ink)!important}.portal[data-owner-portal][data-color-mode] .pageManagement button:has(>[data-owner-trash-icon]){background:transparent!important;border-color:var(--owner-line)!important;color:var(--owner-ink)!important}
+
+/* Dedicated builder keeps the actual canvas and its single inspector full-page. */
+.fullPageBuilder {display:block;grid-template-columns:minmax(0,1fr);}
+.fullPageBuilder .workspace{min-width:0;width:100%;margin:0;}
+.fullPageBuilder .content{max-width:none;padding:8px 12px 20px;}
+.fullPageBuilder .pageHeading{display:none;}
+.fullPageBuilder .topbar{position:sticky;top:0;z-index:50;}
+
+.rareIdentity {color:#9a6505!important;}
+:global([data-color-mode="dark"]) .rareIdentity {color:#f4cf70!important;}

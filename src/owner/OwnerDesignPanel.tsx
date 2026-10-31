@@ -2,7 +2,7 @@
 
 import { DESIGN_COLOR_FIELDS, DESIGN_SELECT_FIELDS } from "./site-design";
 import type { OwnerContent } from "./model";
-import { OwnerSelect } from "./OwnerFields";
+import { OwnerSelect, Toggle } from "./OwnerFields";
 import { OwnerHexInput, OwnerNumberInput } from "./OwnerDesignInputs";
 import { OwnerFontLibrary } from "./FontUpload";
 import ui from "./OwnerPortal.module.css";
@@ -23,7 +23,7 @@ export function OwnerDesignPanel({ content, onEdit, onReset }: Props) {
     <p className={ui.help}>These choices change the whole website, including this live canvas. Your public website changes only when you publish.</p>
     <section className={styles.group} aria-labelledby="builder-colors-heading">
       <h3 id="builder-colors-heading">Website colors</h3>
-      <label><input type="checkbox" checked={content.design?.sectionDividers !== "hidden"} onChange={event => onEdit(draft => { draft.design = { ...draft.design, sectionDividers: event.target.checked ? "visible" : "hidden" }; })} /> Section dividers</label>
+      <Toggle label="Section dividers" checked={content.design?.sectionDividers !== "hidden"} onChange={checked => onEdit(draft => { draft.design = { ...draft.design, sectionDividers: checked ? "visible" : "hidden" }; })} />
       <p className={styles.hint}>Choose a swatch to open the color picker. Keep text and backgrounds easy to read. Price text changes amounts on the price sheet and premade listings without changing accents or buttons. Until you choose a color, it follows the accent; Reset restores that link.</p>
       <div className={styles.colors}>{DESIGN_COLOR_FIELDS.map(field => {
         const value = content.design?.colors?.[field.key] ?? (field.key === "priceText" ? content.design?.colors?.accent : field.key === "sectionDivider" ? content.design?.colors?.border : undefined) ?? field.defaultValue;

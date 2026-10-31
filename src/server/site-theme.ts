@@ -9,6 +9,7 @@ function rest(value: unknown): unknown {
   throw new Error("Invalid theme value.");
 }
 export async function readPublicTheme({ projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, fetcher = fetch }: { projectId?: string; fetcher?: typeof fetch } = {}): Promise<ThemeDefaults> {
+  if ((process.env.TMC_WEBSITE_WORKSPACE ?? "main") !== "main" || (process.env.NEXT_PUBLIC_TMC_WEBSITE_WORKSPACE ?? "main") !== "main") return initialThemeDefaults();
   if (projectId !== "taylor-made-creations") return initialThemeDefaults();
   try {
     const response = await fetcher(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/site/theme`, { cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(3000) });

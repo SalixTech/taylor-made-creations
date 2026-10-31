@@ -1,6 +1,7 @@
+import { workspaceBrowserKey } from "./website-workspace-config";
 import { validateOwnerContent, type OwnerContent } from "./model";
 
-export const PREVIEW_CHANNEL = "tmc-owner-live-preview-v1";
+export const PREVIEW_CHANNEL = workspaceBrowserKey("tmc-owner-live-preview-v1");
 export const PREVIEW_MAX_BYTES = 8 * 1024 * 1024;
 export type PreviewSnapshot = { content: OwnerContent; pageId: string; sequence: number };
 export const validPreviewNonce = (nonce: unknown): nonce is string => typeof nonce === "string" && /^[a-f0-9-]{36}$/i.test(nonce);

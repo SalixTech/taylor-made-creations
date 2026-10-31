@@ -1,5 +1,7 @@
 "use client";
 
+import {ButtonDesignEditor} from "./ButtonDesignEditor";
+import {WebsiteAssetPicker} from "./WebsiteAssetPicker";
 import { useState } from "react";
 import type { OwnerContent } from "./model";
 import { IMAGE_FIELDS, LINK_FIELDS, TEXT_FIELDS, getTemplateLink } from "./site-design";
@@ -57,6 +59,8 @@ export function OwnerTemplateEditor({ content, onEdit, group, target }: Props) {
           <div className={styles.fieldHeading}><h3>{field.label}</h3>{content.contentOverrides?.links?.[field.key] !== undefined && <button type="button" className={styles.reset} aria-label={`Reset ${field.label.toLowerCase()}`} onClick={() => onEdit(draft => { if (draft.contentOverrides?.links) delete draft.contentOverrides.links[field.key]; })}>Reset button</button>}</div>
           <Field label="Button or link text" value={link.label} onChange={label => onEdit(draft => { const current = getTemplateLink(draft, field.key); draft.contentOverrides = { ...draft.contentOverrides, links: { ...draft.contentOverrides?.links, [field.key]: { ...current, label } } }; })} />
           <Field label="Where should it go?" value={link.href} onChange={href => onEdit(draft => { const current = getTemplateLink(draft, field.key); draft.contentOverrides = { ...draft.contentOverrides, links: { ...draft.contentOverrides?.links, [field.key]: { ...current, href } } }; })} hint="A page on your site, such as /contact, or a full https:// link. Changing this does not connect forms or checkout." />
+          <WebsiteAssetPicker key={`pdf-${field.key}`} targetId={field.key} kind="document" value={link.href} onSelect={href=>onEdit(draft=>{const current=getTemplateLink(draft,field.key);draft.contentOverrides={...draft.contentOverrides,links:{...draft.contentOverrides?.links,[field.key]:{...current,href}}};})}/>
+          <ButtonDesignEditor content={content} onEdit={onEdit} value={link.buttonDesignId} onSelect={id=>onEdit(draft=>{const current=getTemplateLink(draft,field.key);if(id)current.buttonDesignId=id;else delete current.buttonDesignId;draft.contentOverrides={...draft.contentOverrides,links:{...draft.contentOverrides?.links,[field.key]:current}};})}/>
           <OwnerElementAppearance content={content} styleKey={field.key} onEdit={onEdit} />
         </section>;
       })}

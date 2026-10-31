@@ -1,4 +1,6 @@
 "use client";
+import {ButtonDesignEditor} from "./ButtonDesignEditor";
+import {WebsiteAssetPicker} from "./WebsiteAssetPicker";
 import { blockParent, blockSiblings, stepBlock, removeBlockTree } from "./builder-interactions";
 import { validElementBox } from "./box-geometry";
 
@@ -29,8 +31,8 @@ export function createBlock(type: PageBlock["type"]): PageBlock {
   }
 }
 
-type Props = { layoutOrder?:{index:number;count:number;onMove:(direction:-1|1)=>void}; mobileLayout?:boolean; page: OwnerPage; onEdit: (change: (page: OwnerPage) => void) => void; onRemove: (block: PageBlock, remove: () => void) => void; focusedBlockId?: string; hideAddPalette?: boolean; fonts?: OwnerContent["fonts"] };
-export function OwnerBlocksEditor({ layoutOrder, page, onEdit, onRemove, focusedBlockId, hideAddPalette = false, fonts, mobileLayout=false }: Props) {
+type Props = { content?:OwnerContent;onEditContent?:(change:(draft:OwnerContent)=>void)=>void;layoutOrder?:{index:number;count:number;onMove:(direction:-1|1)=>void}; mobileLayout?:boolean; page: OwnerPage; onEdit: (change: (page: OwnerPage) => void) => void; onRemove: (block: PageBlock, remove: () => void) => void; focusedBlockId?: string; hideAddPalette?: boolean; fonts?: OwnerContent["fonts"] };
+export function OwnerBlocksEditor({ content,onEditContent,layoutOrder, page, onEdit, onRemove, focusedBlockId, hideAddPalette = false, fonts, mobileLayout=false }: Props) {
   function editBlock<T extends PageBlock["type"]>(block: Extract<PageBlock, { type: T }>, change: (item: Extract<PageBlock, { type: T }>) => void) {
     onEdit(target => { const item = target.blocks.find(item => item.id === block.id); if (item?.type === block.type) change(item as Extract<PageBlock, { type: T }>); });
   }
@@ -43,7 +45,7 @@ export function OwnerBlocksEditor({ layoutOrder, page, onEdit, onRemove, focused
       {block.type==="section"&&<><Field label="Section heading" value={block.heading} onChange={value=>editBlock(block,item=>{item.heading=value;})}/><p className={styles.help}>Use Layers to move pieces into this box. Move its contents out before removing an assigned box. Undo can restore your changes.</p></>}
       {block.type === "text" && <><Field label="Heading (optional)" value={block.heading} onChange={value => editBlock(block, item => { item.heading = value; })} /><OwnerLinkedTextField label="Text" multiline value={block.body} onChange={value => editBlock(block, item => { item.body = value; })} hint="Use blank lines to start a new paragraph." /></>}
       {block.type === "image" && <><ImagePicker key={block.id} src={block.src} alt={block.alt} onSource={value => editBlock(block, item => { item.src = value; })} onAlt={value => editBlock(block, item => { item.alt = value; })} /><OwnerLinkedTextField label="Caption (optional)" value={block.caption} onChange={value => editBlock(block, item => { item.caption = value; })} /></>}
-      {block.type === "link" && <><Field label="Button text" value={block.label} onChange={value => editBlock(block, item => { item.label = value; })} /><Field label="Where should it go?" value={block.href} onChange={value => editBlock(block, item => { item.href = value; })} hint="A site page like /contact, or a full https:// link." /></>}
+      {block.type === "link" && <><Field label="Button text" value={block.label} onChange={value => editBlock(block, item => { item.label = value; })} /><Field label="Where should it go?" value={block.href} onChange={value => editBlock(block, item => { item.href = value; })} hint="A site page like /contact, or a full https:// link." /><WebsiteAssetPicker key={`pdf-${page.id}-${block.id}`} targetId={`${page.id}:${block.id}`} kind="document" value={block.href} onSelect={href=>editBlock(block,item=>{item.href=href;})}/>{content&&onEditContent&&<ButtonDesignEditor content={content} onEdit={onEditContent} value={block.buttonDesignId} onSelect={id=>editBlock(block,item=>{if(id)item.buttonDesignId=id;else delete item.buttonDesignId;})}/>}</>}
       {block.type === "heading" && <><Field label="Heading" value={block.text} onChange={value => editBlock(block, item => { item.text = value; })} /><OwnerSelect label="Heading level" value={String(block.level)} onChange={value => editBlock(block, item => { item.level = value === "3" ? 3 : 2; })} options={[{ value: "2", label: "Section heading" }, { value: "3", label: "Smaller heading" }]} /></>}
       {block.type === "list" && <><OwnerSelect label="List style" value={block.style} onChange={value => editBlock(block, item => { item.style = value === "numbered" ? "numbered" : "bullet"; })} options={[{ value: "bullet", label: "Bullet points" }, { value: "numbered", label: "Numbered steps" }]} /><Field label="List items" multiline value={block.items.join("\n")} onChange={value => editBlock(block, item => { item.items = value.split("\n"); })} hint="Write one item per line." /></>}
       {block.type === "divider" && <p className={styles.help}>A subtle line to separate two sections. Move it up or down to place it.</p>}

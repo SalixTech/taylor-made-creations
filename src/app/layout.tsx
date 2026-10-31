@@ -1,3 +1,5 @@
+import { websiteDeployment } from "@/server/website-deployment";
+import { headers } from "next/headers";
 import { cookies } from "next/headers";
 import { getPublicTheme } from "@/server/site-theme";
 import { ThemeDefaultsProvider } from "@/components/ThemeDefaultsProvider";
@@ -19,6 +21,8 @@ import { ColorModeRuntime } from "@/components/ColorMode";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: { default: site.name, template: `%s | ${site.name}` }, description: "Taylor Made Creations: fursuits, character work and commission information.", robots: { index: false, follow: false } };
 export default async function Layout({ children }: { children: React.ReactNode }) {
+  const deployment = websiteDeployment((await headers()).get("host"));
+  if (deployment.workspace === "beta") return <html lang="en"><body><CopyrightProvider initialYear={copyrightYearAt()}>{children}</CopyrightProvider></body></html>;
   const [initialState, theme, cookieJar] = await Promise.all([getPublishedSite(), getPublicTheme(), cookies()]);
   const initialModes: Partial<Record<ThemeArea, ThemeMode>> = {};
   for (const area of THEME_AREAS) { const value = cookieJar.get(`tmc-theme-${area}`)?.value; if (value === "light" || value === "dark") initialModes[area] = value; }

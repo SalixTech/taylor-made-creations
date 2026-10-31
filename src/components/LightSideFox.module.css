@@ -29,3 +29,6 @@
 .encounter :global(dialog) button[aria-label="Close dialog"]{background:transparent!important;border-color:transparent!important;color:#fff6de!important;box-shadow:none!important;border-radius:8px!important;}
 .encounter :global(dialog) button[aria-label="Close dialog"]:hover{background:#ffffff14!important;}
 .encounter :global(dialog) button[aria-label="Close dialog"]:focus-visible{outline:2px solid #72a9e5!important;outline-offset:2px;}
+
+.rareText { color:#b78013; font-weight:700; }
+:global([data-color-mode="dark"]) .rareText {color:#f4cf70;}

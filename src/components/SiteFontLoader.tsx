@@ -1,5 +1,7 @@
 "use client";
 
+import { WEBSITE_WORKSPACE } from "@/owner/website-workspace-config";
+import { readBetaWebsiteAsset, betaAssetSourceId } from "@/owner/beta-assets-client";
 import { useEffect } from "react";
 import type { OwnerFont } from "@/owner/model";
 import { FONT_CONTENT_TYPES, isOwnerFont } from "@/owner/font-client";
@@ -33,9 +35,16 @@ export function SiteFontLoader({ fonts, privateFonts = false }: { fonts?: OwnerF
           let face: FontFace;
           if (session) {
             session.assertCurrent();
-            const response = await fetch(source, { headers: { Authorization: `Bearer ${session.token}` }, cache: "no-store", credentials: "same-origin", signal: controller.signal });
-            if (!response.ok || response.headers.get("content-type") !== FONT_CONTENT_TYPES[format]) continue;
-            const bytes = await response.arrayBuffer();
+            let bytes: ArrayBuffer;
+            if (WEBSITE_WORKSPACE === "beta") {
+              const blob = await readBetaWebsiteAsset(betaAssetSourceId(source, "font"), session, controller.signal);
+              if (blob.type !== FONT_CONTENT_TYPES[format]) continue;
+              bytes = await blob.arrayBuffer();
+            } else {
+              const response = await fetch(source, { headers: { Authorization: `Bearer ${session.token}` }, cache: "no-store", credentials: "same-origin", signal: controller.signal });
+              if (!response.ok || response.headers.get("content-type") !== FONT_CONTENT_TYPES[format]) continue;
+              bytes = await response.arrayBuffer();
+            }
             session.assertCurrent();
             if (!alive || controller.signal.aborted) break;
             // Authenticated bytes stay in memory; no public fallback, token URL, data URI or Firestore binary.

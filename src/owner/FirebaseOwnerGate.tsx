@@ -1,5 +1,6 @@
 "use client";
 
+import { WEBSITE_WORKSPACE, assertBrowserWorkspaceHost } from "./website-workspace-config";
 import { AccountThemeSync } from "@/components/AccountThemeSync";
 import { acceptHubWindowSignIn, revokeHubWindows, assertHubWindowSession } from "@/client-hub/window-session";
 import Link from "next/link";
@@ -21,7 +22,7 @@ type GateState =
 export type FirebaseOwnerSession = { store: OwnerStore; userEmail: string; recoveryIdentity: RecoverySession; signOut: () => Promise<void> };
 
 function SessionContent({ children, ...session }: FirebaseOwnerSession & { children: (session: FirebaseOwnerSession) => ReactNode }) {
-  return <><AccountThemeSync role="owner" accountKey={session.recoveryIdentity.ownerUid} />{children(session)}</>;
+  return <>{WEBSITE_WORKSPACE === "main" && <AccountThemeSync role="owner" accountKey={session.recoveryIdentity.ownerUid} />}{children(session)}</>;
 }
 
 /** This UI is only a convenience gate. Deployed Firestore rules enforce access. */
@@ -52,6 +53,7 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
       const config = readOwnerFirebaseConfig();
       if (config.status !== "ready") { setState({ status: "setup", config }); return; }
       try {
+        assertBrowserWorkspaceHost();
         const client = getOwnerFirebaseClient(config);
         clientRef.current = client;
         unsubscribe = onAuthStateChanged(client.auth, user => {

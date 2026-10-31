@@ -1,4 +1,4 @@
-import { isPageAvailable, isSafeLink, type BuiltinPageKey, type OwnerContent, type OwnerPage } from "./model";
+import { isPageAvailable, isSafeLink, isWebsiteDocumentHref, type BuiltinPageKey, type OwnerContent, type OwnerPage } from "./model";
 
 export const OWNER_PREVIEW_ROOT = "/taylor/preview";
 const LEGACY_PREVIEW_ROOT = "/owner/preview";
@@ -22,6 +22,7 @@ export type PreviewDestination = { href: string; kind: "page" | "external" | "an
 /** Resolve only real, available content pages. Never turn arbitrary internal paths into owner/admin links. */
 export function resolveSiteDestination(content: OwnerContent, href: string, mode: "public" | "preview"): PreviewDestination | null {
   if (!isSafeLink(href)) return null;
+  if(isWebsiteDocumentHref(href))return{href,kind:"download"};
   if (href.startsWith("#")) return { href, kind: "anchor" };
   if (!href.startsWith("/")) return { href, kind: "external" };
   try {

@@ -16,3 +16,6 @@
 /* Keep the two construction actions equal; art and font remain whimsy-only. */
 .accessLinks > :global(.button), .accessLinks > div > button { box-sizing:border-box; width:134px; height:52px; min-height:52px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
 .accessLinks > div > button { padding:0 6px; font-size:16px; line-height:1.2; white-space:nowrap; }
+
+.creditRow{padding:0 22px 20px;}
+.creditRow>div{margin-top:0;justify-content:center;align-items:center;}

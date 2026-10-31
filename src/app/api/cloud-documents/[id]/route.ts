@@ -1,0 +1,5 @@
+import{CLOUD_FILE_ID}from'@/owner/cloud-files-model';
+import{websiteDeployment}from'@/server/website-deployment';
+export const runtime='nodejs';export const dynamic='force-dynamic';
+/** Public only: fixed tokenless Function rechecks current publication and sends the attachment. */
+export async function GET(request:Request,context:{params:Promise<{id:string}>}){const headers={'Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};try{const {workspace}=websiteDeployment(request.headers.get('host')),id=(await context.params).id;if(!CLOUD_FILE_ID.test(id))return new Response('File not found.',{status:404,headers});if(workspace!=='main')return new Response('Use the signed-in website file controls.',{status:403,headers});return new Response(null,{status:302,headers:{...headers,Location:`https://us-central1-taylor-made-creations.cloudfunctions.net/tmcPublishedWebsiteDocument?id=${id}`}});}catch{return new Response('Website document service unavailable.',{status:503,headers});}}

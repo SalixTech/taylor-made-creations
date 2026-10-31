@@ -106,7 +106,7 @@
 :global([data-owner-portal][data-color-mode="dark"]) :is(.panelNav, .modeSwitch, .deviceSwitch, .contextbar) button[aria-pressed="true"]:enabled { background-color: #3a3033!important; border-color: #c8334e!important; color: #fff!important; box-shadow: inset 0 0 0 1px #c8334e; }
 :global([data-owner-portal][data-color-mode="dark"]) .contextbar .applyShop:is(:enabled, :disabled) { background-color: #800014!important; border-color: #b13c4e!important; color: #fff!important; }
 :global([data-owner-portal][data-color-mode="dark"]) .contextbar .applyShop:enabled:hover { background-color: #99001c!important; border-color: #e63950!important; }
-:global([data-owner-portal][data-color-mode="dark"]) .panelHeader > button:enabled { border-color: var(--owner-control-line, #85858c)!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .panelHeader > button:enabled { border-color:transparent!important; background:transparent!important; color:var(--owner-ink,#fff)!important; box-shadow:none!important; }
 
 /* Pointer dragging keeps the complete source card in place, with a full-size inert ghost. */
 .navRow { position:relative; transition:box-shadow .15s ease, opacity .15s ease; }
@@ -258,7 +258,7 @@
 .boxToolbar[data-moving="true"] button { pointer-events:none; }
 .boxToolbarHint { flex-basis:auto; width:100%; box-sizing:border-box; }
 .panel { left:55px; right:auto; top:90px; }
-.panelHeader > button { background:transparent; border-color:transparent; color:inherit; }
+.panelHeader > button { background:transparent; border-color:transparent; color:inherit; box-shadow:none; }
 .panelHeader > button:hover { background:color-mix(in srgb,currentColor 8%,transparent); }
 .boxPicker { align-items:flex-end; }
 .boxPicker > span { margin-bottom:8px; }
@@ -284,3 +284,12 @@
 .canvasContextMenu{position:fixed;z-index:90;display:grid;min-width:170px;padding:6px;background:var(--owner-surface,#fff);color:var(--owner-ink,#222);border:1px solid var(--owner-control-line,#888);border-radius:8px;box-shadow:0 6px 24px #0003;}
 .canvasContextMenu button{padding:10px 14px;text-align:left;background:transparent;color:inherit;border:0;border-radius:5px;}
 .canvasContextMenu button:hover,.canvasContextMenu button:focus-visible{background:var(--owner-hover,#eee);outline:2px solid var(--owner-accent,#800014);outline-offset:-2px;}
+/* Dedicated builder: one inspector in document flow, never stacked over content. */
+.workspaceStage{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,360px);gap:18px;align-items:start;}
+.workspaceStage .canvas{min-width:0;}
+.workspaceStage .dockedPanel{position:sticky;top:12px;left:auto;right:auto;bottom:auto;width:100%;max-width:none;max-height:calc(100dvh - 24px);transform:none!important;z-index:16;box-shadow:none;}
+.dockedPanel .panelHeader{cursor:default}.dockedPanel .panelHeader>button{border:0;background:transparent;color:inherit;box-shadow:none;}
+.canvasTextInput{z-index:14;resize:none!important;min-height:0!important;max-width:none!important;margin:0;padding:0;border:1px solid #1d6fb8;background:var(--site-background,#fff);border-radius:2px;box-shadow:0 0 0 2px #6fafff44;overflow:auto;white-space:pre-wrap;}
+.canvas :global([data-owner-inline-editing="true"]){visibility:hidden;}
+.inlineTextError{position:fixed;bottom:16px;left:16px;z-index:95;max-width:420px;padding:12px;background:var(--owner-surface,#fff);color:var(--owner-ink,#222);border:1px solid var(--owner-accent,#800014);}
+@media(max-width:900px){.workspaceStage{grid-template-columns:minmax(0,1fr);}.workspaceStage .dockedPanel{position:relative;top:auto;max-height:none;grid-row:2;}}

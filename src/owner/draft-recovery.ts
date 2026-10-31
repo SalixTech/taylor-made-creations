@@ -1,3 +1,4 @@
+import { workspaceBrowserKey } from "./website-workspace-config";
 import { validateOwnerContent, type OwnerContent } from "./model";
 
 /** Browser-local recovery is not authentication, a cloud draft, or publication. */
@@ -15,7 +16,7 @@ const leasePrefix = (identity: RecoveryIdentity) => recoveryPrefix(identity).rep
 const branchPattern = /^[a-zA-Z0-9_-]{16,80}$/;
 export function recoveryPrefix(identity: RecoveryIdentity): string {
   if (!/^[a-z][a-z0-9-]{4,29}$/.test(identity.projectId) || !/^[A-Za-z0-9_-]{1,128}$/.test(identity.ownerUid)) throw new Error("Recovery account is unavailable.");
-  return `tmc-draft-recovery:v1:${identity.projectId}:${identity.ownerUid}:`;
+  return workspaceBrowserKey(`tmc-draft-recovery:v1:${identity.projectId}:${identity.ownerUid}:`);
 }
 export function readRecoveryRecord(raw: string | null, now = Date.now()): RecoveryRecord | null {
   if (!raw || raw.length * 2 > RECOVERY_MAX_BYTES) return null;

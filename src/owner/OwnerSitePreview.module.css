@@ -94,3 +94,7 @@
 .preview[data-color-mode="dark"] :is(.toolbar,.snapshot,.previewFooter,.loading) :is(p,small,strong,span,h1,h2) { color:inherit; }
 .preview[data-color-mode="dark"] .back { background:#303034; color:#fff; border-color:#85858c; }
 .preview[data-color-mode="dark"] .back:hover { background:#3a3033; }
+.buttonSolid{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--site-accent,#800014);color:var(--site-button-text,#fff);padding:12px 20px;border:1px solid var(--site-accent,#800014);border-radius:8px;text-decoration:none;}
+.buttonOutline{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:transparent;color:var(--site-text,#302c2c);padding:12px 20px;border:1px solid currentColor;border-radius:8px;text-decoration:none;}
+.buttonPlain{display:inline-flex;align-items:center;gap:8px;background:transparent;color:inherit;padding:0;border:0;text-decoration:underline;}
+.artworkLabel{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;}
