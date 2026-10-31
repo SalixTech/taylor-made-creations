@@ -308,3 +308,8 @@
 .canvas textarea.canvasTextInput{background:transparent!important;color:inherit;box-shadow:none;border:0;border-radius:0;outline:1px solid #1d6fb8;}
 @media(max-width:900px){.workspaceStage .dockedPanel{position:sticky;top:calc(var(--owner-toolbar-height,0px) + var(--builder-toolbar-height,72px) + 8px);max-height:calc(100dvh - var(--owner-toolbar-height,0px) - var(--builder-toolbar-height,72px) - 16px);}.viewToolsGroup{gap:5px;}.toolbar{gap:6px;}}
 .inlineTextError{top:calc(var(--owner-toolbar-height,0px) + var(--builder-toolbar-height,72px) + 8px);bottom:auto;}
+
+/* Keep the page selector centered inside its own left-hand toolbar area. */
+.pagePicker{text-align:center;align-self:center;}
+.pagePicker label{text-align:center;}
+.toolbar .pagePicker [role="combobox"]{text-align:center;padding-inline:42px;}
