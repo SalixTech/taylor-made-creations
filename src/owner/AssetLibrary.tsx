@@ -139,5 +139,5 @@ export function CloudFileDialog({onClose,...props}: {selected?:string;onSelect?:
 }
 export function AssetLibrary(props: { selected?: string; onSelect?: (src: string) => void; manager?: boolean }) {
   const [open,setOpen]=useState(false);
-  return props.manager ? <CloudFileHub {...props} /> : <><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} aria-haspopup="dialog" onClick={()=>setOpen(true)}>Open photo library</button>{open&&<CloudFileDialog {...props} onClose={()=>setOpen(false)}/>}</>;
+  return props.manager ? <CloudFileHub {...props} /> : <><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} aria-haspopup="dialog" onClick={()=>setOpen(true)}>Open Photo Library</button>{open&&<CloudFileDialog {...props} onClose={()=>setOpen(false)}/>}</>;
 }

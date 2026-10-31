@@ -112,7 +112,7 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
   const whimsyIdentity = useOwnerWhimsyIdentity();
   const [section, setSection] = useState<Section>(initialDestination.section);
   // Keep mode above the keyed page canvas so preview navigation never re-enters editing.
-  const [builderBrowsing, setBuilderBrowsing] = useState(!fullPageBuilder);
+  const [builderBrowsing, setBuilderBrowsing] = useState(true);
   const builderEntrySnapshot = useRef<string | null>(null);
   const [pageId, setPageId] = useState<string | undefined>(initialDestination.pageId);
   const [showTrash, setShowTrash] = useState(false);

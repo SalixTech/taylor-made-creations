@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useId, useState, type CSSProperties, type ReactNode } from "react";
 import Image from "next/image";
 import { stepWholeNumber, useWholeNumberWheel } from "./whole-number-input";
 import SiteSelect, { type SelectOption, type InlineSelectCreate } from "@/components/SiteSelect";
@@ -54,10 +54,14 @@ export function OwnerImage({ src, alt, style }: { src: string; alt: string; styl
   return <Image unoptimized src={media.src} alt={alt} width={800} height={600} style={style} onError={() => setFailedSource(src)} />;
 }
 
+export const ImagePickerFramingContext = createContext<ReactNode>(null);
+
 export function ImagePicker({ src, alt, onSource, onAlt }: { src: string; alt: string; onSource: (src: string) => void; onAlt: (alt: string) => void }) {
+  const framing = useContext(ImagePickerFramingContext);
   return <div className={styles.imagePicker}>
+    <AssetLibrary selected={src} onSelect={onSource} />{framing}
     <div className={styles.imagePreview}><OwnerImage src={src} alt={alt || "Selected image"} /></div>
-    <div className={styles.imagePickerFields}><AssetLibrary selected={src} onSelect={onSource} /><div className={photoStyles.selectWrap}><OwnerSelect label="Choose a photo already on your site" value={imageChoices.some(choice => choice.src === src) ? src : ""} onChange={onSource} placeholder="Choose a photo…" options={imageChoices.map(choice => ({ value: choice.src, label: choice.name }))} /></div><details className={styles.details}><summary>Use an image link instead</summary><Field label="Image link" value={src} onChange={onSource} placeholder="https://…" hint="Use a full https:// image link or choose an existing photo above." /></details><Field label="Photo description" multiline value={alt} onChange={onAlt} hint="Describe what is in the photo for visitors who use screen readers." /></div>
+    <div className={styles.imagePickerFields}><div className={photoStyles.selectWrap}><OwnerSelect label="Choose a photo already on your site" value={imageChoices.some(choice => choice.src === src) ? src : ""} onChange={onSource} placeholder="Choose a photo…" options={imageChoices.map(choice => ({ value: choice.src, label: choice.name }))} /></div><details className={styles.details}><summary>Use an image link instead</summary><Field label="Image link" value={src} onChange={onSource} placeholder="https://…" hint="Use a full https:// image link or choose an existing photo above." /></details><Field label="Photo description" multiline value={alt} onChange={onAlt} hint="Describe what is in the photo for visitors who use screen readers." /></div>
   </div>;
 }
 

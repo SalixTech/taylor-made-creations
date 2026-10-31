@@ -4,4 +4,5 @@
 .credit:focus-visible{outline:2px solid currentColor;outline-offset:5px;border-radius:2px;}
 .credit>span{min-width:0;overflow-wrap:anywhere;}
 .icon{display:block;width:32px;height:32px;min-width:32px;max-width:none;flex:0 0 32px;object-fit:contain;object-position:center;}
-@media(max-width:560px){.credits{flex-direction:column;align-items:flex-start;gap:12px;}}
+@media(max-width:560px){.credits:not(:global(:where(.selected-design[data-site-render-mode] *))){flex-direction:column;align-items:flex-start;gap:12px;}}
+@container site-viewport (max-width:560px){:global(:where(.selected-design[data-site-render-mode])) .credits{flex-direction:column;align-items:flex-start;gap:12px;}}

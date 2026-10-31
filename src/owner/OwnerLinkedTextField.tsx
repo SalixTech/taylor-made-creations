@@ -1,53 +1,76 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
-import {inlinePlainText,editInlinePlainText,applyInlineHyperlink,type InlineSelection} from "./inline-text-editing";
+import { useId, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { inlinePlainText, editInlinePlainText, applyInlineHyperlink, inlineLinkAtSelection, type InlineSelection } from "./inline-text-editing";
 import styles from "./OwnerPortal.module.css";
 import controls from "./OwnerLinkedTextField.module.css";
 import buttons from "./OwnerButton.module.css";
 
-type Props = { label: string; value: string; onChange: (value: string) => void; hint?: string; multiline?: boolean; selectionHint?:InlineSelection };
-/** The insertion tool keeps selection local and stores safe, portable link text. */
-export function OwnerLinkedTextField({ label, value, onChange, hint, multiline = false, selectionHint }: Props) {
-  const id = useId();
-  const ref = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [href, setHref] = useState("");
-  const [selection, setSelection] = useState<{ start: number; end: number; value: string } | null>(null);
-  const [error, setError] = useState("");
-  const [mode,setMode]=useState<"selection"|"insert"|null>(null);
-  const tracked=useRef<InlineSelection|null>(null);
-  const plain=inlinePlainText(value);
-  function remember(){const input=ref.current;if(input)tracked.current={start:input.selectionStart??0,end:input.selectionEnd??0,value};}
-  function insert() {
-    if(!mode||!selection){setError("Select existing text, or choose Insert new link at the cursor.");return;}
-    if(selection.value!==value){setError("This text changed while the link controls were open. Close these controls and select the text again.");return;}
-    const next=applyInlineHyperlink(value,selection,name,href,mode);
-    if(next===null){setError("Choose nonempty link text and a safe site path, HTTPS address, email link or section anchor.");return;}
-    onChange(next);
-    setOpen(false); setError(""); setName(""); setHref("");
-    ref.current?.focus();
+type Props = { label: string; value: string; onChange: (value: string) => void | boolean; hint?: string; multiline?: boolean; selectionHint?: InlineSelection; contextKey: string; linkRequest?: InlineSelection & { requestId: number } };
+/** Plain-text inputs retain portable, validated links; local insertion never publishes. */
+export function OwnerLinkedTextField({ label, value, onChange, hint, multiline = false, selectionHint, contextKey, linkRequest }: Props) {
+  const id = useId(), ref = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const [open, setOpen] = useState(false), [name, setName] = useState(""), [href, setHref] = useState("");
+  const [selection, setSelection] = useState<InlineSelection | null>(null), [selectionContext, setSelectionContext] = useState(contextKey), [error, setError] = useState("");
+  const [mode, setMode] = useState<"selection" | "insert">("insert"), [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false), [notice, setNotice] = useState("");
+  const tracked = useRef<(InlineSelection & { contextKey: string }) | null>(null), composing = useRef(false), pending = useRef(false);
+  const live = useRef({ value, contextKey, onChange, mounted: true }), requestSeen = useRef<number | null>(null);
+  useLayoutEffect(() => { live.current = { value, contextKey, onChange, mounted: true }; return () => { live.current.mounted = false; }; }, [value, contextKey, onChange]);
+  const plain = inlinePlainText(value);
+  function remember() { const input = ref.current; if (input && !composing.current) tracked.current = { start: input.selectionStart ?? 0, end: input.selectionEnd ?? 0, value, contextKey }; }
+  function openFor(captured: InlineSelection) {
+    if (pending.current || composing.current || captured.value !== value) return;
+    const link = inlineLinkAtSelection(value, captured), chosen = link?.selection ?? captured;
+    setSelection(chosen); setSelectionContext(contextKey); setMode(chosen.end > chosen.start ? "selection" : "insert");
+    setName(link?.label ?? plain.slice(chosen.start, chosen.end)); setHref(link?.href ?? "");
+    setEditing(!!link); setError(""); setNotice(""); setOpen(true);
   }
-  const input = { id, value:plain, onSelect:remember, onKeyUp:remember, onChange: (event: { target: { value: string } }) => onChange(editInlinePlainText(value,event.target.value)), "aria-describedby": hint ? `${id}-hint` : undefined };
+  useLayoutEffect(() => {
+    if (linkRequest && linkRequest.value === value && requestSeen.current !== linkRequest.requestId) { requestSeen.current = linkRequest.requestId; openFor(linkRequest); }
+    // A request is a single captured user action, not a subscription to field edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkRequest?.requestId, value, contextKey]);
+  function insert() {
+    if (pending.current || composing.current) return;
+    if (!contextKey || !selection || selection.value !== value || selectionContext !== contextKey) { setError("This text changed while the link controls were open. Close these controls and select the text again."); return; }
+    const range = mode === "insert" ? { ...selection, start: selection.end } : selection;
+    const next = applyInlineHyperlink(value, range, name, href, mode);
+    if (next === null) { setError("Choose nonempty link text and a safe site path, HTTPS address, email link or section anchor."); return; }
+    const expected = value, scope = contextKey;
+    pending.current = true; setBusy(true); setError("");
+    // Yield for truthful local application feedback. No network operation or simulated percentage.
+    setTimeout(() => {
+      try {
+        if (!live.current.mounted) return;
+        if (live.current.value !== expected || live.current.contextKey !== scope) { setError("This text changed while the link controls were open. Select it again; nothing was inserted."); return; }
+        if (live.current.onChange(next) === false) { setError("The selected text changed. Select it again; nothing was inserted."); return; }
+        setOpen(false); setNotice(editing && mode === "selection" ? "Link updated in your draft." : "Link added to your draft.");
+        setName(""); setHref(""); ref.current?.focus();
+      } finally { pending.current = false; if (live.current.mounted) setBusy(false); }
+    }, 0);
+  }
+  const input = { id, value: plain, disabled: busy, onSelect: remember, onKeyUp: remember, onCompositionStart: () => { composing.current = true; }, onCompositionEnd: () => { composing.current = false; remember(); }, onChange: (event: { target: { value: string } }) => onChange(editInlinePlainText(value, event.target.value)), onContextMenu: (event: MouseEvent) => { if (composing.current || pending.current) return; remember(); const captured = tracked.current; if (captured && (captured.end > captured.start || inlineLinkAtSelection(value, captured))) { event.preventDefault(); event.stopPropagation(); openFor(captured); } }, "aria-describedby": hint ? `${id}-hint` : undefined };
+  const secondary = `${buttons.button} ${buttons.secondary} ${buttons.compact}`;
   return <div className={styles.field}>
     <label htmlFor={id}>{label}</label>
     {multiline ? <textarea {...input} ref={element => { ref.current = element; }} rows={4} /> : <input {...input} ref={element => { ref.current = element; }} type="text" />}
     {hint && <small id={`${id}-hint`}>{hint}</small>}
-    <button data-owner-button type="button" className={`${buttons.button} ${buttons.quiet} ${buttons.compact}`} aria-expanded={open} aria-controls={`${id}-links`} onClick={() => {
+    <button data-owner-button type="button" disabled={busy} className={`${buttons.button} ${buttons.quiet} ${buttons.compact}`} aria-expanded={open} aria-controls={`${id}-links`} onClick={() => {
       if (open) { setOpen(false); return; }
-      const external=selectionHint?.value===value?selectionHint:null;
-      const saved=external??(tracked.current?.value===value?tracked.current:null);
-      const current=ref.current;const start=saved?.start??(document.activeElement===current?current?.selectionStart:plain.length)??plain.length,end=saved?.end??(document.activeElement===current?current?.selectionEnd:start)??start;
-      setSelection({start,end,value});setMode(end>start?"selection":null);setName(plain.slice(start,end));setError("");setOpen(true);
+      const external = selectionHint?.value === value ? selectionHint : null, saved = tracked.current?.value === value && tracked.current.contextKey === contextKey ? tracked.current : external;
+      const current = ref.current, start = saved?.start ?? (document.activeElement === current ? current?.selectionStart : plain.length) ?? plain.length, end = saved?.end ?? (document.activeElement === current ? current?.selectionEnd : start) ?? start;
+      openFor({ start, end, value });
     }}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="m10 13 4-4m-6 6-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 2 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" /></svg>Add hyperlink</button>
-    {open && <div className={controls.linkEditor} id={`${id}-links`}>
-      <div><button type="button" disabled={!selection||selection.start===selection.end} aria-pressed={mode==="selection"} onClick={()=>setMode("selection")}>Link selected text</button><button type="button" aria-pressed={mode==="insert"} onClick={()=>setMode("insert")}>Insert new link at cursor</button></div>
-      {!mode&&<p>Select words to link, or explicitly insert a new link at the cursor. Existing words will not be overwritten.</p>}
-      <label>Link text<input value={name} onChange={event => setName(event.target.value)} /></label>
-      <label>Link destination<input value={href} placeholder="https://example.com or /contact" onChange={event => setHref(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); insert(); } }} /></label>
+    {notice && <p role="status">{notice}</p>}
+    {open && <div className={controls.linkEditor} id={`${id}-links`} aria-busy={busy}>
+      <div className={controls.modes}><button data-owner-button className={secondary} type="button" disabled={busy || !selection || selection.start === selection.end} aria-pressed={mode === "selection"} onClick={() => setMode("selection")}>{editing ? "Edit existing link" : "Link selected text"}</button><button data-owner-button className={secondary} type="button" disabled={busy} aria-pressed={mode === "insert"} onClick={() => setMode("insert")}>Insert new link at cursor</button></div>
+      <p>{mode === "selection" ? "Update these words in place—no duplicate text is added." : "Add the link text at the cursor. Existing words are kept."}</p>
+      <label>Link text<input value={name} disabled={busy} onChange={event => setName(event.target.value)} /></label>
+      <label>Link destination<input value={href} disabled={busy} placeholder="https://example.com or /contact" onChange={event => setHref(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); insert(); } }} /></label>
       {error && <p role="alert">{error}</p>}
-      <div><button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} onClick={() => { setOpen(false); ref.current?.focus(); }}>Cancel</button><button data-owner-button type="button" className={`${buttons.button} ${buttons.primary} ${buttons.compact}`} onClick={insert}>Insert link</button></div>
+      {busy && <div role="status" className={controls.applying}><span className={controls.progress} aria-hidden="true" />Applying link to your draft…</div>}
+      <div><button data-owner-button type="button" disabled={busy} className={secondary} onClick={() => { setOpen(false); ref.current?.focus(); }}>Cancel</button><button data-owner-button type="button" disabled={busy} className={`${buttons.button} ${buttons.primary} ${buttons.compact}`} onClick={insert}>{editing && mode === "selection" ? "Update link" : "Insert link"}</button></div>
     </div>}
   </div>;
 }

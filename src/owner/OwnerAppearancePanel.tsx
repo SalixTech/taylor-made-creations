@@ -30,7 +30,7 @@ export function OwnerAppearancePanel({ value, kind = "text", label = "Appearance
   const placementEditing=useContext(CanvasPlacementEditingContext);
   const image = kind === "image" || withImage;
   const text = kind !== "image";
-  return <details className={styles.appearance}>
+  return <details className={styles.appearance} open={placementEditing && text || undefined}>
     <summary>{label}<span>{value && Object.keys(value).length ? "Customized" : "Website defaults"}</span></summary>
     <div className={styles.appearanceBody}>
       <p className={styles.hint}>Change only this {kind === "section" ? "section" : kind === "link" ? "button or link" : kind === "image" ? "photo" : "text"}. Unchanged options follow the website design.</p>

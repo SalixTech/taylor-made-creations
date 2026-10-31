@@ -313,3 +313,9 @@
 .pagePicker{text-align:center;align-self:center;}
 .pagePicker label{text-align:center;}
 .toolbar .pagePicker [role="combobox"]{text-align:center;padding-inline:42px;}
+
+/* 19:54: compact, centered canvas and inspector controls. */
+.boxMore>summary{display:flex;align-items:center;justify-content:center;text-align:center;}
+.boxMore>summary::-webkit-details-marker{display:none;}
+.pagePicker{transform:translateY(-4px);}
+.editTextAction{margin-block:12px;}

@@ -13,3 +13,14 @@ export function applyInlineHyperlink(source:string,selection:InlineSelection,lab
  const before=mode==='insert'&&start>0&&!/\s/.test(chars[start-1].text)?[{text:' '}]:[],after=mode==='insert'&&start<chars.length&&!/\s/.test(chars[start].text)?[{text:' '}]:[];
  return serialize([...chars.slice(0,start),...leading.split('').map(text=>({text})),...before,...name.split('').map(text=>({text,href:destination})),...after,...trailing.split('').map(text=>({text})),...chars.slice(end)]);
 }
+/** Locate the single saved link under a caret or wholly selected link text. Offsets are native UTF-16 textarea offsets. */
+export function inlineLinkAtSelection(source:string,selection:InlineSelection):{selection:InlineSelection;label:string;href:string}|null{
+ if(selection.value!==source||!Number.isSafeInteger(selection.start)||!Number.isSafeInteger(selection.end)||selection.start<0||selection.end<selection.start)return null;
+ let offset=0;
+ for(const part of parseInlineLinks(source)){
+  const end=offset+part.text.length;
+  if(part.href&&selection.start>=offset&&selection.end<=end&&(selection.start<end||selection.start===selection.end&&selection.start===end))return{selection:{start:offset,end,value:source},label:part.text,href:part.href};
+  offset=end;
+ }
+ return null;
+}
