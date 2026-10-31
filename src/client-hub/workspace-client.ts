@@ -15,7 +15,7 @@ import { hubCallableOwnerSession } from "./callable-owner-session";
 import { taylorOwnerSession } from "@/owner/taylor-services-client";
 import { CLIENT_HUB_FUNCTIONS_REGION, ClientHubError, verifiedClientHubConnection, captureClientHubSessionOwnership, isClientHubSessionError, signOutClient } from "./client";
 import {
-  assertClientHubProjectId, clientHubObject, ClientHubDataError, decodeHubMessage, decodeHubPhoto,
+  assertClientHubProjectId, assertClientHubVersion, validateRefSheetChatColor, clientHubObject, ClientHubDataError, decodeHubMessage, decodeHubPhoto,
   decodeHubPrivateWorkspace, decodeHubSupportRequest, decodeHubSupportReply, decodeHubNotification, decodeClientHubClient, decodeClientHubProject, hubPhotoPath, HUB_PHOTO_MAX_BYTES,
   HUB_PHOTO_TYPES, HUB_WORKSPACE_READ_LIMIT, validateHubMaterials,
   type ClientHubClient, type ClientHubProject, type HubMaterialRequirement, type HubPhoto, type HubPrivateWorkspace,
@@ -555,5 +555,28 @@ export async function renameHubPhoto(project: ClientHubProject, photo: HubPhoto,
   const response = await call(project, true, "tmcHubRenamePhoto", { projectId: project.projectId, photoId: photo.photoId, expectedFileName: photo.fileName, fileName: name });
   const saved = decodeHubPhoto(response.photo, photo.photoId, project);
   if (saved.fileName !== name || saved.storagePath !== photo.storagePath || saved.contentType !== photo.contentType || saved.size !== photo.size || saved.caption !== photo.caption) throw new ClientHubDataError("Refresh the gallery to confirm your photo name.");
+  return saved;
+}
+
+/** Shared commission presentation only; no message, invoice or owner-bubble mutation. */
+export async function setHubRefSheetChatColor(project: ClientHubProject, owner: boolean, color: string, signal?: AbortSignal): Promise<ClientHubProject> {
+  assertClientHubVersion(project.version);
+  const normalized = validateRefSheetChatColor(color);
+  if (normalized === "#7F0011") throw new ClientHubDataError("That color is reserved for Taylor’s messages. Choose another hex color.");
+  const result = await call(project, owner, "tmcHubSetRefSheetChatColor", { projectId: project.projectId, expectedVersion: project.version, color: normalized }, signal);
+  const saved = decodeClientHubProject(result.project, project.projectId);
+  if (saved.clientId !== project.clientId || saved.version !== project.version + 1 || saved.refSheetChatColor !== normalized) throw new ClientHubDataError("The chat color save could not be verified. Refresh this commission.");
+  return saved;
+}
+
+/** Explicit server read to reconcile an unknown color save; never retries the write. */
+export async function readHubRefSheetChatColor(project: ClientHubProject, owner: boolean, signal?: AbortSignal): Promise<ClientHubProject> {
+  const session = await scopedConnection(project, owner, signal);
+  session.assertCurrent();
+  const snapshot = await getDocFromServer(doc(session.db, "hubProjects", project.projectId));
+  session.assertCurrent();
+  if (!snapshot.exists()) throw new ClientHubDataError("This commission is unavailable. Refresh the Client Hub.");
+  const saved = decodeClientHubProject(snapshot.data(), project.projectId);
+  if (saved.clientId !== project.clientId || saved.version < project.version) throw new ClientHubDataError("This commission changed. Refresh the Client Hub.");
   return saved;
 }

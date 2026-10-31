@@ -1,4 +1,7 @@
 "use client";
+import { createContext, useContext } from "react";
+/** Instance placement controls own geometry; shared appearance keeps colors/fonts. */
+export const CanvasPlacementEditingContext=createContext(false);
 
 import { OwnerBoxFields } from "./OwnerCanvasBoxTools";
 import type { OwnerContent } from "./model";
@@ -24,6 +27,7 @@ const fitOptions = [{ value: "", label: "Use original fit" }, { value: "contain"
 
 /** Optional values inherit the public site's design; choosing a control writes a real safe token. */
 export function OwnerAppearancePanel({ value, kind = "text", label = "Appearance", withImage = false, onEdit, onReset, fonts = [], separateAlignment = false }: Props) {
+  const placementEditing=useContext(CanvasPlacementEditingContext);
   const image = kind === "image" || withImage;
   const text = kind !== "image";
   return <details className={styles.appearance}>
@@ -40,19 +44,19 @@ export function OwnerAppearancePanel({ value, kind = "text", label = "Appearance
       {text && <>
         <OwnerSelect label="Font for this element" value={value?.font ?? ""} options={fontOptions} onChange={font => { if (!fontOptions.some(option => option.value === font)) return; onEdit(appearance => { if (font) appearance.font = font as ElementAppearance["font"]; else delete appearance.font; }); }} />
         {fonts.length > 0 && <OwnerSelect label="Uploaded font for this element" value={value?.fontId ?? ""} options={[{ value: "", label: "Use font above" }, ...fonts.map(font => ({ value: font.id, label: font.name }))]} onChange={fontId => { if (fontId && !fonts.some(font => font.id === fontId)) return; onEdit(appearance => { if (fontId) appearance.fontId = fontId; else delete appearance.fontId; }); }} />}
-        <OwnerNumberInput label="Font size" value={value?.fontSize} min={8} max={144} unit="px" hint={value?.textSize ? `Existing ${value.textSize} size is preserved until you enter a number. Clear to restore it.` : "8–144 px. Clear to inherit the original size."} onChange={size => onEdit(appearance => { if (size === undefined) delete appearance.fontSize; else appearance.fontSize = size; })} />
+        <OwnerNumberInput label="Font size" value={value?.fontSize} min={Number.MIN_VALUE} max={Number.MAX_VALUE} unit="px" hint={value?.textSize ? `Existing ${value.textSize} size is preserved until you enter a number. Clear to restore it.` : "Any positive font size. Clear to inherit the original size."} onChange={size => onEdit(appearance => { if (size === undefined) delete appearance.fontSize; else appearance.fontSize = size; })} />
         {separateAlignment ? ([ ["headingAlign", "Heading alignment"], ["bodyAlign", "Text alignment"] ] as const).map(([key, title]) => <OwnerSelect key={key} label={title} value={value?.[key] ?? ""} options={alignmentOptions} onChange={align => { if (!alignmentOptions.some(option => option.value === align)) return; onEdit(appearance => { if (align) appearance[key] = align as ElementAppearance["align"]; else delete appearance[key]; }); }} />) : <OwnerSelect label="Text alignment" value={value?.align ?? ""} options={alignmentOptions} onChange={align => { if (!alignmentOptions.some(option => option.value === align)) return; onEdit(appearance => { if (align) appearance.align = align as ElementAppearance["align"]; else delete appearance.align; }); }} />}
       </>}
       {image && <>
         <label><input type="checkbox" checked={value?.imageAspectLocked !== false} onChange={event => onEdit(appearance => { appearance.imageAspectLocked = event.target.checked; })} /> Lock proportions while dragging image corners</label>
         <p className={styles.hint}>Select the photo on the page to resize its corners or drag its crop. Your original photo stays unchanged.</p>
-        <OwnerNumberInput label="Photo width" value={value?.imageWidthPercent} min={5} max={100} unit="%" placeholder="Original" hint="5–100% of the available space. Clear to use the original width." onChange={size => onEdit(appearance => { if (size === undefined) delete appearance.imageWidthPercent; else appearance.imageWidthPercent = size; })} />
-        <OwnerNumberInput label="Photo height" value={value?.imageHeightPx} min={16} max={2000} unit="px" placeholder="Original" hint="16–2000 px. Clear to preserve the original proportions. Choose Show the whole photo to avoid cropping." onChange={size => onEdit(appearance => { if (size === undefined) delete appearance.imageHeightPx; else appearance.imageHeightPx = size; })} />
+        <OwnerNumberInput label="Photo width" value={value?.imageWidthPercent} min={Number.MIN_VALUE} max={Number.MAX_VALUE} unit="%" placeholder="Original" hint="5–100% of the available space. Clear to use the original width." onChange={size => onEdit(appearance => { if (size === undefined) delete appearance.imageWidthPercent; else appearance.imageWidthPercent = size; })} />
+        <OwnerNumberInput label="Photo height" value={value?.imageHeightPx} min={Number.MIN_VALUE} max={Number.MAX_VALUE} unit="px" placeholder="Original" hint="Any positive height. Clear to preserve the original proportions. Choose Show the whole photo to avoid cropping." onChange={size => onEdit(appearance => { if (size === undefined) delete appearance.imageHeightPx; else appearance.imageHeightPx = size; })} />
         <OwnerSelect label="Photo fit" value={value?.imageFit ?? ""} options={fitOptions} onChange={fit => { if (!fitOptions.some(option => option.value === fit)) return; onEdit(appearance => { if (fit) appearance.imageFit = fit as ElementAppearance["imageFit"]; else delete appearance.imageFit; }); }} />
         <p className={styles.hint}>Move the focal point if the photo is cropped. With “Show the whole photo”, position only changes when there is room around the image.</p>
         {([ ["imagePositionX", "Horizontal focal point"], ["imagePositionY", "Vertical focal point"] ] as const).map(([key, title]) => <div className={styles.range} key={key}><label><span>{title}<output>{value?.[key] ?? 50}%</output></span><input type="range" min={0} max={100} step={1} value={value?.[key] ?? 50} onChange={event => { const position = Number(event.target.value); if (Number.isFinite(position) && position >= 0 && position <= 100) onEdit(appearance => { appearance[key] = position; }); }} /><small>{key === "imagePositionX" ? "Left → right" : "Top → bottom"}</small></label><OwnerNumberInput label={`${title} percentage`} value={value?.[key] ?? 50} min={0} max={100} unit="%" onChange={position => onEdit(appearance => { if (position === undefined) delete appearance[key]; else appearance[key] = position; })} /></div>)}
       </>}
-      {text && <OwnerBoxFields value={value} onChange={next => onEdit(appearance => { Object.assign(appearance, next); })} />}
+      {text && !placementEditing && <OwnerBoxFields value={value} onChange={next => onEdit(appearance => { Object.assign(appearance, next); })} />}
       <button type="button" className={styles.reset} disabled={!value || !Object.keys(value).length} onClick={onReset}>Reset this appearance</button>
     </div>
   </details>;

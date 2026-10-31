@@ -1,7 +1,9 @@
+import {projectCanvasLayouts} from "./canvas-layout";
+import { isCanvasStyleKey, canvasStyleKeyIsPublic } from "./canvas-target-registry";
 import { createPublicContentSnapshot, assertPublicOwnerContent, type OwnerContent, type PublicOwnerContent } from "./model";
 
 /** Website structure, navigation, overrides and fonts are one dependency group. */
-const WEBSITE_KEYS = ["site", "home", "pages", "design", "fonts", "contentOverrides", "commissionForm"] as const;
+const WEBSITE_KEYS = ["site", "home", "pages", "design", "fonts", "contentOverrides", "commissionForm", "chromeLayout"] as const;
 export type PublicationChange = { key: string; title: string; summary: string; kind: "add" | "edit" | "remove" | "order"; before: string; after: string; fields?: {path: string; before: string; after: string}[] };
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const website = (value: PublicOwnerContent) => Object.fromEntries(WEBSITE_KEYS.map(key => [key, key === "site" ? Object.fromEntries(Object.entries(value.site).filter(([field]) => !["showPremades", "catalogMode"].includes(field))) : value[key]]));
@@ -74,7 +76,11 @@ export function selectPublication(draft: OwnerContent, live: PublicOwnerContent 
     // Photos whose removal is unchecked remain live, after the ordered photos.
     output.gallery.sort((a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER));
   }
+  // A website-only selection must not publish layout identities belonging to
+  // unchecked new/private listings or photos. Resolve after all selected groups.
+  if (output.contentOverrides?.styles) output.contentOverrides.styles = Object.fromEntries(Object.entries(output.contentOverrides.styles).filter(([key]) => !isCanvasStyleKey(key) || canvasStyleKeyIsPublic(key,output)));
   assertPublicOwnerContent(output);
+  projectCanvasLayouts(output);
   return output;
 }
 

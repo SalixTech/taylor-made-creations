@@ -24,7 +24,7 @@ export function TrelloStudio({ onDirtyChange, onBusyChange }: { onDirtyChange?: 
   const [existingWebhookId, setExistingWebhookId] = useState("");
   const [preview, setPreview] = useState<TrelloMappingPreview | null>(null);
   const [importChecklist, setImportChecklist] = useState(false), [checklistEdits, setChecklistEdits] = useState<Record<string, Record<string, boolean>>>({});
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false), [writeBusy, setWriteBusy] = useState(false);
  const [,setError,errorView]=useOutcomeNotice("error",true),[,setNotice,noticeView]=useOutcomeNotice("success");
   const active = useRef(true), pending = useRef(false);
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
@@ -32,13 +32,13 @@ export function TrelloStudio({ onDirtyChange, onBusyChange }: { onDirtyChange?: 
   const checklistDirty = Object.keys(checklistEdits).length > 0;
   const dirty = configDirty || checklistDirty;
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
-  useEffect(() => { onBusyChange?.(busy); return () => onBusyChange?.(false); }, [busy, onBusyChange]);
+  useEffect(() => { onBusyChange?.(writeBusy); return () => onBusyChange?.(false); }, [writeBusy, onBusyChange]);
   const selected = projects.find(project => project.projectId === projectId), mapped = new Set(status?.mappings.map(item => item.projectId) ?? []);
   const idsComplete = TRELLO_ID.test(draft.boardId) && new Set(Object.values(draft.lists)).size === CLIENT_HUB_PROJECT_STATUSES.length && CLIENT_HUB_PROJECT_STATUSES.every(key => TRELLO_ID.test(draft.lists[key]));
   async function run(work: () => Promise<void>, readOnly = false) {
-    if (pending.current) return; pending.current = true; onBusyChange?.(true); setBusy(true); setError(""); setNotice("");
+    if (pending.current) return; pending.current = true; onBusyChange?.(!readOnly); setWriteBusy(!readOnly); setBusy(true); setError(""); setNotice("");
     try { await work(); } catch (cause) { if (active.current) setError(clientHubErrorMessage(cause), !readOnly || !temporaryReadFailure(cause)); }
-    finally { pending.current = false; onBusyChange?.(false); if (active.current) setBusy(false); }
+    finally { pending.current = false; if (active.current) { onBusyChange?.(false); setBusy(false); setWriteBusy(false); } }
   }
   async function refresh(resetDraft = true) {
     const [next, commissions] = await Promise.all([loadTrelloStatus(), listTrelloProjects()]);

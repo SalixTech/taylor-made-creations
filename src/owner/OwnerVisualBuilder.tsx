@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode, type PointerEvent } from "react";
 import { SiteContentFrame } from "@/components/SiteContent";
 import { COMMISSION_STATUSES, newOwnerId, validatePageSlug, type OwnerContent, type OwnerPage, type PageBlock } from "./model";
 import { Field, ImagePicker, MoveButtons, OwnerSelect, Toggle } from "./OwnerFields";
 import { OwnerBlocksEditor, createBlock } from "./OwnerBlocksEditor";
 import { PremadePhotoEditor } from "./PremadePhotoEditor";
 import { OwnerDesignPanel } from "./OwnerDesignPanel";
-import { OwnerAppearancePanel, OwnerElementAppearance } from "./OwnerAppearancePanel";
+import { OwnerAppearancePanel, OwnerElementAppearance, CanvasPlacementEditingContext } from "./OwnerAppearancePanel";
 import { OwnerHeaderEditor, OwnerPageNavigation } from "./OwnerHeaderEditor";
 import { OwnerCanvasBoxTools, OwnerBoxFields } from "./OwnerCanvasBoxTools";
 import { BOX_BLOCK_TYPES, boxStyleKeyForTarget, boxTargetLabel, supportsBoxTarget, findCanvasBoxTarget } from "./box-targets";
-import { reorderById } from "./builder-interactions";
+import { initializeMobileLayout, contentForLayout, editContentForLayout, reorderById } from "./builder-interactions";
+import { OwnerPricesManager } from "./OwnerPricesManager";
 import { OwnerTemplateEditor } from "./OwnerTemplateEditor";
 import { DESIGN_SELECT_FIELDS, IMAGE_FIELDS, LINK_FIELDS, TEXT_FIELDS } from "./site-design";
 import ui from "./OwnerPortal.module.css";
@@ -20,9 +21,17 @@ import buttons from "./OwnerButton.module.css";
 import { OwnerLinkedTextField } from "./OwnerLinkedTextField";
 import { OwnerCanvasImageTools } from "./OwnerCanvasImageTools";
 import type { ElementAppearance } from "./appearance";
+import { OwnerLayoutLayers } from "./OwnerLayoutLayers";
+import { getCanvasNodes, resolveCanvasLayout, canAssignCanvasParent, assignCanvasParent, updateCanvasPlacement, stepCanvasNode, removeCanvasNode, renameCanvasNode, type CanvasPlacement } from "./canvas-layout";
+import { canvasSpacePlacementFromDrag, captureCanvasSpaceParent } from "./canvas-space";
+import type { Affine } from "./box-geometry";
+import {elementToScreen,layoutSize} from "./box-affine";
+import {resolveCanvasDragDestination,type CanvasDragDestinationCandidate} from "./canvas-drag-destination";
+import { captureCanvasFrame, placeCapturedCanvasFrame, type CapturedCanvasFrame } from "./canvas-placement-geometry";
 import { useMovablePanel } from "./use-movable-panel";
 
 type Props = {
+  draftNameControl?:ReactNode;
   content: OwnerContent;
   page: OwnerPage;
   onEdit: (change: (draft: OwnerContent) => void) => void;
@@ -44,35 +53,60 @@ type Props = {
   saveBusy?: boolean;
   draftSaveStatus?: string;
   onPopOut?: () => void;
+  onRequestDiscard?: () => void;
   onUndo?: () => void; onRedo?: () => void; canUndo?: boolean; canRedo?: boolean;
   browsing: boolean;
   onBrowsingChange: (browsing: boolean) => void;
 };
-const blockLabels: Record<PageBlock["type"], string> = { text: "Text", image: "Photo", link: "Button", heading: "Heading", list: "List", divider: "Divider", spacer: "Space", faq: "Questions & answers", feature: "Photo + text" };
-const selectionLabels: Record<string, string> = { site: "Header & footer", design: "Website design", "page-content": "Page content", "home-copy": "Welcome text", "home-image": "Main photo", status: "Commission availability", contact: "Contact details", page: "Page settings", sections: "Add a section", shop: "Premade shop" };
+const blockLabels: Record<PageBlock["type"], string> = { text: "Text", image: "Photo", link: "Button", heading: "Heading", list: "List", divider: "Divider", spacer: "Space", faq: "Questions & answers", feature: "Photo + text", "canvas-space": "Add Canvas Space", section: "Section container" };
+const selectionLabels: Record<string, string> = { site: "Header & footer", design: "Website design", "page-content": "Page content", "home-copy": "Welcome text", "home-image": "Main photo", status: "Commission availability", contact: "Contact details", page: "Page settings", sections: "Add a section", shop: "Premade shop", prices: "Prices & options" };
 function move<T extends { id: string }>(items: T[], id: string, direction: -1 | 1) { const from = items.findIndex(item => item.id === id); const to = from + direction; if (from >= 0 && to >= 0 && to < items.length) [items[from], items[to]] = [items[to], items[from]]; }
 
 /** The public renderer IS the canvas. Only the selected piece gets editing controls. */
-export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onManagePages, onAddPage, onPrices, onEditCommissionForm, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange, onSave, saveBusy = false, draftSaveStatus, onPopOut, onUndo, onRedo, canUndo = false, canRedo = false }: Props) {
+export function OwnerVisualBuilder({ draftNameControl, content:sourceContent, page:sourcePage, onEdit:onContentEdit, onPageChange, onManagePages, onAddPage, onEditCommissionForm, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange, onSave, saveBusy = false, draftSaveStatus, onPopOut, onRequestDiscard, onUndo, onRedo, canUndo = false, canRedo = false }: Props) {
   const panelId = useId();
   const navigationTarget = useRef<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [selectedOccurrence, setSelectedOccurrence] = useState(0);
+  const [selectedLayout, setSelectedLayout] = useState<{scope:"page"|"chrome";id:string}|null>(null);
+  const [placementIntent,setPlacementIntent]=useState<{scope:"page"|"chrome";id:string;parentId:string|null;pageId:string;mobile:boolean;source:OwnerContent;capture:CapturedCanvasFrame;relative?:{id:string;after:boolean}}|null>(null);
+  const [deleteIntent,setDeleteIntent]=useState<{scope:"page"|"chrome";id:string;parentId:string|null;pageId:string;mobile:boolean;source:OwnerContent;captures:Record<string,CapturedCanvasFrame>}|null>(null);
+  const [drawingSpace,setDrawingSpace]=useState(false);
+  const [dropPreview,setDropPreview]=useState<{id:string|null;label:string;point:{x:number;y:number};blocked?:boolean}|null>(null);
+  const canvasMove=useRef<{source:OwnerContent;pageId:string;mobile:boolean;scope:"page"|"chrome";id:string;original:CapturedCanvasFrame;destination:string|null|undefined;highlighted?:string|null}|null>(null);
+  const [contextMenu,setContextMenu]=useState<{x:number;y:number}|null>(null);
+  const contextMenuRef=useRef<HTMLDivElement>(null);
+  const [boxNameDraft,setBoxNameDraft]=useState<{id:string;original:string;value:string}|null>(null);
+  const [spacePreview,setSpacePreview]=useState<{left:number;top:number;width:number;height:number}|null>(null);
+  const spaceDrag=useRef<{pointer:number;start:{x:number;y:number};map:Affine;source:OwnerContent;pageId:string;mobile:boolean}|null>(null);
+  const applyingDelete=useRef<typeof deleteIntent>(null);
+  const applyingPlacement=useRef<typeof placementIntent>(null);
+  const [contentsSelection,setContentsSelection]=useState<string|null>(null);
   const [initialBoxLocked, setInitialBoxLocked] = useState(true);
   const [canvasBoxes, setCanvasBoxes] = useState<{ target: string; occurrence: number; value: string; label: string }[]>([]);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const draggingNav = useRef<string | null>(null);
   const dragClickGuard = useRef(false);
-  const draggingBlock = useRef<{ id: string; pageId: string } | null>(null);
+  const draggingBlock = useRef<{ id?: string; newType?:PageBlock["type"]; pageId: string; mobile:boolean } | null>(null);
   const [imageEditMode, setImageEditMode] = useState<"photo" | "box">("box");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const contentsSelectionKey=`${sourcePage.id}:${selected}:${selectedOccurrence}:${device}`;
+  const selectBoxContents=contentsSelection!==contentsSelectionKey;
+  const useMobile=!!sourceContent.design?.mobileLayoutEnabled&&device==="mobile";
+  const deleteMounted=useRef(true);
+  useEffect(()=>{deleteMounted.current=true;return()=>{deleteMounted.current=false;};},[]);
+  const deleteContext=useRef({source:sourceContent,pageId:sourcePage.id,mobile:useMobile,browsing,uploadBusy,saveBusy,selection:selectedLayout});
+  deleteContext.current={source:sourceContent,pageId:sourcePage.id,mobile:useMobile,browsing,uploadBusy,saveBusy,selection:selectedLayout};
+  const content=useMemo(()=>contentForLayout(sourceContent,useMobile),[sourceContent,useMobile]);
+  const page=content.pages.find(item=>item.id===sourcePage.id)??sourcePage;
+  const onEdit=(change:(draft:OwnerContent)=>void)=>onContentEdit(draft=>editContentForLayout(draft,change,useMobile));
   const canvasRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
-  const movable = useMovablePanel(panelRef, !selected || !inspectorOpen);
+  const movable = useMovablePanel(panelRef, !selected || !inspectorOpen, {memoryKey:"section-editor",defaultPosition:{x:55,y:90}});
   const lastTarget = useRef<HTMLElement | null>(null);
-  const activePages = content.pages.filter(item => !item.trashedAt).sort((a, b) => a.order - b.order);
+  const activePages = sourceContent.pages.filter(item => !item.trashedAt).sort((a, b) => a.order - b.order);
   const photo = content.gallery.find(item => selected === `gallery:${item.id}`);
   const premade = content.premades.find(item => selected === `premade:${item.id}`);
   const block = page.blocks.find(item => selected === `block:${item.id}`);
@@ -82,8 +116,22 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   const imageBoxEditable = imageStyleKey && imageStyleKey !== "site.logo";
   const boxStyleKey = boxStyleKeyForTarget(selected);
   const boxAppearance = block?.appearance ?? (selected === "page-title" ? page.titleAppearance ?? content.contentOverrides?.styles?.[`${page.builtinKey}.title`] : boxStyleKey ? content.contentOverrides?.styles?.[boxStyleKey] : undefined);
+  const selectedLayoutScope=selectedLayout?.scope==="chrome"?"chrome":sourcePage;
+  const selectedPlacement=selectedLayout?resolveCanvasLayout(sourceContent,selectedLayoutScope,useMobile)[selectedLayout.id]?.placement:undefined;
+  const selectedLayoutMap=resolveCanvasLayout(sourceContent,selectedLayoutScope,useMobile);
+  const selectedSiblings=selectedLayout?Object.entries(selectedLayoutMap).filter(([,entry])=>entry.parentId===selectedLayoutMap[selectedLayout.id]?.parentId).sort((a,b)=>a[1].order-b[1].order).map(([id])=>id):[];
+  const selectedBoxName=selectedLayout?(selectedLayoutMap[selectedLayout.id]?.label??getCanvasNodes(sourceContent,selectedLayoutScope).find(node=>node.id===selectedLayout.id)?.label):undefined;
+  const boxName=selectedLayout&&boxNameDraft?.id===selectedLayout.id&&boxNameDraft.original===selectedBoxName?boxNameDraft.value:selectedBoxName??"";
+  const layoutOrder=selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(node=>node.id===selectedLayout.id)?.movable?{index:selectedSiblings.indexOf(selectedLayout.id),count:selectedSiblings.length,onMove:(direction:-1|1)=>{if(uploadBusy||saveBusy||browsing)return;onContentEdit(draft=>{const scope=selectedLayout.scope==="chrome"?"chrome":draft.pages.find(item=>item.id===sourcePage.id);if(scope)stepCanvasNode(draft,scope,selectedLayout.id,direction,useMobile);});}}:undefined;
+  function changePlacement(placement:CanvasPlacement){
+    if(uploadBusy||saveBusy||browsing||!selectedLayout)return;
+    onContentEdit(draft=>{const scope=selectedLayout.scope==="chrome"?"chrome":draft.pages.find(item=>item.id===sourcePage.id);if(scope&&JSON.stringify(resolveCanvasLayout(draft,scope,useMobile)[selectedLayout.id])===JSON.stringify(selectedLayoutMap[selectedLayout.id]))updateCanvasPlacement(draft,scope,selectedLayout.id,useMobile,placement);});
+  }
+  function resetPlacement(){if(selectedPlacement)changePlacement({...selectedPlacement,matrix:{a:1,b:0,c:0,d:1,e:0,f:0},contentOffset:{xPx:0,yPx:0}});}
+  const placementHandlers=useRef({changePlacement,resetPlacement});useLayoutEffect(()=>{placementHandlers.current={changePlacement,resetPlacement};});
+  const placementProps=useMemo(()=>selectedPlacement&&selectedLayout?{placement:selectedPlacement,resolvePlacementDestination:(canvas:HTMLDivElement)=>layoutDestination(selectedLayout.scope,resolveCanvasLayout(sourceContent,selectedLayout.scope==="chrome"?"chrome":sourcePage,useMobile)[selectedLayout.id]?.parentId??null,canvas),onPlacementChange:(next:CanvasPlacement)=>placementHandlers.current.changePlacement(next),onResetPlacement:()=>placementHandlers.current.resetPlacement()}:{},[selectedPlacement,selectedLayout,sourceContent,sourcePage,useMobile]);
   function changeBoxAppearance(value: ElementAppearance) {
-    if (uploadBusy || !supportsBoxTarget(selected, page)) return;
+    if (uploadBusy || selectedPlacement || !supportsBoxTarget(selected, page)) return;
     onEdit(draft => {
       if (block) { const item = draft.pages.find(item => item.id === page.id)?.blocks.find(item => item.id === block.id); if (item) item.appearance = value; }
       else if (selected === "page-title" && page.kind === "custom") { const item = draft.pages.find(item => item.id === page.id); if (item) item.titleAppearance = value; }
@@ -102,6 +150,12 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   const selectedTitle = templateField?.label ?? (photo ? "Edit photo" : premade ? "Edit premade" : block ? blockLabels[block.type] : selectionLabels[selected ?? ""] ?? "Edit section");
 
   useEffect(() => {
+    const cancel=()=>{draggingBlock.current=null;draggingNav.current=null;canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-dragging],[data-owner-drop]").forEach(node=>{delete node.dataset.ownerDragging;delete node.dataset.ownerDrop;});};
+    const hidden=()=>{if(document.visibilityState==="hidden")cancel();};
+    cancel();window.addEventListener("blur",cancel);document.addEventListener("visibilitychange",hidden);
+    return()=>{cancel();window.removeEventListener("blur",cancel);document.removeEventListener("visibilitychange",hidden);};
+  },[page.id,useMobile,browsing,uploadBusy,saveBusy]);
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const counts = new Map<string, number>(), boxes: typeof canvasBoxes = [];
@@ -111,12 +165,21 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
       node.dataset.ownerSelected = String(!browsing && target === selected && occurrence === selectedOccurrence);
       const supported = supportsBoxTarget(target, page);
       node.dataset.ownerBoxSupported = String(supported);
-      if (supported && (!node.getClientRects || node.getClientRects().length)) boxes.push({ target, occurrence, value: `${target}#${occurrence}`, label: `${boxTargetLabel(target, page)}${occurrence ? ` · instance ${occurrence + 1}` : ""}` });
-      if (target.startsWith("block:")) node.draggable = !browsing && !uploadBusy;
+      const identity=node.closest<HTMLElement>("[data-owner-layout-id]"),scope=identity?.dataset.ownerLayoutScope==="chrome"?"chrome":sourcePage;
+      const customLabel=identity?.dataset.ownerLayoutId?resolveCanvasLayout(sourceContent,scope,useMobile)[identity.dataset.ownerLayoutId]?.label:undefined;
+      if (supported && (!node.getClientRects || node.getClientRects().length)) boxes.push({ target, occurrence, value: `${target}#${occurrence}`, label: `${customLabel??boxTargetLabel(target, page)}${occurrence ? ` · instance ${occurrence + 1}` : ""}` });
+      node.draggable = target.startsWith("block:") && !browsing && !uploadBusy;
     });
     setCanvasBoxes(current => JSON.stringify(current) === JSON.stringify(boxes) ? current : boxes);
     canvas.querySelectorAll<HTMLElement>("[data-owner-nav-page]").forEach(node => { node.draggable = !browsing && !uploadBusy; });
-  }, [selected, selectedOccurrence, browsing, content, page, uploadBusy]);
+  }, [selected, selectedOccurrence, browsing, content, page, uploadBusy, sourceContent, sourcePage, useMobile]);
+  useEffect(()=>{
+    if(!selectedLayout||!selected)return;
+    const frame=layoutFrame(selectedLayout.scope,selectedLayout.id);if(!frame)return;
+    const nodes=Array.from(canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-edit]")??[]).filter(node=>node.dataset.ownerEdit===selected);
+    const next=nodes.findIndex(node=>node.closest("[data-owner-layout-id]")===frame);
+    if(next>=0&&next!==selectedOccurrence)setSelectedOccurrence(next);
+  },[sourceContent,selectedLayout,selected,selectedOccurrence,useMobile]);
   useEffect(() => {
     if (!selected || !inspectorOpen) return;
     const panel = panelRef.current;
@@ -148,7 +211,7 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
   }, [browsing, onBrowsingChange, uploadBusy]);
   function changeMode(nextBrowsing: boolean) {
     if (uploadBusy) return;
-    closeCanvasMenu(); setSelected(null); setNavigationOpen(false); navigationTarget.current = null; lastTarget.current = null;
+    closeCanvasMenu(); spaceDrag.current=null;setDrawingSpace(false);setSpacePreview(null); setSelected(null); setNavigationOpen(false); navigationTarget.current = null; lastTarget.current = null;
     endBlockDrag(); onBrowsingChange(nextBrowsing);
   }
   function openPageManager() { if (!uploadBusy && !browsing) onManagePages(); }
@@ -161,7 +224,7 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
     closeCanvasMenu(); navigationTarget.current = null; setNavigationOpen(open);
     if (open) setSelected(null);
   }
-  function choose(target: string, element?: HTMLElement, toggle = false) {
+  function choose(target: string, element?: HTMLElement, toggle = false, createdIdentity?:{scope:"page"|"chrome";id:string}) {
     if (uploadBusy || browsing) return;
     closeCanvasMenu();
     if (target.startsWith("nav:")) {
@@ -172,52 +235,204 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
       else window.setTimeout(() => { if (navigationTarget.current === target) document.getElementById(`owner-nav-${target.slice(4)}`)?.focus(); }, 0);
       return;
     }
-    if (target === "prices") { onPrices(); return; }
     // External openers toggle; switching within the inspector keeps its original focus return target.
     if (element) lastTarget.current = element;
     const occurrence = element && canvasRef.current ? Array.from(canvasRef.current.querySelectorAll<HTMLElement>("[data-owner-edit]")).filter(node => node.dataset.ownerEdit === target).indexOf(element) : 0;
     const nextOccurrence = Math.max(0, occurrence);
     if (toggle && inspectorOpen && selected === target && selectedOccurrence === nextOccurrence) { closePanel(); return; }
-    if (selected !== target || selectedOccurrence !== nextOccurrence) setInitialBoxLocked(true);
+    if (selected !== target || selectedOccurrence !== nextOccurrence) { setInitialBoxLocked(true); setContentsSelection(null); }
+    const liveElement=element ?? (canvasRef.current?findCanvasBoxTarget(canvasRef.current,target,nextOccurrence):null);
+    const frame=liveElement?.closest<HTMLElement>("[data-owner-layout-id]");
+    setSelectedLayout(frame?.dataset.ownerLayoutId?{scope:frame.dataset.ownerLayoutScope==="chrome"?"chrome":"page",id:frame.dataset.ownerLayoutId}:createdIdentity??null);
     setSelectedOccurrence(nextOccurrence); setSelected(target); setInspectorOpen(true);
   }
   function capture(event: MouseEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) {
     if (browsing || !(event.target instanceof HTMLElement)) return;
     // Canvas controls own Escape and arrow keys for their active gesture.
     // Do not close the inspector first and swallow their cancellation event.
-    if (event.target.closest("[data-owner-canvas-controls]")) return;
+    if (event.target.closest("[data-owner-canvas-controls]") && !("key" in event && event.key==="Delete")) return;
     if ("key" in event && event.key === "Escape" && (draggingNav.current || draggingBlock.current)) { event.preventDefault(); event.stopPropagation(); endBlockDrag(); return; }
     if ("key" in event && event.key === "Escape" && selected) { event.preventDefault(); event.stopPropagation(); if (inspectorOpen) closePanel(); else setSelected(null); return; }
     if (!("key" in event) && dragClickGuard.current && event.detail !== 0) { event.preventDefault(); event.stopPropagation(); return; }
     // More is an actual disclosure even while editing; do not select the surrounding header.
     if (event.target.closest(".nav-more > summary")) return;
     if ("key" in event && event.nativeEvent?.isComposing) return;
+    if ("key" in event && event.key === "Delete" && !event.target.closest("input,textarea,select,[contenteditable],[role=textbox]")) { if(selectedLayout){event.preventDefault();event.stopPropagation();requestDelete();}return; }
     if ("key" in event && event.key !== "Enter" && event.key !== " ") return;
     const nav = event.target.closest<HTMLElement>("[data-owner-nav-page]");
     if (nav && canvasRef.current?.contains(nav)) { event.preventDefault(); event.stopPropagation(); choose(`nav:${nav.dataset.ownerNavPage}`, nav, true); return; }
     const target = event.target.closest<HTMLElement>("[data-owner-edit]");
-    if (!target || !canvasRef.current?.contains(target)) return;
+    if (!target || !canvasRef.current?.contains(target)) { if (!("key" in event)) { setSelected(null); setSelectedLayout(null); setInspectorOpen(false); } return; }
     event.preventDefault(); event.stopPropagation();
     choose(target.dataset.ownerEdit!, target, true);
   }
   function canvasBlock(event: DragEvent<HTMLDivElement>) { const node = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-owner-edit^='block:']") : null; return node && canvasRef.current?.contains(node) ? node : null; }
   function canvasNav(event: DragEvent<HTMLDivElement>) { const node = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-owner-nav-page]") : null; return node && canvasRef.current?.contains(node) ? node : null; }
-  function beginBlockDrag(event: DragEvent<HTMLDivElement>) { if (event.target instanceof HTMLElement && event.target.closest("[data-owner-canvas-controls]")) { event.preventDefault(); return; } if (browsing || uploadBusy) return; const nav = canvasNav(event); if (nav?.dataset.ownerNavPage && activePages.some(item => item.id === nav.dataset.ownerNavPage)) { draggingBlock.current = null; draggingNav.current = nav.dataset.ownerNavPage; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", nav.dataset.ownerNavPage); event.dataTransfer.setDragImage?.(nav, 16, 16); nav.dataset.ownerDragging = "true"; setSelected(null); return; } const node = canvasBlock(event); if (!node) return; draggingNav.current = null; const id = node.dataset.ownerEdit?.slice(6); if (!id || !page.blocks.some(item => item.id === id)) return; draggingBlock.current = { id, pageId: page.id }; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", id); event.dataTransfer.setDragImage?.(node, Math.max(0, event.clientX - node.getBoundingClientRect().left), Math.max(0, event.clientY - node.getBoundingClientRect().top)); node.dataset.ownerDragging = "true"; setSelected(null); }
-  function overBlock(event: DragEvent<HTMLDivElement>) { if (browsing || uploadBusy) return; if (draggingNav.current) { const nav = canvasNav(event); if (nav) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item => delete item.dataset.ownerDrop); nav.dataset.ownerDrop = "true"; } return; } if (draggingBlock.current?.pageId !== page.id) return; const node = canvasBlock(event); if (!node) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item => delete item.dataset.ownerDrop); node.dataset.ownerDrop = "true"; }
-  function endBlockDrag() { if (draggingNav.current || draggingBlock.current) dragClickGuard.current = true; canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-dragging]").forEach(item => delete item.dataset.ownerDragging); draggingNav.current = null; draggingBlock.current = null; canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item => delete item.dataset.ownerDrop); }
-  function dropBlock(event: DragEvent<HTMLDivElement>) { if (!browsing && !uploadBusy && draggingNav.current) { const nav = canvasNav(event); const sourceId = draggingNav.current; if (nav?.dataset.ownerNavPage) { event.preventDefault(); event.stopPropagation(); const targetId = nav.dataset.ownerNavPage; const rect = nav.getBoundingClientRect(); const after = event.clientX > rect.left + rect.width / 2; onEdit(draft => { const active = draft.pages.filter(item => !item.trashedAt).sort((a, b) => a.order - b.order); const slots = active.map(item => item.order); if (reorderById(active, sourceId, targetId, after)) active.forEach((item, index) => { item.order = slots[index]; }); }); setAnnouncement("Navigation order updated in your draft."); } endBlockDrag(); return; } const source = draggingBlock.current; const node = canvasBlock(event); if (browsing || uploadBusy || source?.pageId !== page.id || !node) { endBlockDrag(); return; } event.preventDefault(); event.stopPropagation(); const targetId = node.dataset.ownerEdit!.slice(6); const rect = node.getBoundingClientRect(); const after = event.clientY > rect.top + rect.height / 2; editPage(target => { reorderById(target.blocks, source.id, targetId, after); }); endBlockDrag(); setSelected(`block:${source.id}`); setAnnouncement("Section order updated in your draft."); }
+  function sectionDrop(event:DragEvent<HTMLDivElement>){const node=event.target instanceof HTMLElement?event.target.closest<HTMLElement>("[data-owner-section-id]"):null;return node&&canvasRef.current?.contains(node)?node:null;}
+  function beginBlockDrag(event: DragEvent<HTMLDivElement>) {
+    const toolbar=event.target instanceof HTMLElement?event.target.closest<HTMLElement>("[data-owner-reparent-id]"):null;
+    if(event.target instanceof HTMLElement&&event.target.closest("[data-owner-canvas-controls]")&&!toolbar){event.preventDefault();return;}if(browsing||uploadBusy||saveBusy)return;
+    const nav=canvasNav(event);if(nav?.dataset.ownerNavPage&&activePages.some(item=>item.id===nav.dataset.ownerNavPage)){draggingBlock.current=null;draggingNav.current=nav.dataset.ownerNavPage;event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",nav.dataset.ownerNavPage);event.dataTransfer.setDragImage?.(nav,16,16);nav.dataset.ownerDragging="true";setSelected(null);return;}
+    const node=canvasBlock(event),id=toolbar?.dataset.ownerReparentId??node?.dataset.ownerEdit?.slice(6);if(!id||!page.blocks.some(item=>item.id===id))return;
+    draggingNav.current=null;draggingBlock.current={id,pageId:page.id,mobile:useMobile};event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",id);if(node){event.dataTransfer.setDragImage?.(node,16,16);node.dataset.ownerDragging="true";}
+  }
+  function overBlock(event:DragEvent<HTMLDivElement>){if(browsing||uploadBusy||saveBusy)return;let node:HTMLElement|null=null;if(draggingNav.current)node=canvasNav(event);else{const source=draggingBlock.current;if(source?.pageId!==page.id||source.mobile!==useMobile)return;node=sectionDrop(event)??canvasBlock(event);if(!node)return;const section=node.dataset.ownerSectionId,parent=section&&section!=="__root"?section:null;if(section&&source.id&&!canAssignCanvasParent(sourceContent,sourcePage,`block:${source.id}`,parent?`block:${parent}`:null,useMobile))return;}
+    if(!node)return;event.preventDefault();event.dataTransfer.dropEffect=draggingBlock.current?.newType?"copy":"move";canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item=>delete item.dataset.ownerDrop);node.dataset.ownerDrop="true";
+  }
+  function endBlockDrag(){if(draggingNav.current||draggingBlock.current)dragClickGuard.current=true;canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-dragging],[data-owner-drop]").forEach(item=>{delete item.dataset.ownerDragging;delete item.dataset.ownerDrop;});draggingNav.current=null;draggingBlock.current=null;}
+  function dropBlock(event:DragEvent<HTMLDivElement>){
+    if(!browsing&&!uploadBusy&&!saveBusy&&draggingNav.current){const nav=canvasNav(event),sourceId=draggingNav.current;if(nav?.dataset.ownerNavPage){event.preventDefault();event.stopPropagation();const targetId=nav.dataset.ownerNavPage,rect=nav.getBoundingClientRect(),after=event.clientX>rect.left+rect.width/2;onEdit(draft=>{const active=draft.pages.filter(item=>!item.trashedAt).sort((a,b)=>a.order-b.order),slots=active.map(item=>item.order);if(reorderById(active,sourceId,targetId,after))active.forEach((item,index)=>{item.order=slots[index];});});setAnnouncement("Navigation order updated in your draft.");}endBlockDrag();return;}
+    const source=draggingBlock.current,section=sectionDrop(event),node=canvasBlock(event);if(browsing||uploadBusy||saveBusy||source?.pageId!==page.id||source.mobile!==useMobile||!section&&!node){endBlockDrag();return;}event.preventDefault();event.stopPropagation();
+    const newBlock=source.newType?createBlock(source.newType):null,id=source.id??newBlock!.id,parentId=section?.dataset.ownerSectionId&&section.dataset.ownerSectionId!=="__root"?section.dataset.ownerSectionId:null,targetId=node?.dataset.ownerEdit?.slice(6),after=node?event.clientY>node.getBoundingClientRect().top+node.getBoundingClientRect().height/2:false;
+    const graph=resolveCanvasLayout(sourceContent,sourcePage,useMobile);
+    const destinationParent=section&&(!node||node.dataset.ownerEdit===`block:${parentId}`)?(parentId?`block:${parentId}`:null):targetId?(graph[`block:${targetId}`]?.parentId??null):null;
+    endBlockDrag();
+    const relative=targetId?{id:`block:${targetId}`,after}:undefined;
+    if(!newBlock){
+      if(relative&&graph[`block:${id}`]?.parentId===destinationParent){onContentEdit(draft=>{const target=draft.pages.find(item=>item.id===sourcePage.id);if(target)reorderLayout(draft,target,`block:${id}`,relative.id,relative.after,useMobile);});setAnnouncement("Order updated in your draft. Undo brings it back.");}
+      else moveLayer("page",`block:${id}`,destinationParent,relative);
+      return;
+    }
+    onContentEdit(draft=>{const target=draft.pages.find(item=>item.id===sourcePage.id);if(!target||target.blocks.length>=100)return;target.blocks.push(newBlock);assignCanvasParent(draft,target,`block:${id}`,destinationParent,useMobile);if(relative)reorderLayout(draft,target,`block:${id}`,relative.id,relative.after,useMobile);});
+    setSelected(`block:${id}`);setSelectedLayout({scope:"page",id:`block:${id}`});setAnnouncement("Added to its chosen box. Undo removes the new piece.");
+  }
+  function paletteDrag(event:DragEvent<HTMLButtonElement>,type:PageBlock["type"]){if(uploadBusy||browsing){event.preventDefault();return;}draggingBlock.current={newType:type,pageId:page.id,mobile:useMobile};draggingNav.current=null;event.dataTransfer.effectAllowed="copy";event.dataTransfer.setData("text/plain",`new:${type}`);}
+  function reorderLayout(draft:OwnerContent,scope:OwnerPage|"chrome",id:string,targetId:string,after:boolean,mobile:boolean){
+    const graph=resolveCanvasLayout(draft,scope,mobile);if(id===targetId||!graph[id]||graph[id].parentId!==graph[targetId]?.parentId)return;
+    const siblings=Object.entries(graph).filter(([,entry])=>entry.parentId===graph[id].parentId).sort((a,b)=>a[1].order-b[1].order).map(([key])=>key);
+    const desired=siblings.filter(key=>key!==id),at=desired.indexOf(targetId);if(at<0)return;desired.splice(at+(after?1:0),0,id);
+    let index=siblings.indexOf(id);const to=desired.indexOf(id);while(index!==to){const direction=index<to?1:-1;if(!stepCanvasNode(draft,scope,id,direction,mobile))break;index+=direction;}
+  }
+  function layoutFrame(scope:"page"|"chrome",id:string){return Array.from(canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-layout-id]")??[]).find(node=>node.dataset.ownerLayoutId===id&&node.dataset.ownerLayoutScope===scope)??null;}
+  function layoutDestination(scope:"page"|"chrome",parentId:string|null,canvas=canvasRef.current){return Array.from(canvas?.querySelectorAll<HTMLElement>("[data-owner-placement-content]")??[]).find(node=>node.dataset.ownerPlacementContent===(parentId??"__root")&&node.dataset.ownerLayoutScope===scope)??null;}
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Revision/scope changes invalidate transient pointer UI, never persisted content.
+  useEffect(()=>{canvasMove.current=null;setDropPreview(null);setContextMenu(null);},[sourceContent,sourcePage.id,useMobile,browsing,uploadBusy,saveBusy]);
+  useEffect(()=>{if(!contextMenu)return;contextMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();const outside=(event:Event)=>{if(!contextMenuRef.current?.contains(event.target as Node))setContextMenu(null);};const close=()=>setContextMenu(null);document.addEventListener("pointerdown",outside);window.addEventListener("blur",close);return()=>{document.removeEventListener("pointerdown",outside);window.removeEventListener("blur",close);};},[contextMenu]);
+  function cancelCanvasMove(){canvasMove.current=null;setDropPreview(null);}
+  function startCanvasMove(){
+    if(!deleteMounted.current||document.hidden||!selectedLayout||uploadBusy||saveBusy||browsing)return;
+    const frame=layoutFrame(selectedLayout.scope,selectedLayout.id),original=frame?captureCanvasFrame(frame):null;
+    if(!original)return;
+    canvasMove.current={source:sourceContent,pageId:sourcePage.id,mobile:useMobile,scope:selectedLayout.scope,id:selectedLayout.id,original,destination:undefined};
+  }
+  function resolveDrop(point:{x:number;y:number},intent:NonNullable<typeof canvasMove.current>){
+    const canvas=canvasRef.current;if(!canvas)return {kind:"blocked" as const,reason:"Canvas is unavailable"};
+    const rect=canvas.getBoundingClientRect();if(point.x<rect.left||point.x>rect.right||point.y<rect.top||point.y>rect.bottom)return {kind:"blocked" as const,reason:"Keep the drop inside the canvas"};
+    const hit=typeof document.elementsFromPoint==="function"?document.elementsFromPoint(point.x,point.y).find(node=>!node.closest("[data-owner-canvas-controls]")&&node.closest("[data-owner-layout-scope]")):undefined;
+    const hitScope=hit?.closest<HTMLElement>("[data-owner-layout-scope]")?.dataset.ownerLayoutScope;
+    if(hitScope&&hitScope!==intent.scope)return {kind:"blocked" as const,reason:"Page content and Header & footer stay separate"};
+    const modelScope=intent.scope==="chrome"?"chrome":sourcePage,map=resolveCanvasLayout(sourceContent,modelScope,useMobile),nodes=getCanvasNodes(sourceContent,modelScope),candidates:CanvasDragDestinationCandidate[]=[];
+    for(const node of nodes){if(!node.canContain||!canAssignCanvasParent(sourceContent,modelScope,intent.id,node.id,useMobile))continue;
+      const frame=layoutFrame(intent.scope,node.id);if(!frame||frame.isConnected===false||frame.getClientRects?.().length===0)continue;
+      const matrix=elementToScreen(frame);if(!matrix)return {kind:"blocked" as const,reason:"A box cannot be measured safely"};
+      const ancestors:string[]=[];let parent=map[node.id]?.parentId??null;while(parent){if(ancestors.includes(parent))return {kind:"blocked" as const,reason:"Invalid box hierarchy"};ancestors.push(parent);parent=map[parent]?.parentId??null;}
+      candidates.push({id:node.id,parentId:map[node.id]?.parentId??null,label:map[node.id]?.label??node.label,matrix,width:layoutSize(frame,"width"),height:layoutSize(frame,"height"),depth:ancestors.length,ancestorIds:ancestors});
+    }
+    return resolveCanvasDragDestination(point,candidates);
+  }
+  function previewCanvasMove(point:{x:number;y:number}){const intent=canvasMove.current;if(!intent)return;const result=resolveDrop(point,intent);intent.destination=result.kind==="blocked"?undefined:result.kind==="root"?null:result.id;setDropPreview({id:intent.destination??null,label:result.kind==="blocked"?result.reason:result.kind==="root"?(intent.scope==="chrome"?"Header & footer":"Page content"):result.label,point,blocked:result.kind==="blocked"});}
+  function commitCanvasMove(capture:CapturedCanvasFrame,point:{x:number;y:number}){
+    const intent=canvasMove.current,current=deleteContext.current;canvasMove.current=null;setDropPreview(null);
+    if(!deleteMounted.current||document.hidden||!intent||intent.destination===undefined||current.source!==intent.source||current.pageId!==intent.pageId||current.mobile!==intent.mobile||current.browsing||current.uploadBusy||current.saveBusy||current.selection?.id!==intent.id||current.selection.scope!==intent.scope){setAnnouncement("The canvas changed during the drag. Nothing moved.");return;}
+    const frame=layoutFrame(intent.scope,intent.id),original=frame?captureCanvasFrame(frame):null,result=resolveDrop(point,intent),parentId=result.kind==="root"?null:result.kind==="target"?result.id:undefined;
+    if(!original||JSON.stringify(original)!==JSON.stringify(intent.original)||parentId===undefined||parentId!==intent.destination||intent.highlighted!==parentId){setAnnouncement("The highlighted destination changed. Nothing moved.");return;}
+    setPlacementIntent({scope:intent.scope,id:intent.id,parentId,pageId:intent.pageId,mobile:intent.mobile,source:intent.source,capture});
+  }
+  useEffect(()=>{if(!dropPreview||dropPreview.blocked)return;const node=dropPreview.id?layoutFrame(selectedLayout?.scope??"page",dropPreview.id):canvasRef.current;if(!node)return;node.dataset.ownerDropDestination="true";if(canvasMove.current&&canvasMove.current.destination===dropPreview.id)canvasMove.current.highlighted=dropPreview.id;return()=>{delete node.dataset.ownerDropDestination;};},[dropPreview,selectedLayout]);
+  function moveLayer(scope:"page"|"chrome",id:string,parentId:string|null,relative?:{id:string;after:boolean}){
+    if(uploadBusy||saveBusy||browsing)return;
+    const modelScope=scope==="chrome"?"chrome":sourcePage;
+    if(!canAssignCanvasParent(sourceContent,modelScope,id,parentId,useMobile)){setAnnouncement("That move would put a box inside itself or an unavailable piece. Nothing was changed.");return;}
+    const frame=layoutFrame(scope,id),descriptor=getCanvasNodes(sourceContent,modelScope).find(node=>node.id===id);
+    const priorPlacement=resolveCanvasLayout(sourceContent,modelScope,useMobile)[id]?.placement;
+    const styleTarget=descriptor?.styleTarget??"",styleKey=boxStyleKeyForTarget(styleTarget);
+    const appearance=styleTarget.startsWith("block:")?page.blocks.find(block=>`block:${block.id}`===styleTarget)?.appearance:styleTarget==="page-title"?page.titleAppearance??content.contentOverrides?.styles?.[`${page.builtinKey}.title`]:styleKey?content.contentOverrides?.styles?.[styleKey]:undefined;
+    const captured=frame?captureCanvasFrame(frame,priorPlacement?undefined:appearance?.box):null;
+    if(!captured){setAnnouncement("This piece cannot be moved safely in its current hidden or unsupported layout. Nothing was changed.");return;}
+    if(priorPlacement){if(priorPlacement.aspectLocked!==undefined)captured.aspectLocked=priorPlacement.aspectLocked;if(priorPlacement.contentOffset)captured.contentOffset={...priorPlacement.contentOffset};}
+    setPlacementIntent({scope,id,parentId,pageId:sourcePage.id,mobile:useMobile,source:sourceContent,capture:captured,relative});
+  }
+  /* eslint-disable react-hooks/set-state-in-effect -- This layout effect measures the temporary DOM destination, then atomically commits or removes that preview before paint. */
+  useLayoutEffect(()=>{
+    const intent=placementIntent;if(!intent||applyingPlacement.current===intent)return;
+    applyingPlacement.current=intent;
+    if(uploadBusy||saveBusy||browsing||intent.source!==sourceContent||intent.pageId!==sourcePage.id||intent.mobile!==useMobile){setPlacementIntent(null);setAnnouncement("The page changed before this move could finish. Nothing was changed.");return;}
+    const destination=layoutDestination(intent.scope,intent.parentId),placement=destination?placeCapturedCanvasFrame(intent.capture,destination):null;
+    if(!placement){setPlacementIntent(null);setAnnouncement("That box cannot receive this piece safely in its current layout. Nothing was changed.");return;}
+    let changed=false;
+    onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(intent.source))return;const scope=intent.scope==="chrome"?"chrome":draft.pages.find(page=>page.id===intent.pageId);if(scope){changed=assignCanvasParent(draft,scope,intent.id,intent.parentId,intent.mobile,placement);if(changed&&intent.relative)reorderLayout(draft,scope,intent.id,intent.relative.id,intent.relative.after,intent.mobile);}});
+    setPlacementIntent(null);
+    if(changed){setSelectedLayout({scope:intent.scope,id:intent.id});setContentsSelection(null);setAnnouncement("Moved into its new box without changing its position. Undo brings it back.");}
+    else setAnnouncement("The page changed before this move could finish. Nothing was changed.");
+  },[placementIntent,sourceContent,sourcePage.id,useMobile,uploadBusy,saveBusy,browsing,onContentEdit]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  function requestDelete(withContents=false){
+    if(uploadBusy||saveBusy||browsing||!selectedLayout)return;
+    const selection={...selectedLayout},source=sourceContent,modelScope=selection.scope==="chrome"?"chrome":sourcePage;
+    const node=getCanvasNodes(source,modelScope).find(node=>node.id===selection.id);if(!node?.movable)return;
+    onRemove(withContents?"Remove this box and its contents from the canvas?":"Remove this box from the canvas?",withContents?"This removes this box and all of its nested contents from this layout. Original media files are retained. Nothing is saved or published automatically. Undo restores the draft.":"Only this box is removed from this layout. Its contents stay where they are on the canvas. Original media files are retained. Nothing is saved or published automatically.",()=>{
+      const current=deleteContext.current;
+      if(!deleteMounted.current||current.source!==source||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.browsing||current.uploadBusy||current.saveBusy||current.selection?.id!==selection.id||current.selection?.scope!==selection.scope)return;
+      if(withContents){onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(source))return;const scope=selection.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===sourcePage.id);if(scope)removeCanvasNode(draft,scope,selection.id,useMobile,true);});setSelected(null);setSelectedLayout(null);setInspectorOpen(false);return;}
+      const map=resolveCanvasLayout(source,modelScope,useMobile),captures:Record<string,CapturedCanvasFrame>={};
+      for(const [id,entry]of Object.entries(map)){if(entry.removed||entry.parentId!==selection.id)continue;const descriptor=getCanvasNodes(source,modelScope).find(node=>node.id===id),frame=layoutFrame(selection.scope,id);
+        if(!descriptor?.movable||!frame){setAnnouncement("These contents must stay together as a functional unit. Move them out first, or explicitly remove the box and its contents. Nothing changed.");return;}
+        const key=boxStyleKeyForTarget(descriptor.styleTarget),appearance=descriptor.styleTarget.startsWith("block:")?page.blocks.find(b=>`block:${b.id}`===descriptor.styleTarget)?.appearance:descriptor.styleTarget==="page-title"?page.titleAppearance:key?content.contentOverrides?.styles?.[key]:undefined;
+        const captured=captureCanvasFrame(frame,entry.placement?undefined:appearance?.box);if(!captured){setAnnouncement("The contents cannot be measured safely right now. Nothing was removed.");return;}if(entry.placement?.contentOffset)captured.contentOffset={...entry.placement.contentOffset};if(entry.placement?.aspectLocked!==undefined)captured.aspectLocked=entry.placement.aspectLocked;captures[id]=captured;
+      }
+      setDeleteIntent({scope:selection.scope,id:selection.id,parentId:map[selection.id].parentId,pageId:sourcePage.id,mobile:useMobile,source,captures});
+    });
+  }
+  /* eslint-disable react-hooks/set-state-in-effect -- Finite child rebasing is committed atomically after measuring a temporary destination. */
+  useLayoutEffect(()=>{const intent=deleteIntent;if(!intent||applyingDelete.current===intent)return;applyingDelete.current=intent;
+    if(uploadBusy||saveBusy||browsing||intent.source!==sourceContent||intent.pageId!==sourcePage.id||intent.mobile!==useMobile){setDeleteIntent(null);setAnnouncement("The layout changed before removal. Nothing was removed.");return;}
+    const destination=layoutDestination(intent.scope,intent.parentId),placements:Record<string,CanvasPlacement>={};
+    for(const [id,captured]of Object.entries(intent.captures)){const placement=destination?placeCapturedCanvasFrame(captured,destination):null;if(!placement){setDeleteIntent(null);setAnnouncement("The contents cannot keep their positions safely. Nothing was removed.");return;}placements[id]=placement;}
+    let changed=false;onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(intent.source))return;const scope=intent.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===intent.pageId);if(scope)changed=removeCanvasNode(draft,scope,intent.id,intent.mobile,false,placements);});setDeleteIntent(null);
+    if(changed){setSelected(null);setSelectedLayout(null);setInspectorOpen(false);setAnnouncement("Box removed; its contents kept their positions. Undo restores it.");}else setAnnouncement("Removal could not be applied safely. Nothing changed.");
+  },[deleteIntent,sourceContent,sourcePage.id,useMobile,uploadBusy,saveBusy,browsing,onContentEdit]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  useEffect(()=>{const cancel=()=>{spaceDrag.current=null;setSpacePreview(null);setDrawingSpace(false);};const hidden=()=>{if(document.hidden)cancel();};const escape=(event:globalThis.KeyboardEvent)=>{if(event.key==="Escape"&&drawingSpace){event.preventDefault();event.stopImmediatePropagation();cancel();}};window.addEventListener("blur",cancel);document.addEventListener("visibilitychange",hidden);window.addEventListener("keydown",escape,true);return()=>{spaceDrag.current=null;window.removeEventListener("blur",cancel);document.removeEventListener("visibilitychange",hidden);window.removeEventListener("keydown",escape,true);};},[drawingSpace]);
+  /* eslint-disable react-hooks/set-state-in-effect -- Switching layout/session invalidates a pending pointer transaction. */
+  useEffect(()=>{spaceDrag.current=null;setSpacePreview(null);setDrawingSpace(false);},[browsing,sourcePage.id,useMobile]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  function finishSpace(event:PointerEvent<HTMLDivElement>,cancel=false){
+    const drag=spaceDrag.current;if(!drag||drag.pointer!==event.pointerId)return;spaceDrag.current=null;setSpacePreview(null);
+    if(event.currentTarget.hasPointerCapture?.(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
+    if(cancel){setDrawingSpace(false);return;}
+    const parent=layoutDestination("page",null),map=parent?captureCanvasSpaceParent(parent):null;
+    const placement=map?canvasSpacePlacementFromDrag(drag.start,{x:event.clientX,y:event.clientY},map):null;
+    if(!placement||JSON.stringify(map)!==JSON.stringify(drag.map)||drag.source!==sourceContent||drag.pageId!==sourcePage.id||drag.mobile!==useMobile||browsing||document.hidden||uploadBusy||saveBusy){setDrawingSpace(false);setAnnouncement("Canvas changed or the drawn space was empty. Nothing was added.");return;}
+    const id=newOwnerId("block");let changed=false;
+    onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(drag.source))return;const page=draft.pages.find(p=>p.id===drag.pageId);if(!page||page.blocks.length>=100)return;page.blocks.push({id,type:"canvas-space",widthPx:placement.widthPx,heightPx:placement.heightPx});changed=assignCanvasParent(draft,page,`block:${id}`,null,drag.mobile,placement);if(!changed)page.blocks=page.blocks.filter(b=>b.id!==id);});
+    setDrawingSpace(false);if(changed){setSelected(`block:${id}`);setSelectedLayout({scope:"page",id:`block:${id}`});setSelectedOccurrence(0);setInspectorOpen(true);setAnnouncement("Canvas Space added. Resize any edge or corner; Undo removes it.");}
+  }
+  function selectLayer(scope:"page"|"chrome",id:string){
+    if(uploadBusy||browsing)return;
+    const modelScope=scope==="chrome"?"chrome":sourcePage;
+    const descriptor=getCanvasNodes(sourceContent,modelScope).find(item=>item.id===id),frame=layoutFrame(scope,id);
+    if(!descriptor||!frame){setAnnouncement("That piece is not visible on this page right now. Nothing was changed.");return;}
+    const editable=frame.dataset.ownerEdit===descriptor.styleTarget?frame:Array.from(frame.querySelectorAll<HTMLElement>("[data-owner-edit]")).find(node=>node.dataset.ownerEdit===descriptor.styleTarget);
+    choose(descriptor.styleTarget,editable??frame);setSelectedLayout({scope,id});frame.scrollIntoView?.({block:"nearest",behavior:"auto"});
+  }
+  function selectParent(){
+    if(!selectedLayout){setAnnouncement("Choose a piece in Layers to see its containing box.");return;}
+    const scope=selectedLayout.scope==="chrome"?"chrome":sourcePage,parent=resolveCanvasLayout(sourceContent,scope,useMobile)[selectedLayout.id]?.parentId;
+    if(parent)selectLayer(selectedLayout.scope,parent);else setAnnouncement(`This piece belongs directly to ${selectedLayout.scope==="chrome"?"Header & footer":"Page content"}.`);
+  }
   function editPage(change: (target: OwnerPage) => void) { onEdit(draft => { const target = draft.pages.find(item => item.id === page.id); if (target) change(target); }); }
   function addPhoto() {
     if (uploadBusy || browsing) return;
     const id = newOwnerId("photo");
     onEdit(draft => { draft.gallery.unshift({ id, name: "New photo", src: "/images/home-collage.webp", alt: "Taylor Made Creations fursuit work", width: 1996, height: 960, visible: true }); });
-    choose(`gallery:${id}`); canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    choose(`gallery:${id}`,undefined,false,{scope:"page",id:`canvas:layout.gallery:${id}`}); canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function addPremade() {
     if (uploadBusy || browsing) return;
     const id = newOwnerId("premade");
     onEdit(draft => { draft.premades.unshift({ id, name: "New premade", image: "/images/home-collage.webp", alt: "Premade fursuit", description: "", price: null, visible: false }); });
-    choose(`premade:${id}`); canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    choose(`premade:${id}`,undefined,false,{scope:"page",id:`canvas:layout.premade:${id}`}); canvasRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function removeSelected(title: string, description: string, remove: () => void) { onRemove(title, description, () => { remove(); closePanel(); }); }
 
@@ -225,7 +440,9 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
     ? <OwnerAppearancePanel fonts={content.fonts} label="Page title appearance" value={page.titleAppearance} onEdit={change => editPage(target => { target.titleAppearance ??= {}; change(target.titleAppearance); })} onReset={() => editPage(target => { delete target.titleAppearance; })} />
     : <OwnerElementAppearance content={content} styleKey={`${page.builtinKey}.title`} onEdit={onEdit} />;
   let controls: ReactNode = null;
-  if (selected === "design") controls = <OwnerDesignPanel content={content} onEdit={onEdit} onReset={() => onRemove("Restore the original website design?", "This resets global and individual colors, fonts, spacing, photo framing and layout in your draft. Your writing, photos, pages and prices stay unchanged. Nothing is published.", () => onEdit(draft => { delete draft.design; if (draft.contentOverrides) delete draft.contentOverrides.styles; for (const page of draft.pages) { delete page.titleAppearance; for (const block of page.blocks) delete block.appearance; } }))} />;
+  if(selected==="prices")controls=<><p className={ui.help}>Edit prices here without leaving the builder. These are the same draft prices used by Prices &amp; options. Text and prices are shared across desktop and mobile layouts.</p><OwnerPricesManager content={content} onEdit={onEdit} onRemove={onRemove} disabled={uploadBusy}/></>;
+  if(selected?.startsWith("canvas:")&&boxStyleKey)controls=<><OwnerElementAppearance content={content} styleKey={boxStyleKey} onEdit={onEdit}/><button type="button" className={ui.secondary} onClick={()=>{const node=canvasRef.current&&findCanvasBoxTarget(canvasRef.current,selected!,selectedOccurrence),editor=node?.dataset.ownerContentEditor??node?.querySelector<HTMLElement>("[data-owner-content-editor]")?.dataset.ownerContentEditor;if(editor)choose(editor);else setAnnouncement("Use the nested text or content box picker to edit this content.");}}>Edit content</button>{boxStyleKey.includes("price")&&<button type="button" className={ui.secondary} onClick={()=>choose("prices")}>Edit prices &amp; options here</button>}</>;
+  if (selected === "design") controls = <OwnerDesignPanel content={content} onEdit={onEdit} onReset={() => onRemove(`Restore the original ${useMobile?"mobile":"desktop"} design?`, `This resets colors, fonts, spacing, photo framing and layout for the ${useMobile?"independent mobile":"desktop/shared"} layout in your draft. The other independent layout is preserved. Your writing, photos, pages and prices stay unchanged. Nothing is published.`, () => onEdit(draft => { delete draft.design; if (draft.contentOverrides) delete draft.contentOverrides.styles; for (const page of draft.pages) { delete page.titleAppearance; for (const block of page.blocks) delete block.appearance; } }))} />;
   if (selected?.startsWith("template-") && templateField) controls = <OwnerTemplateEditor key={selected} content={content} onEdit={onEdit} target={selected} />;
   if (coreStyleKey) controls = <>{coreStyleKey.startsWith("home.") ? <OwnerLinkedTextField label="Text" multiline value={content.home[coreStyleKey.slice(5) as "title" | "eyebrow" | "description" | "caption"]} onChange={value => onEdit(draft => { draft.home[coreStyleKey.slice(5) as "title" | "eyebrow" | "description" | "caption"] = value; })} /> : coreStyleKey === "prices.intro" ? <OwnerLinkedTextField label="Prices introduction" multiline value={content.prices.intro} onChange={value => onEdit(draft => { draft.prices.intro = value; })} /> : null}<OwnerElementAppearance content={content} styleKey={coreStyleKey} onEdit={onEdit} /></>;
   if (selected === "page-title") controls = <><Field label="Page title" value={page.title} onChange={value => editPage(target => { target.title = value; })} />{pageTitleAppearance}</>;
@@ -250,7 +467,7 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
     {page.builtinKey !== "home" && pageTitleAppearance}
     {page.builtinKey === "prices" && <><OwnerLinkedTextField label="Prices introduction" value={content.prices.intro} multiline onChange={value => onEdit(draft => { draft.prices.intro = value; })} /><OwnerElementAppearance content={content} styleKey="prices.intro" onEdit={onEdit} /></>}
     {page.builtinKey && <OwnerTemplateEditor key={`template-${page.id}`} content={content} onEdit={onEdit} group={page.builtinKey} />}
-    <div className={styles.sectionDirectory}><h3>Sections on this page</h3>{page.blocks.length ? page.blocks.map((item, index) => <button key={item.id} type="button" onClick={() => choose(`block:${item.id}`)}><span>{index + 1}. {blockLabels[item.type]}</span></button>) : <p className={ui.help}>Add a section to include more words, photos, buttons or questions and answers.</p>}<button type="button" onClick={() => choose("sections")}>＋ Add a section</button></div>
+    <div className={styles.sectionDirectory}><h3>Sections on this page</h3>{page.blocks.length ? page.blocks.map((item, index) => <button key={item.id} type="button" onClick={() => choose(`block:${item.id}`,undefined,false,{scope:"page",id:`block:${item.id}`} )}><span>{index + 1}. {blockLabels[item.type]}</span></button>) : <p className={ui.help}>Add a section to include more words, photos, buttons or questions and answers.</p>}<button type="button" onClick={() => choose("sections")}>＋ Add a section</button></div>
   </>;
   if (selected === "home-image") controls = <>
     <ImagePicker key="home-image" src={content.home.image.src} alt={content.home.image.alt} onSource={value => onEdit(draft => { draft.home.image.src = value; })} onAlt={value => onEdit(draft => { draft.home.image.alt = value; })} />
@@ -301,15 +518,17 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
       <button type="button" className={ui.dangerLink} onClick={() => removeSelected(`Remove “${premade.name}”?`, "This removes the listing from your draft. Its photos are not deleted, and the live site stays unchanged until you publish.", () => onEdit(draft => { draft.premades = draft.premades.filter(item => item.id !== premade.id); }))}>Remove listing</button>
     </>;
   }
-  if (block) controls = <OwnerBlocksEditor fonts={content.fonts} page={page} focusedBlockId={block.id} hideAddPalette onEdit={editPage} onRemove={(_block, remove) => removeSelected("Remove this section?", "This removes the section from your draft. The live website is not changed until you publish.", remove)} />;
-  if (selected === "sections") controls = <><p className={ui.help}>Choose what to add. It appears below your page content, ready for you to make it yours.</p><div className={styles.palette}>{(Object.entries(blockLabels) as [PageBlock["type"], string][]).map(([type, label]) => <button type="button" key={type} disabled={uploadBusy || page.blocks.length >= 100} onClick={() => { if (uploadBusy || page.blocks.length >= 100) return; const next = createBlock(type); editPage(target => { target.blocks.push(next); }); choose(`block:${next.id}`); }}><span aria-hidden="true">＋</span>{label}</button>)}</div></>;
+  if (block) controls = <OwnerBlocksEditor layoutOrder={layoutOrder} mobileLayout={useMobile} fonts={content.fonts} page={page} focusedBlockId={block.id} hideAddPalette onEdit={editPage} onRemove={() => requestDelete()} />;
+  if (selected === "sections") controls = <><p className={ui.help}>Add a section container, then drag new content into it. Click to add at page root, or drag a palette item into a section. Content is shared; placement follows the selected layout.</p><div className={styles.palette}>{(Object.entries(blockLabels) as [PageBlock["type"], string][]).map(([type, label]) => <button type="button" key={type} draggable={type!=="canvas-space"&&!uploadBusy&&page.blocks.length<100} onDragStart={event=>paletteDrag(event,type)} onDragEnd={endBlockDrag} disabled={uploadBusy || page.blocks.length >= 100} onClick={() => { if (uploadBusy || page.blocks.length >= 100) return; if(type==="canvas-space"){setSelected(null);setSelectedLayout(null);setInspectorOpen(false);setDrawingSpace(true);setAnnouncement("Drag in any direction to draw Canvas Space. Escape cancels.");return;} const next = createBlock(type); editPage(target => { target.blocks.push(next); }); choose(`block:${next.id}`,undefined,false,{scope:"page",id:`block:${next.id}`}); }}><span aria-hidden="true">＋</span>{label}</button>)}</div></>;
+
 
   if (imageBlock || imageBoxEditable) controls = <><div className={styles.modeSwitch} aria-label="Image editing target"><button type="button" aria-pressed={imageEditMode === "photo"} onClick={() => setImageEditMode("photo")}>Photo framing</button><button type="button" aria-pressed={imageEditMode === "box"} onClick={() => setImageEditMode("box")}>Whole content box</button></div>{imageEditMode === "box" && <p className={ui.help}>Move, resize or tilt the whole content box. Photo framing changes only the image size and crop.</p>}{controls}</>;
-  if (selected && supportsBoxTarget(selected, page) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box")) controls = <><OwnerBoxFields key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} />{controls}</>;
+  if (selected && supportsBoxTarget(selected, page) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box")) controls = <><OwnerBoxFields layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={selectBoxContents} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} />{controls}</>;
+  if(selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable)controls=<>{controls}<button type="button" className={ui.secondary} disabled={uploadBusy||saveBusy} onClick={()=>requestDelete(true)}>Remove box and contents…</button></>;
   return <section className={styles.builder} aria-label="Visual website builder" data-builder-mode={browsing ? "view" : "edit"}>
     <div className={styles.toolbar}>
       <div className={styles.pagePicker}><OwnerSelect label={browsing ? "Viewing page" : "Editing page"} value={page.id} options={activePages.map(item => ({ value: item.id, label: item.title }))} onChange={id => { const target = activePages.find(item => item.id === id); if (target && !uploadBusy) { closePanel(); onPageChange(target); } }} /></div>
-      <div className={styles.viewToolsGroup}><div className={styles.viewTools}><div className={styles.modeSwitch} aria-label="Builder mode">{browsing ? <button type="button" disabled={uploadBusy} onClick={() => changeMode(false)}>Edit website</button> : <button type="button" disabled={uploadBusy} onClick={() => changeMode(true)}>Exit edit mode</button>}</div><div className={styles.deviceSwitch} aria-label="Preview width"><button type="button" aria-label="Desktop view" title="Desktop view" aria-pressed={device === "desktop"} onClick={() => setDevice("desktop")}><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="13" rx="2" /><path d="M12 16v5m-4 0h8" /></svg></button><button type="button" aria-label="Mobile view" title="Mobile view" aria-pressed={device === "mobile"} onClick={() => setDevice("mobile")}><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="6" y="2" width="12" height="20" rx="2" /><path d="M10 5h4m-3 14h2" /></svg></button></div></div>
+      <div className={styles.viewToolsGroup}><div className={styles.viewTools}><div className={styles.editModeSwitch} aria-label="Builder mode">{browsing ? <button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy} onClick={() => changeMode(false)}>Edit website</button> : <button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy} onClick={() => changeMode(true)}>Exit edit mode</button>}</div>{onRequestDiscard&&<button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>{if(!uploadBusy&&!saveBusy)onRequestDiscard();}}>Discard Edits</button>}<div className={styles.deviceSwitch} aria-label="Preview width"><button type="button" aria-label="Desktop view" title="Desktop view" aria-pressed={device === "desktop"} disabled={uploadBusy} onClick={() => {if(uploadBusy)return;endBlockDrag();setSelected(null);setDevice("desktop");}}><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="13" rx="2" /><path d="M12 16v5m-4 0h8" /></svg></button><button type="button" aria-label="Mobile view" title="Mobile view" aria-pressed={device === "mobile"} disabled={uploadBusy} onClick={() => {if(uploadBusy)return;endBlockDrag();setSelected(null);setDevice("mobile");}}><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="6" y="2" width="12" height="20" rx="2" /><path d="M10 5h4m-3 14h2" /></svg></button></div></div>
         <div className={styles.builderSaveActions}>
           {onPopOut && <button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy} title="Open a read-only draft preview in another window" onClick={() => { if (!uploadBusy) onPopOut(); }}>Popout Preview ↗</button>}
 
@@ -317,9 +536,10 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
         </div>
       </div>
     </div>
+    <div className={styles.layoutScope}><Toggle disabled={uploadBusy} label="Independent mobile layout" checked={!!sourceContent.design?.mobileLayoutEnabled} onChange={enabled=>{if(uploadBusy)return;endBlockDrag();setSelected(null);onContentEdit(draft=>{if(enabled)initializeMobileLayout(draft);else{draft.design??={};draft.design.mobileLayoutEnabled=false;}});}} hint="Off: both previews share layout. On: mobile geometry, appearance and section membership can differ; text and prices remain shared. Turning off preserves mobile edits."/><strong>{useMobile?"Editing independent mobile layout":device==="mobile"?"Mobile preview · editing shared layout":"Editing desktop layout"}</strong></div>
     <p className={styles.draftDisclaimer}>{draftSaveStatus ?? "Your edits stay private. Save opens your draft and publication choices."} Switching pages, selections or preview modes never publishes or deletes content.</p>
     <div className={styles.actionbar}>
-      <p>{uploadBusy ? "Uploading your photo… finish or cancel it before changing sections." : browsing ? "Viewing your private draft, including unsaved changes. Choose Edit website to make changes. Switching modes never publishes your work." : "Select a supported box, then drag its content to move it. Resize from any edge or corner, enter a size, or use the round handle to tilt. Hold Shift for proportions or rotation snaps. Drag unselected sections or navigation items to reorder; selected sections also have arrow buttons. Price colors: Design → Website colors → Price text."}</p>
+      <p>{uploadBusy ? "Uploading your photo… finish or cancel it before changing sections." : browsing ? "Viewing your private draft, including unsaved changes. Choose Edit website to make changes. Switching modes never publishes your work." : "Choose a piece to move, resize or tilt it. Use Layers to move it into another box or back onto the canvas. Select contents when the whole group should move together. Your layout can overlap or extend outside boxes."}</p>
       {!browsing && <div><button type="button" data-owner-button className={`${buttons.button} ${buttons.primary} ${buttons.compact}`} aria-pressed={selected === "design"} {...panelOpener("design")} onClick={event => choose("design", event?.currentTarget, true)}>Design</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} aria-pressed={selected === "site"} {...panelOpener("site")} onClick={event => choose("site", event?.currentTarget, true)}>Header & footer</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} aria-pressed={selected === "page"} {...panelOpener("page")} onClick={event => choose("page", event?.currentTarget, true)}>Page settings</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy} onClick={openPageManager}>Manage pages</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy} onClick={openNewPage}>＋ New page</button></div>}
     </div>
     {!browsing && <div className={styles.contextbar}>
@@ -329,7 +549,7 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
       {page.builtinKey === "premades" && <><button type="button" {...panelOpener("shop")} onClick={event => choose("shop", event?.currentTarget, true)}>Shop: {content.site.showPremades ? "on" : "off"} <span aria-hidden="true">⌄</span></button>{liveShopKnown && content.site.showPremades !== liveShopVisibility && liveShopVisibility !== null && <button type="button" className={styles.applyShop} disabled={!canUpdateLiveShop} onClick={onUpdateLiveShop}>Update live</button>}<button type="button" onClick={addPremade}>＋ Add a premade</button><span>{!content.site.showPremades ? "Shop is off. You can still edit every listing below." : "Hidden listings appear here for editing only."}</span></>}
       {page.builtinKey === "contact" && <><button type="button" {...panelOpener("contact")} onClick={event => choose("contact", event?.currentTarget, true)}>Contact details</button><button type="button" {...panelOpener("site")} onClick={event => choose("site", event?.currentTarget, true)}>Header & footer</button><button type="button" {...panelOpener("status")} onClick={event => choose("status", event?.currentTarget, true)}>Commission status</button></>}
       {page.builtinKey === "commissions" && <button type="button" {...panelOpener("status")} onClick={event => choose("status", event?.currentTarget, true)}>Commission status</button>}
-      {page.builtinKey === "prices" && <button type="button" disabled={uploadBusy} onClick={() => { if (!uploadBusy) onPrices(); }}>Edit prices & options →</button>}
+      <button type="button" disabled={uploadBusy} aria-pressed={selected==="prices"} onClick={()=>choose("prices")}>Edit prices &amp; options here</button>
       <div className={styles.sectionHistoryActions}>{(onUndo || onRedo) && <div className={styles.historyActions} aria-label="Draft history">
           <button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={saveBusy || uploadBusy || !canUndo} onClick={onUndo} title="Undo draft edit (Ctrl/Cmd+Z)" aria-keyshortcuts="Control+Z Meta+Z">Undo</button>
           <button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={saveBusy || uploadBusy || !canRedo} onClick={onRedo} title="Redo draft edit (Ctrl/Cmd+Shift+Z)" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z">Redo</button>
@@ -337,19 +557,27 @@ export function OwnerVisualBuilder({ content, page, onEdit, onPageChange, onMana
       <button type="button" className={styles.addSection} {...panelOpener("sections")} onClick={event => choose("sections", event?.currentTarget, true)}>＋ Add a section</button></div>
     </div>}
     {!browsing && canvasBoxes.length > 0 && <div className={styles.boxPicker}><OwnerSelect label="Select a content box" placeholder="Choose text, a photo or a section…" value={canvasBoxes.some(box => box.target === selected && box.occurrence === selectedOccurrence) ? `${selected}#${selectedOccurrence}` : ""} options={canvasBoxes} onChange={value => { if (uploadBusy) return; const box = canvasBoxes.find(box => box.value === value); if (!box) return; const node = canvasRef.current && findCanvasBoxTarget(canvasRef.current, box.target, box.occurrence); choose(box.target, node ?? undefined); setSelectedOccurrence(box.occurrence); node?.scrollIntoView({ block: "nearest", behavior: "auto" }); }} /><span>Registered content boxes, including template headings. Repeated labels share their appearance.</span></div>}
+    {!browsing && (["page","chrome"] as const).map(scope=>{
+      const modelScope=scope==="chrome"?"chrome":sourcePage,nodes=getCanvasNodes(sourceContent,modelScope),layout=resolveCanvasLayout(sourceContent,modelScope,useMobile);
+      const rows=nodes.filter(node=>!layout[node.id]?.removed).map(node=>({id:node.id,label:layout[node.id]?.label??node.label,parentId:layout[node.id]?.parentId??null,movable:node.movable,container:node.canContain})).sort((a,b)=>(layout[a.id]?.order??0)-(layout[b.id]?.order??0));
+      return <OwnerLayoutLayers key={scope} scopeLabel={scope==="chrome"?"Header & footer":"Page content"} rows={rows} selectedId={selectedLayout?.scope===scope?selectedLayout.id:null} disabled={uploadBusy||saveBusy} canMove={(id,parentId)=>canAssignCanvasParent(sourceContent,modelScope,id,parentId,useMobile)} onSelect={id=>selectLayer(scope,id)} onMove={(id,parentId)=>moveLayer(scope,id,parentId)} onRename={(id,label)=>onContentEdit(draft=>{const target=scope==="chrome"?"chrome":draft.pages.find(p=>p.id===sourcePage.id);if(target)renameCanvasNode(draft,target,id,useMobile,label);})} />;
+    })}
     {!browsing && <OwnerHeaderEditor content={content} onEdit={onEdit} open={navigationOpen} onOpenChange={changeNavigationOpen} disabled={uploadBusy} />}
     <div className={styles.stage} data-device={device}>
-      <div ref={canvasRef} className={`${styles.canvas} ${!browsing ? styles.editing : ""}`} onPointerDownCapture={() => { dragClickGuard.current = false; }} onClickCapture={capture} onKeyDownCapture={capture} onDragStartCapture={beginBlockDrag} onDragOver={overBlock} onDrop={dropBlock} onDragEnd={endBlockDrag}>
-        <SiteContentFrame content={content} page={page} mode="editor" editable={!browsing} onEditCommissionForm={onEditCommissionForm} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
+      <div ref={canvasRef} tabIndex={-1} className={`${styles.canvas} ${!browsing ? styles.editing : ""}`} onContextMenu={event=>{if(browsing||uploadBusy||saveBusy)return;if(event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,[contenteditable]"))return;event.preventDefault();setContextMenu({x:event.clientX,y:event.clientY});}} onPointerDownCapture={() => { dragClickGuard.current = false; }} onClickCapture={capture} onKeyDownCapture={capture} onDragStartCapture={beginBlockDrag} onDragOver={overBlock} onDrop={dropBlock} onDragEnd={endBlockDrag}>
+        <SiteContentFrame forceCanvasSlots={drawingSpace?{scope:"page",id:"__root"}:deleteIntent?{scope:deleteIntent.scope,id:deleteIntent.parentId??"__root",omitNodeId:deleteIntent.id}:placementIntent?{scope:placementIntent.scope,id:placementIntent.parentId??"__root",omitNodeId:placementIntent.id}:undefined} content={sourceContent} page={sourcePage} layoutViewport={device} mode="editor" editable={!browsing} onEditCommissionForm={onEditCommissionForm} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
         {!browsing && selected && (imageStyleKey || imageBlock) && (imageStyleKey === "site.logo" || imageEditMode === "photo") && <OwnerCanvasImageTools key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={selectedImageAppearance} disabled={uploadBusy} onChange={changeImageAppearance} />}
-        {!browsing && selected && (boxStyleKey || selected === "page-title" || boxEditableBlock) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box") && <OwnerCanvasBoxTools key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} onEditContent={() => setInspectorOpen(true)} sectionOrder={block ? { index: page.blocks.findIndex(item => item.id === block.id), count: page.blocks.length, onMove: direction => { if (uploadBusy) return; editPage(target => move(target.blocks, block.id, direction)); setAnnouncement("Section order updated in your draft."); } } : undefined} />}
+        {drawingSpace&&!browsing&&<div className={styles.spaceDrawing} data-owner-canvas-controls data-owner-space-drawing tabIndex={0} role="region" aria-label="Draw Canvas Space in any direction; Escape cancels" onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();spaceDrag.current=null;setSpacePreview(null);setDrawingSpace(false);}}} onPointerDown={event=>{if(event.button!==0||uploadBusy||saveBusy)return;const parent=layoutDestination("page",null),map=parent?captureCanvasSpaceParent(parent):null;if(!map)return;event.preventDefault();event.stopPropagation();spaceDrag.current={pointer:event.pointerId,start:{x:event.clientX,y:event.clientY},map,source:sourceContent,pageId:sourcePage.id,mobile:useMobile};event.currentTarget.setPointerCapture?.(event.pointerId);}} onPointerMove={event=>{const drag=spaceDrag.current;if(!drag||drag.pointer!==event.pointerId)return;const rect=event.currentTarget.getBoundingClientRect();setSpacePreview({left:Math.min(drag.start.x,event.clientX)-rect.left,top:Math.min(drag.start.y,event.clientY)-rect.top,width:Math.abs(event.clientX-drag.start.x),height:Math.abs(event.clientY-drag.start.y)});}} onPointerUp={event=>finishSpace(event)} onPointerCancel={event=>finishSpace(event,true)} onLostPointerCapture={event=>{if(spaceDrag.current)finishSpace(event,true);}}>{spacePreview&&<div className={styles.spacePreview} style={spacePreview}/>}<span className={styles.spacePrompt}>Drag to draw Canvas Space · Escape cancels</span></div>}
+        {!browsing && selected && (boxStyleKey || selected === "page-title" || boxEditableBlock) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box") && <OwnerCanvasBoxTools {...(selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable?{onCanvasMoveStart:startCanvasMove,onCanvasMovePreview:previewCanvasMove,onCanvasMoveCommit:commitCanvasMove,onCanvasMoveCancel:cancelCanvasMove}:{})} layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={selectBoxContents} onSelectBoxContents={selected=>setContentsSelection(selected?null:contentsSelectionKey)} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} onEditContent={() => setInspectorOpen(true)} onDelete={selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable?()=>requestDelete():undefined} onSelectParent={selectedLayout&&selectedLayoutMap[selectedLayout.id]?.parentId?selectParent:undefined} reparentId={block?.id} sectionOrder={layoutOrder} />}
       </div>
-      {!browsing && selected && inspectorOpen && controls && <aside id={panelId} ref={panelRef} className={styles.panel} style={movable.style} data-moving={movable.moving} aria-label={selectedTitle} onKeyDown={event => { if (event.key === "Escape" && !event.nativeEvent?.isComposing) { event.preventDefault(); closePanel(); } }}>
-        <div className={styles.panelHeader} {...movable.handleProps}><div><span>{selected === "design" ? "APPLIES ACROSS YOUR WEBSITE" : selected === "site" ? "HEADER, FOOTER & BRANDING" : "EDITING YOUR DRAFT"}</span><h2>{selectedTitle}</h2></div><button type="button" aria-label="Close section editor" disabled={uploadBusy} onClick={closePanel}><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
-        <div className={styles.panelNav}><button type="button" aria-pressed={selected === "page-content"} disabled={uploadBusy} onClick={() => choose("page-content")}>Page content</button><button type="button" aria-pressed={selected === "design"} disabled={uploadBusy} onClick={() => choose("design")}>Design</button><button type="button" aria-pressed={selected === "site"} disabled={uploadBusy} onClick={() => choose("site")}>Header & footer</button></div><div className={styles.panelContent} data-owner-fields>{controls}</div>
+      {!browsing && selected && inspectorOpen && controls && <aside id={panelId} ref={panelRef} className={`${styles.panel} ${selected==="prices"?styles.pricesPanel:""}`} style={movable.style} data-moving={movable.moving} aria-label={selectedTitle} onKeyDown={event => { if (event.key === "Escape" && !event.nativeEvent?.isComposing) { event.preventDefault(); closePanel(); } }}>
+        <div className={styles.panelHeader} {...movable.handleProps}><div><span>{selected === "design" ? (useMobile?"WEBSITE DESIGN · INDEPENDENT MOBILE":"WEBSITE DESIGN · DESKTOP / SHARED") : selected === "site" ? "HEADER, FOOTER & BRANDING" : (useMobile?"EDITING MOBILE APPEARANCE · SHARED CONTENT":"EDITING YOUR DRAFT")}</span><h2>{selectedTitle}</h2></div><button type="button" aria-label="Close section editor" disabled={uploadBusy} onClick={closePanel}><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div>
+        <div className={styles.panelNav}><button type="button" aria-pressed={selected === "page-content"} disabled={uploadBusy} onClick={() => choose("page-content")}>Page content</button><button type="button" aria-pressed={selected === "design"} disabled={uploadBusy} onClick={() => choose("design")}>Design</button><button type="button" aria-pressed={selected === "site"} disabled={uploadBusy} onClick={() => choose("site")}>Header & footer</button></div><div className={styles.panelContent} data-owner-fields>{draftNameControl}{selectedLayout&&selectedBoxName&&<div className={styles.inlineBoxName}><Field label="Content box name" value={boxName} onChange={value=>setBoxNameDraft({id:selectedLayout.id,original:selectedBoxName,value})}/><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy||!boxName.trim()||boxName.trim().length>120||boxName.trim()===selectedBoxName} onClick={()=>onContentEdit(draft=>{const scope=selectedLayout.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===sourcePage.id);if(scope)renameCanvasNode(draft,scope,selectedLayout.id,useMobile,boxName);})}>Rename box</button></div>}<CanvasPlacementEditingContext value={!!selectedPlacement}>{controls}</CanvasPlacementEditingContext></div>
         <div className={styles.panelFooter}><span>{uploadBusy ? "Finish or cancel your upload before closing." : "Changes appear on your page as you type."}</span><button type="button" className={ui.primary} disabled={uploadBusy} onClick={closePanel}>Done</button></div>
       </aside>}
     </div>
+    {dropPreview&&<div role="status" className={styles.dropDestinationLabel} data-blocked={dropPreview.blocked||undefined} style={{left:Math.max(8,Math.min(dropPreview.point.x+14,typeof window!=="undefined"?window.innerWidth-240:dropPreview.point.x)),top:Math.max(8,dropPreview.point.y+18)}}>{dropPreview.blocked?"Cannot drop here: ":"Move into: "}{dropPreview.label}</div>}
+    {contextMenu&&!browsing&&<div ref={contextMenuRef} role="menu" aria-label="Builder actions" className={styles.canvasContextMenu} style={{left:Math.max(8,Math.min(contextMenu.x,typeof window!=="undefined"?window.innerWidth-180:contextMenu.x)),top:Math.max(8,Math.min(contextMenu.y,typeof window!=="undefined"?window.innerHeight-110:contextMenu.y))}} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setContextMenu(null);canvasRef.current?.focus();}else if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();const items=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button")),at=items.indexOf(document.activeElement as HTMLButtonElement),next=event.key==="Home"?0:event.key==="End"?items.length-1:(at+(event.key==="ArrowDown"?1:-1)+items.length)%items.length;items[next]?.focus();}}}><button role="menuitem" type="button" onClick={()=>{setContextMenu(null);choose("sections");}}>New Section</button><button role="menuitem" type="button" onClick={()=>{setContextMenu(null);openNewPage();}}>New Page</button></div>}
     <p className={styles.srOnly} role="status" aria-live="polite">{announcement}</p>
     <div className={styles.canvasFooter}><span>Only you can see this draft.</span>{!browsing && <button type="button" {...panelOpener("sections")} onClick={event => choose("sections", event?.currentTarget, true)}>＋ Add a section to {page.title}</button>}</div>
   </section>;

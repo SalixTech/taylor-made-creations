@@ -367,8 +367,8 @@
 
 /* Chat colors follow the author, not which side is viewing the conversation. */
 .workspace .chatLog .message[data-sender-role=owner],:global([data-owner-portal][data-color-mode=dark]) .workspace .chatLog .message[data-sender-role=owner] { background:#7f0011!important; border-color:#7f0011!important; color:#d0d0d0!important; }
-.workspace .chatLog .message[data-sender-role=client],:global([data-owner-portal][data-color-mode=dark]) .workspace .chatLog .message[data-sender-role=client] { background:#898989!important; border-color:#898989!important; color:#000!important; }
-.workspace .chatLog .message[data-sender-role=client] :is(strong,time,p,small,button),:global([data-owner-portal][data-color-mode=dark]) .workspace .chatLog .message[data-sender-role=client] :is(strong,time,p,small,button) { color:#000!important; }
+.workspace .chatLog .message[data-sender-role=client],:global([data-owner-portal][data-color-mode=dark]) .workspace .chatLog .message[data-sender-role=client] { background:var(--ref-chat-color,#DEDDD8)!important; border-color:var(--ref-chat-color,#DEDDD8)!important; color:var(--ref-chat-ink,#000)!important; }
+.workspace .chatLog .message[data-sender-role=client] :is(strong,time,p,small,button),:global([data-owner-portal][data-color-mode=dark]) .workspace .chatLog .message[data-sender-role=client] :is(strong,time,p,small,button) { color:var(--ref-chat-ink,#000)!important; }
 .workspace .chatLog .message[data-sender-role=owner] :is(strong,time,p,small,button),:global([data-owner-portal][data-color-mode=dark]) .workspace .chatLog .message[data-sender-role=owner] :is(strong,time,p,small,button) { color:#d0d0d0!important; }
 .workspace .chatLog .message .attachmentMessage,:global([data-owner-portal][data-color-mode=dark]) .workspace .chatLog .message .attachmentMessage { background:transparent!important; border:0!important; box-shadow:none!important; padding:0!important; text-decoration:underline; text-underline-offset:3px; }
 /* Support composer shares the compact message footer, without attachment controls. */
@@ -384,3 +384,5 @@
 .uploadForm .button .photoSpinner { width:16px; height:16px; display:inline-block; vertical-align:middle; margin-right:7px; }
 .queueThumbnail { display:grid; place-items:center; }
 .queueThumbnail>img,.queueThumbnail>span { grid-area:1/1; }
+
+.invoiceNotice{padding:12px 20px 0}.workspace .invoiceHistoryButton{padding:6px 10px;min-height:36px;border:1px solid var(--work-line);border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer}

@@ -1,0 +1,31 @@
+.content { display:grid; gap:16px; max-width:520px; }
+.fox { display:block; width:min(100%,300px); height:auto; max-height:35dvh; object-fit:contain; margin:0 auto; border-radius:12px; }
+.content p { margin:0; color:var(--owner-ink,#f2edf0); line-height:1.6; }
+.reward { position:relative; display:grid; gap:7px; padding:12px; text-align:center; color:#f6d16a; }
+.reward strong { font-size:26px; animation:reward-arrive .65s ease-out both; }
+.reward small { color:var(--owner-muted,#c9bec4); }
+.coins { display:flex; justify-content:center; gap:14px; height:30px; overflow:hidden; }
+.coins i { font-style:normal; color:#f3c849; text-shadow:1px 1px #8b6416; animation:coin-hop .85s ease-out both; }
+.coins i:nth-child(2),.coins i:nth-child(4) { animation-delay:.12s; }
+.coins i:nth-child(3) { animation-delay:.22s; }
+@keyframes coin-hop { from { opacity:0; transform:translateY(22px) rotate(-30deg); } 45% { opacity:1; transform:translateY(-5px) rotate(10deg); } to { opacity:1; transform:none; } }
+@keyframes reward-arrive { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+@media(prefers-reduced-motion:reduce) { .coins i,.reward strong { animation:none; transform:none; opacity:1; } }
+
+@font-face{font-family:"Berkshire Swash Local";src:url("/fonts/berkshire-swash/BerkshireSwash-Regular.ttf") format("truetype");font-style:normal;font-weight:400;font-display:swap;}
+.encounter :global(dialog){background-image:linear-gradient(#151219dd,#151219dd),url("/images/light-side-fox-background.jpg")!important;background-size:cover;background-position:center;background-repeat:no-repeat;}
+.encounter :global(dialog)>div:first-child{position:relative;display:block;padding-left:62px;padding-right:62px;}
+.encounter :global(dialog)>div:first-child>div{position:absolute;right:16px;top:20px;}
+.encounter :global(dialog) h2{font-family:"Berkshire Swash Local",serif!important;font-weight:400!important;text-align:center;line-height:1.3;color:#fff6de;}
+.content{margin:0 auto;text-align:center;}.content p{color:#fff5e8;}.bank{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#ffe08a;}.coins{height:44px;}.coins i{font-size:27px;line-height:34px;}.footer{font-size:13px;}.error{padding:10px;border:1px solid #dca1ab;border-radius:8px;}.encounter :global(dialog) button[data-owner-button]{font-family:inherit;}
+
+.game{display:grid;gap:12px;}.rollButton{border:1px solid #c8ab56;border-radius:8px;padding:8px 12px;background:#3d3323;color:#ffe6a0;font:inherit;cursor:pointer;}.rollButton:disabled{opacity:.5;cursor:wait;}.rollButton:focus-visible{outline:2px solid #72a9e5;outline-offset:3px;}
+.constructionGame{max-width:560px;margin:28px auto;padding:20px;border:1px solid var(--line,#aaa);border-radius:14px;background:var(--site-background,#fff);color:var(--ink,#302c2c);}.constructionGame .bank{color:var(--ink,#302c2c);}.constructionGame h2{font-size:20px;margin:0 0 16px;}
+.launcher{margin:22px auto 0;text-align:center;}
+/* This art and font belong to the whimsy launcher only, not Maker Login. */
+.launcher{margin:0;text-align:center;}
+.whimsyButton{border:1px solid #8b7455;border-radius:10px;min-height:50px;padding:12px 24px;background:linear-gradient(#201921aa,#201921aa),url('/images/light-side-fox-background.jpg') center/cover;color:#fff6de;font-family:'Berkshire Swash Local',serif;font-size:20px;cursor:pointer;}
+.whimsyButton:focus-visible{outline:2px solid #72a9e5;outline-offset:3px;}
+.encounter :global(dialog) button[aria-label="Close dialog"]{background:transparent!important;border-color:transparent!important;color:#fff6de!important;box-shadow:none!important;border-radius:8px!important;}
+.encounter :global(dialog) button[aria-label="Close dialog"]:hover{background:#ffffff14!important;}
+.encounter :global(dialog) button[aria-label="Close dialog"]:focus-visible{outline:2px solid #72a9e5!important;outline-offset:2px;}

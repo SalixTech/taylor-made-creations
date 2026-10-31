@@ -1,3 +1,4 @@
+import { CONSTRUCTION_WHIMSY_DOCUMENT, decodeConstructionWhimsy, defaultConstructionWhimsy, type ConstructionWhimsy } from "./construction-whimsy";
 import { decodePrivateGallery } from "./private-gallery";
 import { decodeCloudFile, cloudReferencedAssetIds } from "./cloud-files-model";
 import { doc, getDoc, getDocs, collection, runTransaction, type Firestore } from "firebase/firestore/lite";
@@ -21,7 +22,7 @@ const CLOUD_CHANGED = "tmc-private-owner-cloud-changed";
 export type EncodedOwnerWorkspace = { schemaVersion: 1; revision: number; payload: string };
 export type EncodedPublishedOwnerSnapshot = { schemaVersion: 1; revision: number; payload: string };
 export type OwnerDraftIndex = { schemaVersion: 1; revision: number; drafts: Record<string, number>; changedDraftId: string };
-export type FirebaseOwnerStore = OwnerStore & { readLiveSiteAccess(): Promise<SiteAccess>; updateConstructionMode(constructionMode: boolean, expectedRevision: number): Promise<SiteAccess>; publishPremadeLive(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>; readLiveShopVisibility(): Promise<boolean | null>; updateLiveShopVisibility(showPremades: boolean, expectedRevision: number): Promise<OwnerWorkspace>; publishLive(content: OwnerContent | undefined, expectedRevision: number): Promise<OwnerWorkspace>; dispose(): void };
+export type FirebaseOwnerStore = OwnerStore & { readLiveConstructionWhimsy(): Promise<ConstructionWhimsy>; updateConstructionWhimsy(enabled: boolean, expectedRevision: number): Promise<ConstructionWhimsy>; readLiveSiteAccess(): Promise<SiteAccess>; updateConstructionMode(constructionMode: boolean, expectedRevision: number): Promise<SiteAccess>; publishPremadeLive(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>; readLiveShopVisibility(): Promise<boolean | null>; updateLiveShopVisibility(showPremades: boolean, expectedRevision: number): Promise<OwnerWorkspace>; publishLive(content: OwnerContent | undefined, expectedRevision: number): Promise<OwnerWorkspace>; dispose(): void };
 
 function payloadBytes(payload: string): number { return new TextEncoder().encode(payload).byteLength; }
 
@@ -366,6 +367,32 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
         }
         if (!(error instanceof OwnerStorageError) && !(error instanceof OwnerValidationError) && !["permission-denied", "unauthenticated", "aborted", "invalid-argument", "resource-exhausted", "failed-precondition"].includes(code)) throw new OwnerStorageError("write", "This draft save was not confirmed. Keep your edits open. Choose Save draft again to check the same version without creating a duplicate, or open Drafts to review what was saved. Nothing was published.", { cause: error });
         throw cloudError(error, "write");
+      }
+    },
+    async readLiveConstructionWhimsy() {
+      try {
+        await confirmOwner();
+        const snapshot = await getDoc(doc(db, CONSTRUCTION_WHIMSY_DOCUMENT)); requireOwner();
+        return snapshot.exists() ? decodeConstructionWhimsy(snapshot.data()) : defaultConstructionWhimsy();
+      } catch (cause) { throw new OwnerStorageError("read", "Construction Whimsy could not be checked. No setting was changed.", { cause }); }
+    },
+    async updateConstructionWhimsy(enabled, expectedRevision) {
+      if (typeof enabled !== "boolean" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new OwnerStorageError("write", "Check Construction Whimsy again before updating it.");
+      try {
+        await confirmOwner();
+        const saved = await runTransaction(db, async transaction => {
+          requireOwner();
+          const reference = doc(db, CONSTRUCTION_WHIMSY_DOCUMENT);
+          const snapshot = await transaction.get(reference); requireOwner();
+          const current = snapshot.exists() ? decodeConstructionWhimsy(snapshot.data()) : defaultConstructionWhimsy();
+          if (current.revision !== expectedRevision) throw new OwnerStorageError("conflict", "Construction Whimsy changed on another device. Check again before updating it.");
+          const next = decodeConstructionWhimsy({ schemaVersion: 1, revision: current.revision + 1, enabled });
+          requireOwner(); transaction.set(reference, next); return next;
+        });
+        requireOwner(); return saved;
+      } catch (cause) {
+        if (cause instanceof OwnerStorageError && ["conflict", "unavailable"].includes(cause.code)) throw cause;
+        throw new OwnerStorageError("write", "The Construction Whimsy update was not confirmed. Check the live setting before retrying. Website access and your draft were not changed.", { cause });
       }
     },
     async readLiveSiteAccess() {

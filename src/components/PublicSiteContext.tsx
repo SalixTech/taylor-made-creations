@@ -70,7 +70,7 @@ export function PublicSiteProvider({ initialState, children }: { initialState: P
         if (!alive || request !== sequence || currentController.signal.aborted) return;
         if (next.status === "locked") {
           if (next.accessRevision !== undefined && !validAccessRevision(next.accessRevision)) throw new Error("Invalid access revision");
-          acceptServerState(next.accessRevision === undefined ? { status: "locked" } : { status: "locked", accessRevision: next.accessRevision });
+          acceptServerState(next.accessRevision === undefined ? { status: "locked" } : { status: "locked", accessRevision: next.accessRevision, ...(next.constructionWhimsyEnabled === true ? { constructionWhimsyEnabled: true } : {}) });
           return;
         }
         if (!response.ok || next.status !== "published" || !validAccessRevision(next.accessRevision)) throw new Error("Publication unavailable");

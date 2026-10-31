@@ -26,3 +26,9 @@
 .footer a { color: #800014; text-decoration: none; font-size: 12px; width: fit-content; }
 @media (max-width: 500px) { .gate { padding: 20px 12px; align-items: start; } .card { padding: 28px 24px; } }
 .gateMode { position:absolute; right:20px; top:16px; z-index:5; }
+
+/* Locked sessions remain locked; the warning must be readable in either theme. */
+:global([data-owner-portal][data-color-mode="dark"]) .gate .card .alert { background:#46212a; border-color:#ad6575; color:#ffe4e9!important; }
+:global([data-owner-portal][data-color-mode="dark"]) .gate .primary { background:#800014; border-color:#b96c7a; color:#fff; }
+:global([data-owner-portal][data-color-mode="dark"]) .gate .primary:hover { background:#99001b; }
+:global([data-owner-portal][data-color-mode="dark"]) .gate .primary:focus-visible { outline-color:#f4a6b4; }

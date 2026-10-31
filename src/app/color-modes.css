@@ -44,7 +44,7 @@ body:has([data-owner-portal][data-color-mode="dark"]) { background:#18181b; }
 [data-owner-portal][data-color-mode="dark"] :is(dialog,[role="listbox"],[class*="sidebar"],[class*="topbar"],[class*="card"],[class*="Card"],[class*="builder"],[class*="panel"],[class*="Panel"],[class*="toolbar"],[class*="contextbar"],[class*="dialogActions"],[class*="softNote"],[class*="draftCreate"],[class*="blockPalette"],[class*="artWindow"],[class*="previewHeader"],[class*="request"],[class*="inboxNotice"],[class*="service"],[class*="priceRow"],[class*="stage"],[class*="palette"],[class*="Palette"],[class*="headerEditor"],[class*="navRow"],[class*="navLabel"],[class*="numberEntry"],[class*="hexField"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { background-color:var(--owner-surface)!important; border-color:var(--owner-line)!important; color:var(--owner-ink)!important; }
 [data-owner-portal][data-color-mode="dark"] :is(button,input,textarea,select,[role="combobox"],[role="option"],[class*="segmented"],[class*="Switch"]):not(:where([data-site-render-mode],[data-site-render-mode] *)):not([style*="background"]):not(:where([data-owner-button],[data-theme-toggle],[data-service-status])) { color:var(--owner-ink)!important; background-color:var(--owner-raised)!important; border-color:var(--owner-line)!important; }
 [data-owner-portal][data-color-mode="dark"] input[type="color"]:not(:where([data-site-render-mode] *)) { padding:3px!important; }
-[data-owner-portal][data-color-mode="dark"] :is(input,textarea)::placeholder { color:#b4a3ac; opacity:1; }
+[data-owner-portal][data-color-mode="dark"] :is(input,textarea)::placeholder { color:#b8b8bd; opacity:1; }
 [data-owner-portal][data-color-mode="dark"] :is(button:hover,button[aria-current="page"],[role="option"][aria-selected="true"]):not(:disabled):not(:where([data-site-render-mode],[data-site-render-mode] *)):not(:where([data-owner-button],[data-theme-toggle],[data-service-status])) { background-color:#2c2c2d!important; border-color:#7f0011!important; }
 [data-owner-portal][data-color-mode="dark"] :is([class*="primary"],[class*="danger"],[class*="applyShop"]):not(:where([data-site-render-mode],[data-site-render-mode] *)):not(:where([data-owner-button],[data-theme-toggle],[data-service-status])) { background-color:#7f0011!important; color:#fff!important; border-color:#7f0011!important; }
 [data-owner-portal][data-color-mode="dark"] :is(a,[class*="textButton"],[class*="dangerLink"],[class*="required"]):not(:where([data-site-render-mode],[data-site-render-mode] *)) { color:#f4eff1!important; }
@@ -220,3 +220,19 @@ html[data-tmc-theme-pending="light"] { background:#fff; color-scheme:light; }
 
 /* Fox16: the client canvas stays black; existing gray child cards keep their surfaces. */
 [data-theme-scope="public"][data-color-mode="dark"] [data-client-hub] { background:#18181b!important; }
+
+/* Neutral defaults; intentional owner-authored placeholder colors remain explicit. */
+input:not([data-element-text-color="true"])::placeholder, textarea:not([data-element-text-color="true"])::placeholder { color: #737378; opacity: 1; }
+[data-color-mode="dark"] input:not([data-element-text-color="true"])::placeholder,
+[data-color-mode="dark"] textarea:not([data-element-text-color="true"])::placeholder { color: #b8b8bd; opacity: 1; }
+[data-color-mode="light"] input:not([data-element-text-color="true"])::placeholder,
+[data-color-mode="light"] textarea:not([data-element-text-color="true"])::placeholder { color: #737378; opacity: 1; }
+
+/* Owner control focus and decorative icons, never public canvas/client content. */
+[data-owner-portal][data-color-mode] :is(input,textarea,select,[role="combobox"]):focus-visible:not(:where([data-site-render-mode] *,[data-hub-notifications] *)){outline:2px solid #72a9e5!important;outline-offset:2px;}
+[data-owner-portal][data-color-mode] [class*="numberEntry"]:focus-within:not(:where([data-site-render-mode] *,[data-hub-notifications] *)){outline:2px solid #72a9e5!important;outline-offset:2px;}
+[data-owner-portal][data-color-mode] [class*="numberEntry"] input:focus-visible{outline:none!important;}
+[data-owner-portal][data-color-mode="dark"] :is(button,a,[class*="quickCard"],[class*="pageIcon"],[class*="cardTools"])>svg[aria-hidden="true"]:not([data-owner-trash-icon]):not(:where([data-site-render-mode] *,[data-hub-notifications] *,[data-service-status] *)){color:#f3f3f3!important;}
+/* The same blue focus family needs a darker shade against light surfaces. */
+[data-owner-portal][data-color-mode="light"] :is(input,textarea,select,[role="combobox"]):focus-visible:not(:where([data-site-render-mode] *,[data-hub-notifications] *)),
+[data-owner-portal][data-color-mode="light"] [class*="numberEntry"]:focus-within:not(:where([data-site-render-mode] *,[data-hub-notifications] *)){outline-color:#2563eb!important;}

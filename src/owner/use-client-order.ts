@@ -16,5 +16,5 @@ export function useClientOrder(enabled:boolean){
  const save=useCallback((clientIds:string[],expectedRevision:number)=>{if(attempt.current||pending.current||!currentValue.current||currentValue.current.revision!==expectedRevision){setError("The saved order changed. Refresh and review it before dragging again.");return Promise.resolve(false);}return commit({clientIds:[...clientIds],expectedRevision,operationId:crypto.randomUUID()});},[commit]);
  const retrySave=useCallback(()=>attempt.current?commit(attempt.current):Promise.resolve(false),[commit]);
  const reload=useCallback(()=>{if(pending.current)return;attempt.current=null;setRetry(false);void refresh();},[refresh]);
- return {value:enabled?value:null,busy:enabled&&busy,error:enabled?error:"",retry:enabled&&retry,save,retrySave,refresh:reload};
+ return {value:enabled?value:null,busy:enabled&&busy,writeBusy:enabled&&busy&&retry,error:enabled?error:"",retry:enabled&&retry,save,retrySave,refresh:reload};
 }

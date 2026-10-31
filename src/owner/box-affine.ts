@@ -16,7 +16,13 @@ export function layoutSize(node: HTMLElement, axis: "width" | "height", linear?:
     const rect = node.getBoundingClientRect(), matrix = linear ?? elementLinearToScreen(node);
     if (!matrix) return NaN;
     const a = Math.abs(matrix.a), b = Math.abs(matrix.b), c = Math.abs(matrix.c), d = Math.abs(matrix.d), determinant = a*d-b*c;
-    if (Math.abs(determinant) < 1e-8) return NaN;
+    if (Math.abs(determinant) < 1e-8) {
+      // A 45° axis-aligned bounding rectangle cannot recover two inline side
+      // lengths. The affine itself is invertible: use stable local layout
+      // dimensions instead of incorrectly disabling the transform controls.
+      const local = axis === "width" ? node.offsetWidth : node.offsetHeight;
+      return positive(local) ? local : NaN;
+    }
     const width = (d*rect.width-c*rect.height)/determinant, height = (a*rect.height-b*rect.width)/determinant;
     return axis === "width" ? width : height;
   }
@@ -45,9 +51,16 @@ function elementLinearToScreen(node: HTMLElement): Affine | null {
   for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
     const css = window.getComputedStyle?.(ancestor);
     if (css?.perspective && css.perspective !== "none") return null;
-    // Individual rotate/scale/translate properties are uncommon in the public
-    // renderer. Their 3-D/list syntax is deliberately not silently approximated.
-    if ([css?.rotate, css?.scale, css?.translate].some(value => value && value !== "none")) return null;
+    // Individual rotation/scale and unsupported translation syntax are never
+    // silently approximated.
+    if ([css?.rotate, css?.scale].some(value => value && value !== "none")) return null;
+    // Our frame-only content compensation is a finite pixel translation. It
+    // changes no linear axes; elementToScreen recovers it from the DOMRect.
+    // Percent, calc, third-axis and arbitrary transforms still fail closed.
+    if (css?.translate && css.translate !== "none") {
+      const parts=css.translate.trim().split(/\s+/);
+      if(parts.length<1||parts.length>2||!parts.every(part=>/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?px$/i.test(part)&&Number.isFinite(Number.parseFloat(part))))return null;
+    }
     const matrix = parseAffineTransform(css?.transform);
     if (!matrix) return null;
     const zoom = css?.zoom && css.zoom !== "normal" ? Number.parseFloat(css.zoom) / (css.zoom.endsWith("%") ? 100 : 1) : 1;
@@ -107,14 +120,10 @@ export function measureCanvasBox(canvas: HTMLDivElement, node: HTMLElement, box?
   const nodeCss = window.getComputedStyle?.(node);
   const margins = [number(nodeCss?.marginTop), number(nodeCss?.marginRight), number(nodeCss?.marginBottom), number(nodeCss?.marginLeft)];
   const xPercent = (origin.x-contentLeft)/parentWidth*100;
-  const flow = { xPercent: Math.max(0, xPercent), marginTopPx: margins[0], marginRightPx: margins[1], marginBottomPx: margins[2], marginLeftPx: margins[3] };
-  const unsupportedSlotStyle = number(nodeCss?.order) !== 0
-    || (!!nodeCss?.alignSelf && nodeCss.alignSelf !== "auto")
-    || (!!nodeCss?.cssFloat && nodeCss.cssFloat !== "none")
-    || (!!nodeCss?.verticalAlign && nodeCss.verticalAlign !== "baseline")
-    || (!!nodeCss?.writingMode && nodeCss.writingMode !== "horizontal-tb")
-    || (nodeCss?.position === "relative" && [nodeCss.top,nodeCss.right,nodeCss.bottom,nodeCss.left].some(value => value && value !== "auto" && number(value) !== 0));
-  const materializationError = !box && (unsupportedSlotStyle || width < 16 || width > 2400 || height < 16 || height > 2000 || parentWidth < 16 || parentWidth > 4000 || width/parentWidth < .05 || xPercent < -.001 || xPercent+width/parentWidth*100 > 100.001 || margins.some(value => value < 0 || value > 1000) || css?.display?.includes("grid") || ["absolute", "fixed", "sticky"].includes(nodeCss?.position ?? "")) ? "This natural layout cannot be boxed without changing its layout. Reset or simplify its layout first; nothing was changed." : undefined;
+  const flow = { xPercent, marginTopPx: margins[0], marginRightPx: margins[1], marginBottomPx: margins[2], marginLeftPx: margins[3] };
+  // Out-of-section positions, negative margins, grid placement and very large
+  // content are intentional creative choices. Only invalid geometry is rejected.
+  const materializationError = [width,height,parentWidth,...margins,xPercent].every(Number.isFinite) ? undefined : "This layout has nonfinite geometry and cannot be edited safely.";
   return {width,height,parentWidth,origin,flow: box?.flow ?? flow,materializationError,parentToScreen:parentMap,screenToParent:parentInverse,parentToCanvas,nodeToCanvas,heightFactor,
     xPercent:(origin.x-contentLeft)/parentWidth*100,
     left:Math.min(...canvasCorners.map(p=>p.x)),top:Math.min(...canvasCorners.map(p=>p.y)),canvasWidth:canvas.clientWidth ?? canvas.offsetWidth ?? canvas.getBoundingClientRect().width,

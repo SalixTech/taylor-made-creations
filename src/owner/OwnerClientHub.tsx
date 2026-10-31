@@ -120,7 +120,7 @@ export function OwnerClientHub({ onDirtyChange, onBusyChange, openNotification, 
   const editorDirty = !!credentials || !!localLabelEditor || !!(editor && (editor.attempted || JSON.stringify(editor.value) !== JSON.stringify(editor.initial)));
   const profileDirty = !!(profileEditor && (profileEditor.attempted || JSON.stringify(profileEditor.value) !== JSON.stringify(profileEditor.initial)));
   const dirty = editorDirty || workspaceDirty || profileDirty || defaultsDirty || labelDirty || labelSettings.retry || clientOrder.retry;
-  const canDiscardLocal = dirty && !busy && !workspaceBusy && !editor?.attempted && !profileEditor?.attempted && !credentials && !resetTarget && !defaultsDirty && !labelDirty && !labelSettings.busy && !labelSettings.retry && !clientOrder.retry && !clientOrder.busy && (!workspaceDirty || workspaceDiscardSafe);
+  const canDiscardLocal = dirty && !busy && !workspaceBusy && !editor?.attempted && !profileEditor?.attempted && !credentials && !resetTarget && !defaultsDirty && !labelDirty && !labelSettings.busy && !labelSettings.retry && !clientOrder.retry && !clientOrder.writeBusy && (!workspaceDirty || workspaceDiscardSafe);
   useEffect(() => {
     onDiscardReady?.(canDiscardLocal ? () => {
       if (pending.current || workspaceDirty && !workspaceDiscardCheck.current?.()) return;
@@ -130,14 +130,14 @@ export function OwnerClientHub({ onDirtyChange, onBusyChange, openNotification, 
     return () => onDiscardReady?.(null);
   }, [canDiscardLocal, onDiscardReady, workspaceDirty, updateWorkspaceDirty, setModalError]);
   useEffect(() => { onDirtyChange?.(dirty); return () => onDirtyChange?.(false); }, [dirty, onDirtyChange]);
-  useEffect(() => { onBusyChange?.(busy || workspaceBusy || labelSettings.busy || clientOrder.busy); return () => onBusyChange?.(false); }, [busy, workspaceBusy, labelSettings.busy, clientOrder.busy, onBusyChange]);
+  useEffect(() => { onBusyChange?.(busy || workspaceBusy || labelSettings.busy || clientOrder.writeBusy); return () => onBusyChange?.(false); }, [busy, workspaceBusy, labelSettings.busy, clientOrder.writeBusy, onBusyChange]);
   useEffect(() => { if (!notice || /^(?:Profile editor closed|Editor closed)/.test(notice)) return; const timer = window.setTimeout(() => setNotice(""), 6_000); return () => window.clearTimeout(timer); }, [notice, noticeVersion, setNotice]);
   useEffect(() => {
-    if (!dirty && !busy && !workspaceBusy && !clientOrder.busy) return;
+    if (!dirty && !busy && !workspaceBusy && !clientOrder.writeBusy) return;
     const block = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", block);
     return () => window.removeEventListener("beforeunload", block);
-  }, [dirty, busy, workspaceBusy, clientOrder.busy]);
+  }, [dirty, busy, workspaceBusy, clientOrder.writeBusy]);
   useEffect(() => { if (!modalError) return; const show=window.setTimeout(()=>setModalErrorVisible(true),0), hide=window.setTimeout(()=>setModalErrorVisible(false),6000); return()=>{window.clearTimeout(show);window.clearTimeout(hide);}; },[modalError,modalErrorRevision]);
   useEffect(() => { if (!modalNotice) return; modalNoticeRef.current?.scrollIntoView({block:"nearest"}); const timer=window.setTimeout(()=>setModalNotice(""),6000);return()=>window.clearTimeout(timer);},[modalNotice]);
   useEffect(() => { if (!localLabelError) return; const timer=window.setTimeout(()=>setLocalLabelError(""),6000);return()=>window.clearTimeout(timer);},[localLabelError]);

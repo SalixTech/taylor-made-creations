@@ -143,14 +143,14 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
         </>
           : state.status === "denied" || state.status === "session-error" ? <>
             <p className={styles.alert} role="alert">{state.message}</p>
-            {state.canSignOut ? <button className={styles.primary} type="button" onClick={() => { void signOut(); }}>Sign out</button> : <button className={styles.primary} type="button" onClick={() => window.location.reload()}>Reload page</button>}
+            {state.canSignOut ? <button data-owner-button className={styles.primary} type="button" onClick={() => { void signOut(); }}>Sign out</button> : <button data-owner-button className={styles.primary} type="button" onClick={() => window.location.reload()}>Reload page</button>}
           </>
             : <>
               <form onSubmit={signIn}>
                 <label className={styles.field}>Head Floof Email<input type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} disabled={busy} /></label>
                 <label className={styles.field}>Pawsword<input type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} disabled={busy} /></label>
                 {message && <p className={styles.alert} role="alert">{message}</p>}
-                <button className={styles.primary} type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in to Taylor’s Space"}</button>
+                <button data-owner-button className={styles.primary} type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in to Taylor’s Space"}</button>
               </form>
               <p className={styles.hint}>Your sign-in stays in this browser tab’s session. Sign out when you’re finished on a shared device. There is no public account registration.</p>
             </>}

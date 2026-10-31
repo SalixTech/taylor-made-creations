@@ -1,9 +1,10 @@
+import { decodeConstructionWhimsyRestDocument } from "../owner/construction-whimsy";
 import { cache } from "react";
 import { assertPublishedOwnerSnapshot, type PublishedOwnerSnapshot } from "../owner/model";
 import { decodeSiteAccessRestDocument } from "../owner/site-access";
 
 export type PublicSiteState = (
-  | { status: "locked" }
+  | { status: "locked"; constructionWhimsyEnabled?: boolean }
   | { status: "baseline"; reason: "unconfigured" | "not-published" }
   | { status: "published"; snapshot: PublishedOwnerSnapshot }
   | { status: "error"; message: string }
@@ -47,7 +48,18 @@ export async function readPublishedSite({ projectId = process.env.NEXT_PUBLIC_FI
     if (new TextEncoder().encode(text).byteLength > 4096) return { status: "locked" };
     const access = decodeSiteAccessRestDocument(JSON.parse(text));
     accessRevision = access.revision;
-    if (access.constructionMode) return { status: "locked", accessRevision };
+    if (access.constructionMode) {
+      // Optional tiny public flag only. A failed/absent flag never unlocks the site
+      // or causes a draft/publication fetch while construction mode is active.
+      try {
+        const whimsy = await read("constructionWhimsy");
+        if (whimsy.ok) {
+          const body = await whimsy.text();
+          if (new TextEncoder().encode(body).byteLength <= 4096 && decodeConstructionWhimsyRestDocument(JSON.parse(body)).enabled) return { status: "locked", accessRevision, constructionWhimsyEnabled: true };
+        }
+      } catch { /* Missing or invalid optional settings remain off. */ }
+      return { status: "locked", accessRevision };
+    }
   } catch { return { status: "locked" }; }
   try {
     const response = await read("published");

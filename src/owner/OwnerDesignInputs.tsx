@@ -46,7 +46,7 @@ export function OwnerHexInput({ label, value, onChange }: { label: string; value
   const invalid = typing !== null && !normalizeHexColor(typing);
   return <div className={styles.hexField}>
     <label htmlFor={id}>{label} hex</label>
-    <input id={id} type="text" inputMode="text" maxLength={7} spellCheck={false} autoComplete="off" value={typing ?? value.toUpperCase()} placeholder="#800014" aria-invalid={invalid || undefined} aria-describedby={invalid ? `${id}-error` : undefined} onFocus={() => setTyping(value.toUpperCase())} onChange={event => { const raw = event.target.value; setTyping(raw); const color = normalizeHexColor(raw); if (color) onChange(color); }} onBlur={() => setTyping(null)} />
-    {invalid && <small id={`${id}-error`}>Use 3 or 6 hex digits. Last valid color is kept.</small>}
+    <input id={id} type="text" inputMode="text" maxLength={7} spellCheck={false} autoComplete="off" value={typing ?? value.toUpperCase()} placeholder="#800014" aria-invalid={invalid || undefined} aria-describedby={`${id}-error`} onFocus={() => setTyping(value.toUpperCase())} onChange={event => { const raw = event.target.value; setTyping(raw); const color = normalizeHexColor(raw); if (color) onChange(color); }} onBlur={() => setTyping(null)} />
+    <small id={`${id}-error`}>{invalid?"Use 3 or 6 hex digits. Last valid color is kept.":"Custom #RGB or #RRGGBB"}</small>
   </div>;
 }

@@ -20,12 +20,14 @@ export const DESIGN_COLOR_FIELDS = [
   { key: "footerBackground", label: "Footer background", defaultValue: "#f8f7f5" },
   { key: "footerText", label: "Footer text", defaultValue: "#706a67" },
   { key: "buttonText", label: "Button text", defaultValue: "#ffffff" },
-  { key: "border", label: "Borders and dividers", defaultValue: "#e3dfdb" },
+  { key: "sectionDivider", label: "Section divider color", defaultValue: "#e3dfdb" },
+  { key: "border", label: "Borders and controls", defaultValue: "#e3dfdb" },
   { key: "surface", label: "Cards and panels", defaultValue: "#ffffff" },
 ] as const;
 const fonts = [{ value: "original", label: "Original site" }, { value: "sans", label: "Clean sans-serif" }, { value: "serif", label: "Classic serif" }, { value: "rounded", label: "Friendly rounded" }, { value: "mono", label: "Monospace" }] as const;
 const sizes = [{ value: "small", label: "Small" }, { value: "standard", label: "Standard" }, { value: "large", label: "Large" }] as const;
 export const DESIGN_SELECT_FIELDS = [
+  { key: "sectionDividers", label: "Section dividers", defaultValue: "visible", options: [{ value: "visible", label: "On" }, { value: "hidden", label: "Off" }] },
   { key: "bodyFont", label: "Body font", defaultValue: "original", options: fonts },
   { key: "headingFont", label: "Heading font", defaultValue: "original", options: fonts },
   { key: "textSize", label: "Text size", defaultValue: "standard", options: sizes },
@@ -39,7 +41,19 @@ export const DESIGN_SELECT_FIELDS = [
 export type DesignColorKey = typeof DESIGN_COLOR_FIELDS[number]["key"];
 export type DesignSelectKey = typeof DESIGN_SELECT_FIELDS[number]["key"];
 type DesignSelections = { [F in typeof DESIGN_SELECT_FIELDS[number] as F["key"]]?: F["options"][number]["value"] };
-export type SiteDesign = DesignSelections & { bodyFontSize?: number; headingFontSize?: number; bodyFontId?: string; headingFontId?: string; colors?: Partial<Record<DesignColorKey, string>> };
+export type DesignValues = DesignSelections & { bodyFontSize?: number; headingFontSize?: number; bodyFontId?: string; headingFontId?: string; colors?: Partial<Record<DesignColorKey, string>> };
+export type SiteDesign = DesignValues & { mobileLayoutEnabled?: boolean; mobileDesign?: DesignValues };
+export function resolveSiteDesign(value?: SiteDesign, useMobile = false): DesignValues | undefined {
+  if (!value) return undefined;
+  if (useMobile) return structuredClone(value.mobileDesign ?? {});
+  const {mobileLayoutEnabled:_enabled,mobileDesign:_mobile,...desktop} = value; void _enabled; void _mobile;
+  return structuredClone(desktop);
+}
+export function setSiteDesignForLayout(value: SiteDesign | undefined, next: DesignValues | undefined, useMobile: boolean): SiteDesign | undefined {
+  if (useMobile) return {...structuredClone(value ?? {}),mobileDesign:structuredClone(next ?? {})};
+  if (!next && value?.mobileLayoutEnabled === undefined && value?.mobileDesign === undefined) return undefined;
+  return {...structuredClone(next ?? {}),...(value?.mobileLayoutEnabled !== undefined ? {mobileLayoutEnabled:value.mobileLayoutEnabled}:{}),...(value?.mobileDesign !== undefined ? {mobileDesign:structuredClone(value.mobileDesign)}:{})};
+}
 export type TemplateTextField = { key: string; label: string; group: TemplateGroup; defaultValue: string; optional?: boolean };
 export type TemplateImageField = { key: string; label: string; group: TemplateGroup; defaultValue: TemplateImage };
 export type TemplateLinkField = { key: string; label: string; group: TemplateGroup; defaultValue: TemplateLink };
@@ -131,7 +145,7 @@ export function getSiteThemeStyle(content: Pick<OwnerContent, "design"> | null |
   if (design.textSize && Object.hasOwn({ small: 0.9, standard: 1, large: 1.1 }, design.textSize)) style["--site-text-scale"] = { small: 0.9, standard: 1, large: 1.1 }[design.textSize];
   for (const [key, css] of [["bodyFontSize", "--site-body-font-size"], ["headingFontSize", "--site-heading-font-size"]] as const) {
     const value = design[key];
-    if (typeof value === "number" && Number.isFinite(value) && value >= 8 && value <= 144) style[css] = `${value}px`;
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) style[css] = `${value}px`;
   }
   const bodyFont = customFontFamily(design.bodyFontId), headingFont = customFontFamily(design.headingFontId);
   if (bodyFont) style["--site-body-font"] = `'${bodyFont}',Arial,Helvetica,sans-serif`;
@@ -140,5 +154,5 @@ export function getSiteThemeStyle(content: Pick<OwnerContent, "design"> | null |
 }
 export function getSiteThemeAttributes(content: Pick<OwnerContent, "design"> | null | undefined) {
   const design = content?.design;
-  return { "data-site-theme": design ? "true" : undefined, "data-site-body-font-size": typeof design?.bodyFontSize === "number" && design.bodyFontSize >= 8 && design.bodyFontSize <= 144 ? "true" : undefined, "data-site-heading-font-size": typeof design?.headingFontSize === "number" && design.headingFontSize >= 8 && design.headingFontSize <= 144 ? "true" : undefined, "data-site-body-font": (design?.bodyFont || customFontFamily(design?.bodyFontId)) ? "true" : undefined, "data-site-heading-font": (design?.headingFont || customFontFamily(design?.headingFontId)) ? "true" : undefined, "data-site-text-size": design?.textSize && design.bodyFontSize === undefined ? "true" : undefined, "data-site-heading-size": design?.headingSize && design.headingFontSize === undefined ? "true" : undefined, "data-site-button-radius": design?.buttonRadius ? "true" : undefined, "data-site-content-width": design?.contentWidth ? "true" : undefined, "data-site-spacing": design?.spacing ? "true" : undefined, "data-site-home-intro": design?.homeIntro, "data-site-header-tagline": design?.headerTagline };
+  return { "data-site-section-dividers": design?.sectionDividers === "hidden" ? "hidden" : undefined, "data-site-theme": design ? "true" : undefined, "data-site-body-font-size": typeof design?.bodyFontSize === "number" && Number.isFinite(design.bodyFontSize) && design.bodyFontSize > 0 ? "true" : undefined, "data-site-heading-font-size": typeof design?.headingFontSize === "number" && Number.isFinite(design.headingFontSize) && design.headingFontSize > 0 ? "true" : undefined, "data-site-body-font": (design?.bodyFont || customFontFamily(design?.bodyFontId)) ? "true" : undefined, "data-site-heading-font": (design?.headingFont || customFontFamily(design?.headingFontId)) ? "true" : undefined, "data-site-text-size": design?.textSize && design.bodyFontSize === undefined ? "true" : undefined, "data-site-heading-size": design?.headingSize && design.headingFontSize === undefined ? "true" : undefined, "data-site-button-radius": design?.buttonRadius ? "true" : undefined, "data-site-content-width": design?.contentWidth ? "true" : undefined, "data-site-spacing": design?.spacing ? "true" : undefined, "data-site-home-intro": design?.homeIntro, "data-site-header-tagline": design?.headerTagline };
 }

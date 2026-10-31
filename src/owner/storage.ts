@@ -1,3 +1,4 @@
+import type { ConstructionWhimsy } from "./construction-whimsy";
 import { applySettingsCard, type SettingsCardId } from "./settings-cards";
 import { createDefaultOwnerContent, createInitialOwnerWorkspace } from "./defaults";
 import { assertOwnerContent, assertOwnerWorkspace, assertOwnerNamedDraft, assertOwnerDraftId, normalizeOwnerDraftName, namedDraftSummary, newOwnerId, MAX_NAMED_DRAFTS, OwnerValidationError } from "./model";
@@ -71,6 +72,8 @@ export interface OwnerStore {
   /** Changes only an already-published shop flag, never publishes draft edits. */
   updateLiveShopVisibility?(showPremades: boolean, expectedRevision: number): Promise<OwnerWorkspace>;
   /** Minimal live gate, independent of workspace/publication. Missing config is ON, revision zero. */
+  readLiveConstructionWhimsy?(): Promise<ConstructionWhimsy>;
+  updateConstructionWhimsy?(enabled: boolean, expectedRevision: number): Promise<ConstructionWhimsy>;
   readLiveSiteAccess?(): Promise<SiteAccess>;
   /** Exact-owner, optimistic transaction. Opening requires an existing valid published snapshot. */
   updateConstructionMode?(constructionMode: boolean, expectedRevision: number): Promise<SiteAccess>;

@@ -16,7 +16,7 @@ import { ClientHub } from "@/client-hub/ClientHub";
 
 export function PublishedPage({ slug, fallback, serverState }: { slug: string[]; fallback?: ReactNode; request?: boolean; serverState: PublicSiteState }) {
   const state = usePublicServerState(serverState);
-  if (state.status === "locked") return <UnderConstruction />;
+  if (state.status === "locked") return <UnderConstruction goldEnabled={state.constructionWhimsyEnabled === true} />;
   if (state.status === "error") return <PublicUnavailable message={state.message} />;
   if (state.status === "baseline") return fallback ?? <PublicNotFound state={state} />;
   const content = publicContentToOwnerContent(state.snapshot.content);

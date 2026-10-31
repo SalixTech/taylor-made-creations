@@ -23,9 +23,10 @@ export function OwnerDesignPanel({ content, onEdit, onReset }: Props) {
     <p className={ui.help}>These choices change the whole website, including this live canvas. Your public website changes only when you publish.</p>
     <section className={styles.group} aria-labelledby="builder-colors-heading">
       <h3 id="builder-colors-heading">Website colors</h3>
+      <label><input type="checkbox" checked={content.design?.sectionDividers !== "hidden"} onChange={event => onEdit(draft => { draft.design = { ...draft.design, sectionDividers: event.target.checked ? "visible" : "hidden" }; })} /> Section dividers</label>
       <p className={styles.hint}>Choose a swatch to open the color picker. Keep text and backgrounds easy to read. Price text changes amounts on the price sheet and premade listings without changing accents or buttons. Until you choose a color, it follows the accent; Reset restores that link.</p>
       <div className={styles.colors}>{DESIGN_COLOR_FIELDS.map(field => {
-        const value = content.design?.colors?.[field.key] ?? (field.key === "priceText" ? content.design?.colors?.accent : undefined) ?? field.defaultValue;
+        const value = content.design?.colors?.[field.key] ?? (field.key === "priceText" ? content.design?.colors?.accent : field.key === "sectionDivider" ? content.design?.colors?.border : undefined) ?? field.defaultValue;
         const overridden = content.design?.colors?.[field.key] !== undefined;
         return <div key={field.key} className={styles.colorRow}>
           <label><input type="color" aria-label={field.label} value={value} onChange={event => {
@@ -40,10 +41,10 @@ export function OwnerDesignPanel({ content, onEdit, onReset }: Props) {
     </section>
     <section className={styles.group} aria-labelledby="builder-type-heading">
       <h3 id="builder-type-heading">Fonts, layout & buttons</h3>
-      <OwnerNumberInput label="Body font size" value={content.design?.bodyFontSize} min={8} max={144} unit="px" hint="8–144 px. Clear to preserve the original or existing size setting." onChange={value => onEdit(draft => { draft.design ??= {}; if (value === undefined) delete draft.design.bodyFontSize; else draft.design.bodyFontSize = value; })} />
-      <OwnerNumberInput label="Heading font size" value={content.design?.headingFontSize} min={8} max={144} unit="px" hint="8–144 px. Clear to preserve the original or existing size setting." onChange={value => onEdit(draft => { draft.design ??= {}; if (value === undefined) delete draft.design.headingFontSize; else draft.design.headingFontSize = value; })} />
+      <OwnerNumberInput label="Body font size" value={content.design?.bodyFontSize} min={Number.MIN_VALUE} max={Number.MAX_VALUE} unit="px" hint="Any positive font size. Clear to preserve the original or existing size setting." onChange={value => onEdit(draft => { draft.design ??= {}; if (value === undefined) delete draft.design.bodyFontSize; else draft.design.bodyFontSize = value; })} />
+      <OwnerNumberInput label="Heading font size" value={content.design?.headingFontSize} min={Number.MIN_VALUE} max={Number.MAX_VALUE} unit="px" hint="Any positive font size. Clear to preserve the original or existing size setting." onChange={value => onEdit(draft => { draft.design ??= {}; if (value === undefined) delete draft.design.headingFontSize; else draft.design.headingFontSize = value; })} />
       {!!content.fonts?.length && ([ ["bodyFontId", "Uploaded body font"], ["headingFontId", "Uploaded heading font"] ] as const).map(([key, label]) => <OwnerSelect key={key} label={label} value={content.design?.[key] ?? ""} options={[{ value: "", label: "Use standard font choice" }, ...content.fonts!.map(font => ({ value: font.id, label: font.name }))]} onChange={value => { if (value && !content.fonts?.some(font => font.id === value)) return; onEdit(draft => { draft.design ??= {}; if (value) draft.design[key] = value; else delete draft.design[key]; }); }} />)}
-      {DESIGN_SELECT_FIELDS.filter(field => field.key !== "textSize" && field.key !== "headingSize").map(field => <OwnerSelect key={field.key} label={field.label} value={content.design?.[field.key] ?? field.defaultValue} options={field.options} onChange={value => {
+      {DESIGN_SELECT_FIELDS.filter(field => field.key !== "textSize" && field.key !== "headingSize" && field.key !== "sectionDividers").map(field => <OwnerSelect key={field.key} label={field.label} value={content.design?.[field.key] ?? field.defaultValue} options={field.options} onChange={value => {
         if (!field.options.some(option => option.value === value)) return;
         onEdit(draft => { draft.design = { ...draft.design, [field.key]: value }; });
       }} />)}

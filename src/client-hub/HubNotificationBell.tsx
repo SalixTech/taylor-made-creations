@@ -4,21 +4,23 @@ import { useEffect, useId, useRef, useState } from "react";
 import { hubNotificationUnreadCount, type HubNotification } from "./model";
 import { subscribeHubNotifications } from "./workspace-client";
 import { changeHubNotifications, loadHubNotificationLabels, type HubNotificationAction } from "./notification-client";
-import { watchOwnerIntakeNotifications, markOwnerIntakeNotificationRead, type OwnerIntakeNotification } from "@/owner/owner-intake-notifications";
+import { watchOwnerIntakeNotifications, markOwnerIntakeNotificationRead, captureOwnerIntakeNotifications, type OwnerIntakeNotification } from "@/owner/owner-intake-notifications";
 import styles from "./HubNotificationBell.module.css";
-import { useInvoiceInbox } from "./InvoiceInbox";
+import {captureHubInvoiceAlerts} from "./invoice-client";
+import { useInvoiceInbox, type InvoiceSupportNavigation } from "./InvoiceInbox";
 import { notificationAreaIsActive } from "./notification-presence";
 import { createStudioNotificationAudio, playNotificationAudio, primeStudioNotificationAudio } from "./notification-audio";
 
 const channelName = { chat: "Maker Chat", photos: "Photos", requests: "Requests" };
 type Preference = { desktop: boolean; sound: boolean };
 /** Account-scoped summaries. Notification actions never claim that a conversation was viewed. */
-export function HubNotificationBell({ owner, accountKey, onNavigate, onNavigateIntake }: { owner: boolean; accountKey: string; onNavigate?: (item: HubNotification) => void; onNavigateIntake?: (item: OwnerIntakeNotification) => boolean }) {
-  const invoices = useInvoiceInbox(owner, accountKey);
+export function HubNotificationBell({ owner, accountKey, onNavigate, onNavigateIntake, onContactInvoiceSupport }: { onContactInvoiceSupport?:InvoiceSupportNavigation; owner: boolean; accountKey: string; onNavigate?: (item: HubNotification) => void; onNavigateIntake?: (item: OwnerIntakeNotification) => boolean }) {
+  const invoices = useInvoiceInbox(owner, accountKey,onContactInvoiceSupport);
   const id = useId(), [open, setOpen] = useState(false), [accountItems, setAccountItems] = useState<{ key: string; items: HubNotification[] } | null>(null), [error, setError] = useState("");
   const [intakeState, setIntakeState] = useState<{ key: string; items: OwnerIntakeNotification[]; error: string } | null>(null);
   const [intakeBusy, setIntakeBusy] = useState(false);
-  const intakeAction = useRef(false);
+  const intakeAction = useRef(false),clearAllAttempt=useRef<AbortController|null>(null);
+  const [clearAllBusy,setClearAllBusy]=useState(false);
   const [labels, setLabels] = useState<{ key: string; titles: Record<string, string> } | null>(null);
   const [optimistic, setOptimistic] = useState<{ key: string; versions: Record<string, number>; action: HubNotificationAction } | null>(null);
   const [actionState, setActionState] = useState<{ key: string; busy: boolean; error: string } | null>(null);
@@ -27,15 +29,15 @@ export function HubNotificationBell({ owner, accountKey, onNavigate, onNavigateI
   const prefKey = `tmc-hub-notifications:${owner ? "owner" : "client"}:${accountKey}`;
   const preferenceScope = useRef({ key: prefKey, generation: 0, active: true }), permissionAttempt = useRef<object | null>(null), actionAttempt = useRef<AbortController | null>(null);
   useEffect(() => {
-    versions.current = null; permissionAttempt.current = null; actionAttempt.current?.abort(); actionAttempt.current = null; currentPreference.current = { desktop: false, sound: false };
+    clearAllAttempt.current?.abort();clearAllAttempt.current=null;versions.current = null; permissionAttempt.current = null; actionAttempt.current?.abort(); actionAttempt.current = null; currentPreference.current = { desktop: false, sound: false };
     const scope = { key: prefKey, generation: preferenceScope.current.generation + 1, active: true }; preferenceScope.current = scope;
     let active = true;
     void Promise.resolve().then(() => {
       if (!active) return;
-      setPermissionBusy(false); setPermission(""); setPreference({ desktop: false, sound: false }); setActionState(null); setOptimistic(null);
+      setClearAllBusy(false);setPermissionBusy(false); setPermission(""); setPreference({ desktop: false, sound: false }); setActionState(null); setOptimistic(null);
       try { const value = JSON.parse(window.localStorage.getItem(prefKey) ?? "null"); const preference = { desktop: value?.desktop === true, sound: !owner && value?.sound === true }; setPreference(preference); currentPreference.current = preference; } catch { /* Optional local display preference, never authority. */ }
     });
-    return () => { active = false; scope.active = false; actionAttempt.current?.abort(); soundPlayer.current?.pause(); soundPlayer.current = null; };
+    return () => { active = false; scope.active = false; clearAllAttempt.current?.abort();actionAttempt.current?.abort(); soundPlayer.current?.pause(); soundPlayer.current = null; };
   }, [prefKey, owner]);
   useEffect(() => { currentPreference.current = preference; }, [preference]);
   useEffect(() => {
@@ -85,15 +87,16 @@ export function HubNotificationBell({ owner, accountKey, onNavigate, onNavigateI
     }, () => { if (active) setIntakeState(previous => ({ key: prefKey, items: previous?.key === prefKey ? previous.items : [], error: "Request alerts could not connect. Open your request inbox to check." })); });
     return () => { active = false; unsubscribe(); };
   }, [owner, prefKey]);
-  async function acknowledgeIntake(captured: OwnerIntakeNotification[]) {
-    if (!owner || intakeAction.current || !captured.length) return;
+  async function acknowledgeIntake(captured: OwnerIntakeNotification[],all=false) {
+    if (!owner || intakeAction.current || !all&&!captured.length) return;
     const scope = preferenceScope.current;
     intakeAction.current = true; setIntakeBusy(true);
     try {
-      await Promise.all(captured.map(markOwnerIntakeNotificationRead));
+      const items=all?await captureOwnerIntakeNotifications():captured.map(item=>({...item}));
+      for(let start=0;start<items.length;start+=4){if(!scope.active||preferenceScope.current!==scope)return;await Promise.all(items.slice(start,start+4).map(item=>markOwnerIntakeNotificationRead(item)));}
       if (scope.active && preferenceScope.current === scope) setIntakeState(previous => previous?.key !== prefKey ? previous : { ...previous, error: "" });
     } catch {
-      if (scope.active && preferenceScope.current === scope) setIntakeState(previous => ({ key: prefKey, items: previous?.key === prefKey ? previous.items : [], error: "Could not clear that request alert. The request is unchanged." }));
+      if (scope.active && preferenceScope.current === scope) setIntakeState(previous => ({ key: prefKey, items: previous?.key === prefKey ? previous.items : [], error: "Some request alerts could not be cleared. Retry the remaining alerts; requests are unchanged." }));
     } finally { intakeAction.current = false; if (scope.active && preferenceScope.current === scope) setIntakeBusy(false); }
   }
   useEffect(() => {
@@ -134,6 +137,17 @@ export function HubNotificationBell({ owner, accountKey, onNavigate, onNavigateI
       if (scope.active && preferenceScope.current === scope && !controller.signal.aborted) { setOptimistic(null); setActionState({ key: prefKey, busy: false, error: "The notification action could not be confirmed. Please try again. Messages are unchanged." }); }
     } finally { if (actionAttempt.current === controller) actionAttempt.current = null; }
   }
+  async function clearAll(){
+    if(clearAllAttempt.current||actionAttempt.current||intakeAction.current||invoices.busy||accountItems?.key!==prefKey||error)return;
+    const scope=preferenceScope.current,controller=new AbortController();clearAllAttempt.current=controller;setClearAllBusy(true);
+    // Capture every source before the first write. Future arrivals are never swept.
+    const captured=items.filter(item=>(item.dismissedVersion??0)<item.version).map(item=>({...item}));let dismissing=false;
+    try{const [invoiceItems,intakeItems]=await Promise.all([captureHubInvoiceAlerts(owner,controller.signal),owner?captureOwnerIntakeNotifications(controller.signal):Promise.resolve([])]);
+      if(!scope.active||preferenceScope.current!==scope||controller.signal.aborted)return;
+      dismissing=true;await Promise.all([act("dismiss",captured),acknowledgeIntake(intakeItems),invoices.clearCaptured(invoiceItems)]);
+    }catch(cause){if(scope.active&&preferenceScope.current===scope&&!controller.signal.aborted)setActionState({key:prefKey,busy:false,error:dismissing?"Not all alerts could be cleared. Some may already be dismissed; retry the remaining alerts. Messages and payments are unchanged.":cause&&typeof cause==="object"&&"code" in cause&&(cause.code==="clear-all-too-large"||String(cause.code).endsWith("resource-exhausted"))?"There are too many alerts for one safe capture. Nothing was cleared. Dismiss individual alerts or a smaller group, then try Clear All again.":"Clear All could not capture every alert. Nothing was cleared by this attempt. Try again; messages and payments are unchanged."});}
+    finally{if(clearAllAttempt.current===controller)clearAllAttempt.current=null;if(scope.active&&preferenceScope.current===scope)setClearAllBusy(false);}
+  }
   const items = (accountItems?.key === prefKey ? accountItems.items : []).map(item => {
     const captured = optimistic?.key === prefKey ? optimistic.versions[item.notificationId] : undefined;
     if (captured === undefined) return item;
@@ -149,7 +163,7 @@ export function HubNotificationBell({ owner, accountKey, onNavigate, onNavigateI
     <button ref={trigger} type="button" className={styles.bell} aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread updates` : ""}`} title="Notifications" aria-expanded={open} aria-controls={id} onClick={() => { if (owner && currentPreference.current.desktop) armOwnerSound(); setOpen(value => !value); }}><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>{unreadCount > 0 && <span className={styles.count}>{unreadCount > 99 ? "99+" : unreadCount}</span>}</button>
     {open && <div ref={panel} id={id} className={styles.panel} role="region" aria-label="Notifications">
       <header><strong>Your studio updates</strong><button type="button" aria-label="Close notifications" onClick={() => { setOpen(false); trigger.current?.focus(); }}><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button></header>
-      {unreadCount > 0 && <div className={styles.actions}><button type="button" disabled={busy || intakeBusy || invoices.busy} onClick={() => { void act("acknowledge", unread); void acknowledgeIntake(intakeUnread); invoices.markAllRead(); }} title="Clears these notifications only. Conversation read receipts change when you view the messages.">{busy ? "Updating…" : "Mark all as read"}</button><small>Notification controls don’t change message read receipts.</small></div>}
+      {true && <div className={styles.actions}><button type="button" disabled={clearAllBusy || busy || intakeBusy || invoices.busy} onClick={() => { void act("acknowledge", unread); void acknowledgeIntake(intakeUnread); invoices.markAllRead(); }} title="Clears these notifications only. Conversation read receipts change when you view the messages.">{busy ? "Updating…" : "Mark all as read"}</button><button type="button" disabled={clearAllBusy || busy || intakeBusy || invoices.busy || accountItems?.key!==prefKey || !!error} onClick={()=>void clearAll()} title="Dismiss all captured account alerts. New arrivals and message read receipts are unchanged.">{clearAllBusy?"Clearing…":"Clear All"}</button><small>Notification controls don’t change message read receipts. Clears captured alerts only; new arrivals are unchanged.</small></div>}
       {actionError && <p role="status">{actionError}</p>}
       {error ? <p role="status">{error}</p> : unread.length ? <ul aria-label="Unread notifications">{unread.map(item => {
         const count = hubNotificationUnreadCount(item), title = titles[item.projectId] || `Commission ${item.projectId.slice(0, 8)}`, unit = item.channel === "chat" ? "message" : "update";
@@ -166,7 +180,7 @@ export function HubNotificationBell({ owner, accountKey, onNavigate, onNavigateI
         }}><span className={styles.unreadDot} aria-hidden="true" /><span className={styles.notificationText}><strong>{title}</strong><span className={styles.channel}>Open your private request inbox</span><small>{new Date(item.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</small></span></button><button type="button" className={styles.dismiss} disabled={intakeBusy} aria-label={`Dismiss ${title.toLowerCase()} alert`} title="Dismiss alert, not request" onClick={() => void acknowledgeIntake([item])}><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m4 4 8 8M12 4l-8 8" /></svg></button></li>;
       })}</ul>}
       {invoices.alertSection}
-      <div className={styles.preferences}><strong>This browser</strong><button type="button" disabled={permissionBusy} onClick={() => { if (preference.desktop) savePreference({ ...preference, desktop: false }); else void enableDesktop(); }}>{permissionBusy ? "Waiting for browser…" : preference.desktop ? "Turn desktop notifications off" : "Enable desktop notifications"}</button>{!owner && <><label><input type="checkbox" checked={preference.sound} onChange={event => savePreference({ ...preference, sound: event.target.checked })} /> Sound alerts</label><small>Uses your browser or device’s notification sound. Desktop notifications must be on; sound availability depends on browser and system settings.</small></>}{permission && <p role="status">{permission}</p>}</div>
+      <div className={styles.preferences}><button type="button" disabled={permissionBusy} onClick={() => { if (preference.desktop) savePreference({ ...preference, desktop: false }); else void enableDesktop(); }}>{permissionBusy ? "Waiting for browser…" : preference.desktop ? "Turn desktop notifications off" : "Enable desktop notifications"}</button>{!owner && <><label><input type="checkbox" checked={preference.sound} onChange={event => savePreference({ ...preference, sound: event.target.checked })} /> Sound alerts</label><small>Uses your browser or device’s notification sound. Desktop notifications must be on; sound availability depends on browser and system settings.</small></>}{permission && <p role="status">{permission}</p>}</div>
     </div>}
     {invoices.dialog}
   </div>;

@@ -1,3 +1,5 @@
+import { validateContentCanvasLayout, projectCanvasLayouts, type CanvasLayout } from "./canvas-layout";
+import { isCanvasStyleKey, canvasStyleKeyIsPublic } from "./canvas-target-registry";
 import { validElementBox } from "./box-geometry";
 import { validateCommissionFormConfig, projectCommissionFormConfig, type CommissionFormConfig } from "../components/commission-form-config";
 import { DESIGN_COLOR_FIELDS, DESIGN_SELECT_FIELDS, TEXT_FIELDS, IMAGE_FIELDS, LINK_FIELDS, STYLE_FIELDS, type SiteDesign, type ContentOverrides, type ElementAppearance } from "./site-design";
@@ -18,10 +20,12 @@ export type LinkBlock = { id: string; type: "link"; label: string; href: string 
 export type HeadingBlock = { id: string; type: "heading"; text: string; level: 2 | 3 };
 export type ListBlock = { id: string; type: "list"; items: string[]; style: "bullet" | "numbered" };
 export type DividerBlock = { id: string; type: "divider" };
+export type CanvasSpaceBlock = { id: string; type: "canvas-space"; widthPx: number; heightPx: number };
 export type SpacerBlock = { id: string; type: "spacer"; size: "small" | "medium" | "large" };
 export type FaqBlock = { id: string; type: "faq"; items: { id: string; question: string; answer: string }[] };
 export type FeatureBlock = { id: string; type: "feature"; heading: string; body: string; src: string; alt: string; imageSide: "left" | "right" };
-export type PageBlock = (TextBlock | ImageBlock | LinkBlock | HeadingBlock | ListBlock | DividerBlock | SpacerBlock | FaqBlock | FeatureBlock) & { appearance?: ElementAppearance };
+export type SectionBlock = { id: string; type: "section"; heading: string };
+export type PageBlock = (SectionBlock | TextBlock | ImageBlock | LinkBlock | HeadingBlock | ListBlock | DividerBlock | SpacerBlock | CanvasSpaceBlock | FaqBlock | FeatureBlock) & { appearance?: ElementAppearance; parentId?: string; mobileParentId?: string | null; mobileOrder?: number };
 export type PageNavPlacement = "main" | "more" | "unlisted";
 export type PageAvailability = "public" | "hidden";
 export type OwnerPage = {
@@ -30,7 +34,7 @@ export type OwnerPage = {
   slug: string; title: string; navLabel: string; showInNav: boolean; order: number;
   /** Optional for unchanged legacy drafts; placement takes precedence over showInNav. */
   navPlacement?: PageNavPlacement; availability?: PageAvailability;
-  trashedAt: string | null; blocks: PageBlock[]; titleAppearance?: ElementAppearance;
+  trashedAt: string | null; blocks: PageBlock[]; titleAppearance?: ElementAppearance; canvasLayout?: CanvasLayout;
 };
 export type PriceItem = { id: string; name: string; price: number; detail: string };
 export type PriceGroup = { id: string; title: string; note: string; items: PriceItem[] };
@@ -60,6 +64,7 @@ export type OwnerContent = {
   schemaVersion: typeof OWNER_SCHEMA_VERSION;
   /** Optional creative settings: older saved drafts retain their original bytes and appearance. */
   design?: SiteDesign;
+  chromeLayout?: CanvasLayout;
   fonts?: OwnerFont[];
   contentOverrides?: ContentOverrides;
   /** Form structure and wording only. Client answers and consent are never stored here. */
@@ -180,27 +185,27 @@ function validateContent(value: unknown, published = false): ValidationResult {
   const exact = (v: Record<string, unknown>, allowed: string[], path: string) => {
     for (const key of Object.keys(v)) if (!allowed.includes(key)) issue(`${path}.${key}`, "This field is not supported. Raw HTML and scripts are never supported.");
   };
-  const appearance = (value: unknown, path: string) => {
+  const appearance = (value: unknown, path: string, allowMobile = true) => {
     const entry = object(value, path);
-    exact(entry, ["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId", "box"], path);
+    exact(entry, ["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId", "box", "marginTopPx", "marginRightPx", "marginBottomPx", "marginLeftPx", ...(allowMobile ? ["mobile"] : [])], path);
     for (const key of ["textColor", "backgroundColor"]) if (entry[key] !== undefined && (typeof entry[key] !== "string" || !/^#[0-9a-f]{6}$/i.test(entry[key] as string))) issue(`${path}.${key}`, "Choose a six-digit hex color.");
     const options: Record<string, readonly string[]> = { font: ["original", "sans", "serif", "rounded", "mono"], textSize: ["small", "standard", "large"], align: ["left", "center", "right"], headingAlign: ["left", "center", "right"], bodyAlign: ["left", "center", "right"], imageFit: ["contain", "cover"] };
     for (const [key, choices] of Object.entries(options)) if (entry[key] !== undefined && (typeof entry[key] !== "string" || !choices.includes(entry[key] as string))) issue(`${path}.${key}`, "Choose one of the supported appearance options.");
     for (const key of ["imagePositionX", "imagePositionY"]) if (entry[key] !== undefined) number(entry[key], `${path}.${key}`, 100);
-    if (entry.fontSize !== undefined) bounded(entry.fontSize, `${path}.fontSize`, 8, 144);
-    if (entry.box !== undefined && !validElementBox(entry.box)) issue(`${path}.box`, "Use a bounded content box with valid dimensions and position.");
-    if (entry.widthPercent !== undefined) bounded(entry.widthPercent, `${path}.widthPercent`, 10, 100);
-    if (entry.imageWidthPercent !== undefined) bounded(entry.imageWidthPercent, `${path}.imageWidthPercent`, 5, 100);
+    if (entry.mobile !== undefined && allowMobile) appearance(entry.mobile, `${path}.mobile`, false);
+    for (const key of ["marginTopPx","marginRightPx","marginBottomPx","marginLeftPx"]) if (entry[key] !== undefined && (typeof entry[key] !== "number" || !Number.isFinite(entry[key]))) issue(`${path}.${key}`, "Use a finite spacing value.");
+    const positiveSize = (key: string) => { if (entry[key] !== undefined && (typeof entry[key] !== "number" || !Number.isFinite(entry[key]) || (entry[key] as number) <= 0)) issue(`${path}.${key}`, "Use a finite positive size."); };
+    positiveSize("fontSize");
+    if (entry.box !== undefined && !validElementBox(entry.box)) issue(`${path}.box`, "Use finite content-box geometry with positive dimensions.");
+    positiveSize("widthPercent");
+    positiveSize("imageWidthPercent");
     if (entry.imageAspectLocked !== undefined && typeof entry.imageAspectLocked !== "boolean") issue(`${path}.imageAspectLocked`, "Choose whether to lock image proportions.");
-    if (entry.imageHeightPx !== undefined) bounded(entry.imageHeightPx, `${path}.imageHeightPx`, 16, 2000);
-    if (entry.heightPercent !== undefined) bounded(entry.heightPercent, `${path}.heightPercent`, 10, 200);
+    positiveSize("imageHeightPx");
+    positiveSize("heightPercent");
     if (entry.fontId !== undefined && (typeof entry.fontId !== "string" || !Array.isArray(root.fonts) || !root.fonts.some(font => font && typeof font === "object" && font.id === entry.fontId))) issue(`${path}.fontId`, "Choose a font uploaded to this draft.");
   };
-  const bounded = (v: unknown, path: string, min: number, max: number) => {
-    if (typeof v !== "number" || !Number.isFinite(v) || v < min || v > max) issue(path, `Use a number between ${min} and ${max}.`);
-  };
   const root = object(value, "content");
-  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm"], "content");
+  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm", "chromeLayout"], "content");
   if (root.commissionForm !== undefined) issues.push(...validateCommissionFormConfig(root.commissionForm).issues);
   if (root.schemaVersion !== OWNER_SCHEMA_VERSION) issue("schemaVersion", "This content version is not supported.");
   if (root.fonts !== undefined) list(root.fonts, "fonts", MAX_CONTENT_BYTES).forEach((value, index) => {
@@ -209,23 +214,26 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (!["woff", "woff2", "ttf", "otf"].includes(font.format as string)) issue(`${path}.format`, "Choose a WOFF, WOFF2, TTF or OTF font.");
     if (typeof font.src !== "string" || !/^\/api\/(?:cloud-fonts|fonts)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(font.src)) issue(`${path}.src`, "Choose a font from the authorized font uploader.");
   });
-  if (root.design !== undefined) {
-    const design = object(root.design, "design");
-    exact(design, ["colors", "bodyFontSize", "headingFontSize", "bodyFontId", "headingFontId", ...DESIGN_SELECT_FIELDS.map(field => field.key)], "design");
-    for (const key of ["bodyFontSize", "headingFontSize"]) if (design[key] !== undefined) bounded(design[key], `design.${key}`, 8, 144);
-    for (const key of ["bodyFontId", "headingFontId"]) if (design[key] !== undefined && (typeof design[key] !== "string" || !Array.isArray(root.fonts) || !root.fonts.some(font => font && typeof font === "object" && font.id === design[key]))) issue(`design.${key}`, "Choose a font uploaded to this draft.");
+  const validateDesign = (value: unknown, path: string, allowMobile = true) => {
+    const design = object(value, path);
+    exact(design, [...(allowMobile ? ["mobileLayoutEnabled", "mobileDesign"] : []), "colors", "bodyFontSize", "headingFontSize", "bodyFontId", "headingFontId", ...DESIGN_SELECT_FIELDS.map(field => field.key)], path);
+    if (allowMobile && design.mobileDesign !== undefined) validateDesign(design.mobileDesign, `${path}.mobileDesign`, false);
+    if (design.mobileLayoutEnabled !== undefined && typeof design.mobileLayoutEnabled !== "boolean") issue(`${path}.mobileLayoutEnabled`, "Choose whether mobile has an independent layout.");
+    for (const key of ["bodyFontSize", "headingFontSize"]) if (design[key] !== undefined && (typeof design[key] !== "number" || !Number.isFinite(design[key]) || (design[key] as number) <= 0)) issue(`${path}.${key}`, "Use a finite positive font size.");
+    for (const key of ["bodyFontId", "headingFontId"]) if (design[key] !== undefined && (typeof design[key] !== "string" || !Array.isArray(root.fonts) || !root.fonts.some(font => font && typeof font === "object" && font.id === design[key]))) issue(`${path}.${key}`, "Choose a font uploaded to this draft.");
     if (design.colors !== undefined) {
-      const colors = object(design.colors, "design.colors");
-      exact(colors, DESIGN_COLOR_FIELDS.map(field => field.key), "design.colors");
-      for (const [key, value] of Object.entries(colors)) if (typeof value !== "string" || !/^#[0-9a-f]{6}$/i.test(value)) issue(`design.colors.${key}`, "Choose a six-digit hex color, such as #800014.");
+      const colors = object(design.colors, `${path}.colors`);
+      exact(colors, DESIGN_COLOR_FIELDS.map(field => field.key), `${path}.colors`);
+      for (const [key, value] of Object.entries(colors)) if (typeof value !== "string" || !/^#[0-9a-f]{6}$/i.test(value)) issue(`${path}.colors.${key}`, "Choose a six-digit hex color, such as #800014.");
     }
-    for (const field of DESIGN_SELECT_FIELDS) if (design[field.key] !== undefined && !field.options.some(option => option.value === design[field.key])) issue(`design.${field.key}`, "Choose one of the supported design options.");
-  }
+    for (const field of DESIGN_SELECT_FIELDS) if (design[field.key] !== undefined && !field.options.some(option => option.value === design[field.key])) issue(`${path}.${field.key}`, "Choose one of the supported design options.");
+  };
+  if (root.design !== undefined) validateDesign(root.design, "design");
   if (root.contentOverrides !== undefined) {
     const overrides = object(root.contentOverrides, "contentOverrides");
     exact(overrides, ["text", "images", "links", "styles"], "contentOverrides");
     if (overrides.styles !== undefined) {
-      const fields = object(overrides.styles, "contentOverrides.styles"); exact(fields, STYLE_FIELDS.map(field => field.key), "contentOverrides.styles");
+      const fields = object(overrides.styles, "contentOverrides.styles"); exact(fields, [...STYLE_FIELDS.map(field => field.key), ...Object.keys(fields).filter(isCanvasStyleKey)], "contentOverrides.styles");
       for (const [key, value] of Object.entries(fields)) appearance(value, `contentOverrides.styles.${key}`);
     }
     if (overrides.text !== undefined) {
@@ -336,7 +344,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
   const seenSlugs = new Set<string>(); const seenBuiltins = new Set<string>(); const seenOrders = new Set<number>();
   pages.forEach((v, i) => {
     const p = `pages[${i}]`; const page = object(v, p);
-    exact(page, ["id", "kind", "builtinKey", "slug", "title", "navLabel", "showInNav", "order", "trashedAt", "blocks", "titleAppearance", "navPlacement", "availability"], p);
+    exact(page, ["id", "kind", "builtinKey", "slug", "title", "navLabel", "showInNav", "order", "trashedAt", "blocks", "titleAppearance", "navPlacement", "availability", "canvasLayout"], p);
     if (page.navPlacement !== undefined && !["main", "more", "unlisted"].includes(page.navPlacement as string)) issue(`${p}.navPlacement`, "Choose main navigation, More or unlisted.");
     if (page.availability !== undefined && !["public", "hidden"].includes(page.availability as string)) issue(`${p}.availability`, "Choose accessible or hidden (404).");
     if (page.titleAppearance !== undefined) appearance(page.titleAppearance, `${p}.titleAppearance`);
@@ -364,35 +372,59 @@ function validateContent(value: unknown, published = false): ValidationResult {
       if (page.builtinKey !== undefined) issue(`${p}.builtinKey`, "Custom pages cannot replace built-in pages.");
       if (typeof page.slug === "string") { const error = validatePageSlug(page.slug); if (error) issue(`${p}.slug`, error); }
     } else issue(`${p}.kind`, "Choose a built-in or custom page.");
-    list(page.blocks, `${p}.blocks`, 100).forEach((v, j) => {
+    const pageBlocks = list(page.blocks, `${p}.blocks`, 100);
+    pageBlocks.forEach((v, j) => {
       const b = `${p}.blocks[${j}]`; const block = object(v, b); id(block.id, `${b}.id`, `blocks:${typeof page.id === "string" ? page.id : "invalid"}`);
       if (block.appearance !== undefined) appearance(block.appearance, `${b}.appearance`);
-      if (block.type === "text") { exact(block, ["id", "type", "heading", "body", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); text(block.body, `${b}.body`, 20000, false); }
-      else if (block.type === "image") { exact(block, ["id", "type", "src", "alt", "caption", "appearance"], b); image(block.src, `${b}.src`); text(block.alt, `${b}.alt`, 500); text(block.caption, `${b}.caption`, 1000, false); }
-      else if (block.type === "link") { exact(block, ["id", "type", "label", "href", "appearance"], b); text(block.label, `${b}.label`, 150); if (typeof block.href !== "string" || !isSafeLink(block.href)) issue(`${b}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed."); }
-      else if (block.type === "heading") { exact(block, ["id", "type", "text", "level", "appearance"], b); text(block.text, `${b}.text`, 200); if (block.level !== 2 && block.level !== 3) issue(`${b}.level`, "Choose heading level 2 or 3."); }
+      for (const key of ["parentId", "mobileParentId"]) if (block[key] !== undefined && !(key === "mobileParentId" && block[key] === null) && (typeof block[key] !== "string" || !ID_PATTERN.test(block[key] as string))) issue(`${b}.${key}`, "Choose a section in this page.");
+      if (block.mobileOrder !== undefined && (typeof block.mobileOrder !== "number" || !Number.isSafeInteger(block.mobileOrder) || block.mobileOrder < 0)) issue(`${b}.mobileOrder`, "Use a nonnegative integer mobile order.");
+      if (block.type === "section") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); }
+      else if (block.type === "text") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "body", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); text(block.body, `${b}.body`, 20000, false); }
+      else if (block.type === "image") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "src", "alt", "caption", "appearance"], b); image(block.src, `${b}.src`); text(block.alt, `${b}.alt`, 500); text(block.caption, `${b}.caption`, 1000, false); }
+      else if (block.type === "link") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "label", "href", "appearance"], b); text(block.label, `${b}.label`, 150); if (typeof block.href !== "string" || !isSafeLink(block.href)) issue(`${b}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed."); }
+      else if (block.type === "heading") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "text", "level", "appearance"], b); text(block.text, `${b}.text`, 200); if (block.level !== 2 && block.level !== 3) issue(`${b}.level`, "Choose heading level 2 or 3."); }
       else if (block.type === "list") {
-        exact(block, ["id", "type", "items", "style", "appearance"], b);
+        exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "items", "style", "appearance"], b);
         if (block.style !== "bullet" && block.style !== "numbered") issue(`${b}.style`, "Choose a bullet or numbered list.");
         list(block.items, `${b}.items`, 100).forEach((item, index) => text(item, `${b}.items[${index}]`, 2000));
       }
-      else if (block.type === "divider") exact(block, ["id", "type", "appearance"], b);
-      else if (block.type === "spacer") { exact(block, ["id", "type", "size", "appearance"], b); if (typeof block.size !== "string" || !["small", "medium", "large"].includes(block.size)) issue(`${b}.size`, "Choose a small, medium or large space."); }
+      else if (block.type === "divider") exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "appearance"], b);
+      else if (block.type === "canvas-space") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "widthPx", "heightPx", "appearance"], b); for (const key of ["widthPx", "heightPx"]) if (typeof block[key] !== "number" || !Number.isFinite(block[key]) || (block[key] as number) <= 0) issue(`${b}.${key}`, "Draw a finite, positive canvas space."); }
+      else if (block.type === "spacer") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "size", "appearance"], b); if (typeof block.size !== "string" || !["small", "medium", "large"].includes(block.size)) issue(`${b}.size`, "Choose a small, medium or large space."); }
       else if (block.type === "faq") {
-        exact(block, ["id", "type", "items", "appearance"], b);
+        exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "items", "appearance"], b);
         list(block.items, `${b}.items`, 30).forEach((value, index) => {
           const path = `${b}.items[${index}]`; const item = object(value, path); exact(item, ["id", "question", "answer"], path);
           id(item.id, `${path}.id`, `faq:${typeof page.id === "string" ? page.id : "invalid"}:${typeof block.id === "string" ? block.id : "invalid"}`); text(item.question, `${path}.question`, 200); text(item.answer, `${path}.answer`, 10000, false);
         });
       }
       else if (block.type === "feature") {
-        exact(block, ["id", "type", "heading", "body", "src", "alt", "imageSide", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); text(block.body, `${b}.body`, 20000, false); image(block.src, `${b}.src`); text(block.alt, `${b}.alt`, 500);
+        exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "body", "src", "alt", "imageSide", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); text(block.body, `${b}.body`, 20000, false); image(block.src, `${b}.src`); text(block.alt, `${b}.alt`, 500);
         if (block.imageSide !== "left" && block.imageSide !== "right") issue(`${b}.imageSide`, "Choose an image on the left or right.");
       }
       else issue(`${b}.type`, "Choose a supported structured block. Raw HTML and scripts are never supported.");
     });
+    // Validate both graphs even when mobile is disabled, so enabling it cannot
+    // reveal a hidden cycle or an invalid cross-page parent.
+    const records = pageBlocks.filter(item => item && typeof item === "object" && !Array.isArray(item)) as Record<string, unknown>[];
+    const byId = new Map(records.filter(item => typeof item.id === "string").map(item => [item.id as string, item]));
+    for (const mobile of [false,true]) for (const block of records) {
+      const parentOf = (item: Record<string,unknown>) => mobile && Object.hasOwn(item,"mobileParentId") ? item.mobileParentId : item.parentId;
+      const visited = new Set<unknown>([block.id]); let parent = parentOf(block);
+      while (parent !== undefined && parent !== null) {
+        const next = typeof parent === "string" ? byId.get(parent) : undefined;
+        if (!next || next.type !== "section") { issue(`${p}.blocks`, "Each parent must be an existing section in the same page."); break; }
+        if (visited.has(parent)) { issue(`${p}.blocks`, "Section nesting cannot contain a cycle."); break; }
+        visited.add(parent); parent = parentOf(next);
+      }
+    }
   });
   for (const key of published ? ["home"] : Object.keys(BUILTIN_ROUTES)) if (!seenBuiltins.has(key)) issue("pages", `The ${key} built-in page must be retained; use the trash instead of deleting it.`);
+  if(issues.length===0){
+    const content=value as OwnerContent;
+    if(content.chromeLayout!==undefined)issues.push(...validateContentCanvasLayout(content,"chrome",content.chromeLayout,"chromeLayout"));
+    for(const [index,page] of content.pages.entries())if(page.canvasLayout!==undefined)issues.push(...validateContentCanvasLayout(content,page,page.canvasLayout,`pages[${index}].canvasLayout`));
+  }
   try {
     // Avoid allocating a potentially enormous serialized string for an already
     // invalid input or a draft whose bounded fields exceed the total budget.
@@ -522,7 +554,11 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
     if (src.startsWith("data:")) throw new OwnerValidationError([{ path, message: "Upload this photo to authorized image storage before publishing. Browser-local photos cannot be written to the public content document." }]);
     return src;
   };
-  const publicAppearance = (appearance: ElementAppearance): ElementAppearance => Object.fromEntries(["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId", "box"].filter(key => Object.hasOwn(appearance, key)).map(key => [key, key === "box" ? { ...appearance.box } : appearance[key as keyof ElementAppearance]]));
+  const publicAppearance = (appearance: ElementAppearance): ElementAppearance => {
+    const keys = ["textColor", "backgroundColor", "font", "textSize", "align", "imageFit", "imagePositionX", "imagePositionY", "fontSize", "headingAlign", "bodyAlign", "widthPercent", "heightPercent", "imageWidthPercent", "imageHeightPx", "imageAspectLocked", "fontId", "box", "marginTopPx", "marginRightPx", "marginBottomPx", "marginLeftPx", "mobile"];
+    return Object.fromEntries(keys.filter(key => Object.hasOwn(appearance,key)).map(key => [key, structuredClone(appearance[key as keyof ElementAppearance])]));
+  };
+  const blockLayout = (block: PageBlock) => ({ ...(block.appearance !== undefined ? {appearance:publicAppearance(block.appearance)} : {}), ...(block.parentId !== undefined ? {parentId:block.parentId} : {}), ...(block.mobileParentId !== undefined ? {mobileParentId:block.mobileParentId} : {}), ...(block.mobileOrder !== undefined ? {mobileOrder:block.mobileOrder} : {}) });
   const { site, home, prices } = content;
   const snapshot: PublicOwnerContent = {
     schemaVersion: 1,
@@ -538,38 +574,43 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
     premades: content.premades.filter(item => item.visible && !item.isDraft && site.showPremades).map(item => ({ id: item.id, name: item.name, image: publicImage(item.image, `premades.${item.id}.image`), alt: item.alt, description: item.description, price: item.price, ...(item.photos !== undefined ? { photos: item.photos.map(photo => ({ id: photo.id, src: publicImage(photo.src, `premades.${item.id}.photos.${photo.id}.src`), alt: photo.alt })) } : {}), ...(item.coverPhotoId !== undefined ? { coverPhotoId: item.coverPhotoId } : {}), ...(item.imageFit !== undefined ? { imageFit: item.imageFit } : {}), ...(item.imagePositionX !== undefined ? { imagePositionX: item.imagePositionX } : {}), ...(item.imagePositionY !== undefined ? { imagePositionY: item.imagePositionY } : {}), ...(item.soldChannel !== undefined ? { soldChannel: item.soldChannel } : {}), ...(item.externalUrl !== undefined ? { externalUrl: item.externalUrl } : {}), ...(item.venue !== undefined ? { venue: item.venue } : {}), ...(item.badge !== undefined ? { badge: item.badge } : {}), ...(item.tags !== undefined ? { tags: [...item.tags] } : {}) })),
     pages: content.pages.filter(page => !page.trashedAt && page.availability !== "hidden").map(page => ({
       id: page.id, kind: page.kind, ...(page.builtinKey ? { builtinKey: page.builtinKey } : {}),
-      slug: page.slug, title: page.title, navLabel: page.navLabel, showInNav: page.showInNav, order: page.order, ...(page.navPlacement !== undefined ? { navPlacement: page.navPlacement } : {}), ...(page.availability !== undefined ? { availability: page.availability } : {}), ...(page.titleAppearance !== undefined ? { titleAppearance: publicAppearance(page.titleAppearance) } : {}),
+      slug: page.slug, title: page.title, navLabel: page.navLabel, showInNav: page.showInNav, order: page.order, ...(page.navPlacement !== undefined ? { navPlacement: page.navPlacement } : {}), ...(page.availability !== undefined ? { availability: page.availability } : {}), ...(page.titleAppearance !== undefined ? { titleAppearance: publicAppearance(page.titleAppearance) } : {}), ...(page.canvasLayout !== undefined ? {canvasLayout:structuredClone(page.canvasLayout)}:{}),
       blocks: page.blocks.map(block => {
-        if (block.type === "text") return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type, heading: block.heading, body: block.body };
-        if (block.type === "image") return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type, src: publicImage(block.src, `pages.${page.id}.${block.id}.src`), alt: block.alt, caption: block.caption };
-        if (block.type === "link") return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type, label: block.label, href: block.href };
-        if (block.type === "heading") return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type, text: block.text, level: block.level };
-        if (block.type === "list") return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type, items: [...block.items], style: block.style };
-        if (block.type === "divider") return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type };
-        if (block.type === "spacer") return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type, size: block.size };
-        if (block.type === "faq") return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type, items: block.items.map(item => ({ id: item.id, question: item.question, answer: item.answer })) };
-        return { ...(block.appearance !== undefined ? { appearance: publicAppearance(block.appearance) } : {}), id: block.id, type: block.type, heading: block.heading, body: block.body, src: publicImage(block.src, `pages.${page.id}.${block.id}.src`), alt: block.alt, imageSide: block.imageSide };
+        if (block.type === "section") return {...blockLayout(block),id:block.id,type:block.type,heading:block.heading};
+        if (block.type === "text") return { ...blockLayout(block), id: block.id, type: block.type, heading: block.heading, body: block.body };
+        if (block.type === "image") return { ...blockLayout(block), id: block.id, type: block.type, src: publicImage(block.src, `pages.${page.id}.${block.id}.src`), alt: block.alt, caption: block.caption };
+        if (block.type === "link") return { ...blockLayout(block), id: block.id, type: block.type, label: block.label, href: block.href };
+        if (block.type === "heading") return { ...blockLayout(block), id: block.id, type: block.type, text: block.text, level: block.level };
+        if (block.type === "list") return { ...blockLayout(block), id: block.id, type: block.type, items: [...block.items], style: block.style };
+        if (block.type === "divider") return { ...blockLayout(block), id: block.id, type: block.type };
+        if (block.type === "canvas-space") return { ...blockLayout(block), id: block.id, type: block.type, widthPx: block.widthPx, heightPx: block.heightPx };
+        if (block.type === "spacer") return { ...blockLayout(block), id: block.id, type: block.type, size: block.size };
+        if (block.type === "faq") return { ...blockLayout(block), id: block.id, type: block.type, items: block.items.map(item => ({ id: item.id, question: item.question, answer: item.answer })) };
+        return { ...blockLayout(block), id: block.id, type: block.type, heading: block.heading, body: block.body, src: publicImage(block.src, `pages.${page.id}.${block.id}.src`), alt: block.alt, imageSide: block.imageSide };
       }),
     })),
   };
+  if(content.chromeLayout!==undefined)snapshot.chromeLayout=structuredClone(content.chromeLayout);
   if (content.commissionForm !== undefined && content.pages.some(page => page.builtinKey === "commissions" && isPageAvailable(content, page))) snapshot.commissionForm = projectCommissionFormConfig(content.commissionForm);
   if (content.fonts !== undefined) snapshot.fonts = content.fonts.map(font => ({ id: font.id, name: font.name, src: font.src, format: font.format }));
   if (content.design !== undefined) {
     snapshot.design = {};
-    for (const key of ["bodyFontSize", "headingFontSize", "bodyFontId", "headingFontId"] as const) if (content.design[key] !== undefined) Object.assign(snapshot.design, { [key]: content.design[key] });
+    if (content.design.mobileDesign !== undefined) snapshot.design.mobileDesign = structuredClone(content.design.mobileDesign);
+    for (const key of ["mobileLayoutEnabled", "bodyFontSize", "headingFontSize", "bodyFontId", "headingFontId"] as const) if (content.design[key] !== undefined) Object.assign(snapshot.design, { [key]: content.design[key] });
     if (content.design.colors !== undefined) snapshot.design.colors = Object.fromEntries(DESIGN_COLOR_FIELDS.filter(field => content.design?.colors?.[field.key] !== undefined).map(field => [field.key, content.design!.colors![field.key]]));
     for (const field of DESIGN_SELECT_FIELDS) if (content.design[field.key] !== undefined) Object.assign(snapshot.design, { [field.key]: content.design[field.key] });
   }
   if (content.contentOverrides !== undefined) {
     snapshot.contentOverrides = {};
     const isActive = (group: string) => group === "site" || content.pages.some(page => page.builtinKey === group && !page.trashedAt && page.availability !== "hidden");
-    if (content.contentOverrides.styles !== undefined) snapshot.contentOverrides.styles = Object.fromEntries(STYLE_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.styles!, field.key)).map(field => [field.key, publicAppearance(content.contentOverrides!.styles![field.key])]));
+    if (content.contentOverrides.styles !== undefined) snapshot.contentOverrides.styles = Object.fromEntries(Object.entries(content.contentOverrides.styles).filter(([key]) => STYLE_FIELDS.some(field => field.key === key && isActive(field.group)) || canvasStyleKeyIsPublic(key,snapshot)).map(([key,value]) => [key,publicAppearance(value)]));
     if (content.contentOverrides.text !== undefined) snapshot.contentOverrides.text = Object.fromEntries(TEXT_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.text!, field.key)).map(field => [field.key, content.contentOverrides!.text![field.key]]));
     if (content.contentOverrides.images !== undefined) snapshot.contentOverrides.images = Object.fromEntries(IMAGE_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.images!, field.key)).map(field => { const value = content.contentOverrides!.images![field.key]; return [field.key, { src: publicImage(value.src, `contentOverrides.images.${field.key}.src`), alt: value.alt }]; }));
     if (content.contentOverrides.links !== undefined) snapshot.contentOverrides.links = Object.fromEntries(LINK_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.links!, field.key)).map(field => { const value = content.contentOverrides!.links![field.key]; return [field.key, { label: value.label, href: value.href }]; }));
   }
+  projectCanvasLayouts(snapshot);
   if (snapshot.fonts !== undefined) {
-    const used = new Set([snapshot.design?.bodyFontId, snapshot.design?.headingFontId, ...Object.values(snapshot.contentOverrides?.styles ?? {}).map(style => style.fontId), ...snapshot.pages.flatMap(page => [page.titleAppearance?.fontId, ...page.blocks.map(block => block.appearance?.fontId)])].filter(Boolean));
+    const used = new Set([snapshot.design?.bodyFontId, snapshot.design?.headingFontId, snapshot.design?.mobileDesign?.bodyFontId, snapshot.design?.mobileDesign?.headingFontId, ...Object.values(snapshot.contentOverrides?.styles ?? {}).flatMap(style => [style.fontId,style.mobile?.fontId]), ...snapshot.pages.flatMap(page => [page.titleAppearance?.fontId,page.titleAppearance?.mobile?.fontId, ...page.blocks.flatMap(block => [block.appearance?.fontId,block.appearance?.mobile?.fontId])])].filter(Boolean));
     snapshot.fonts = snapshot.fonts.filter(font => used.has(font.id));
   }
   if (new TextEncoder().encode(JSON.stringify(snapshot)).byteLength > 700_000) throw new OwnerValidationError([{ path: "content", message: "This public text document is too large. Reduce the text or number of blocks before publishing." }]);

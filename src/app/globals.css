@@ -233,3 +233,8 @@ input[type="file"]:focus-visible::file-selector-button { outline:2px solid curre
 /* Resizing may enlarge a field, never crush it into an unusable one-line strip. */
 textarea { min-height:88px!important; min-width:0; max-width:100%; resize:vertical; }
 dialog { border-color:var(--owner-wine,var(--wine,#800014)); }
+
+/* Authored public section dividers; not editor guides or interactive-control borders. */
+.selected-design :is(.image-caption,.commission-strip,.end-note,.care-list section,.contact-row,.price-item,.price-list>div,.footer-top,[data-site-section-divider]){border-color:var(--site-section-divider,var(--line));}
+.selected-design[data-site-section-dividers="hidden"] :is(.image-caption,.commission-strip,.end-note,.care-list section,.contact-row,.price-item,.price-list>div,.footer-top,[data-site-section-divider]){border-color:transparent;}
+@media(max-width:700px){.selected-design .home-links a+a{border-color:var(--site-section-divider,var(--line));}.selected-design[data-site-section-dividers="hidden"] .home-links a+a{border-color:transparent;}}

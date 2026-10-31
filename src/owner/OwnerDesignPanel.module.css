@@ -61,3 +61,11 @@
 :global([data-owner-portal][data-color-mode="dark"]) .numberEntry:focus-within { outline-color: #ffb8ca; }
 :global([data-owner-portal][data-color-mode="dark"]) .numberField .numberEntry,
 :global([data-owner-portal][data-color-mode="dark"]) .hexField input[type="text"] { border-color: var(--owner-control-line, #947887)!important; }
+
+/* Align Reset with the editable hex box, not its two-line label. */
+.colorRow{align-items:center;}.colorRow>.reset{align-self:center;min-height:36px;margin:0;}.colorRow>label{align-self:center;}
+.hexField{position:relative;padding-bottom:18px;}.colorRow>.reset{transform:translateY(-2px);}.hexField>small{position:absolute;top:100%;margin-top:-18px;white-space:nowrap;font-size:8px;}
+:global([data-owner-portal][data-color-mode="dark"]) .appearance>summary::before{color:#f3f3f3;}
+:global([data-owner-portal][data-color-mode]) .numberEntry:focus-within,
+:global([data-owner-portal][data-color-mode]) .hexField input:focus-visible{outline:2px solid #72a9e5!important;outline-offset:2px;}
+.hexField input{min-height:36px;}.hexField{flex-basis:120px;width:120px;}

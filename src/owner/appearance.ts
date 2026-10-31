@@ -2,8 +2,9 @@ import type { CSSProperties } from "react";
 import type { ElementBox } from "./box-geometry";
 
 /** Deliberately bounded creative tokens; never a free-form style, class or HTML field. */
-export type ElementAppearance = {
+export type AppearanceValues = {
   box?: ElementBox;
+  marginTopPx?: number; marginRightPx?: number; marginBottomPx?: number; marginLeftPx?: number;
   textColor?: string;
   backgroundColor?: string;
   font?: "original" | "sans" | "serif" | "rounded" | "mono";
@@ -22,10 +23,23 @@ export type ElementAppearance = {
   imagePositionX?: number;
   imagePositionY?: number;
 };
+/** Mobile is one complete independent appearance snapshot, never recursively nested. */
+export type ElementAppearance = AppearanceValues & { mobile?: AppearanceValues };
+export function resolveElementAppearance(value?: ElementAppearance, useMobile = false): AppearanceValues | undefined {
+  if (!value) return undefined;
+  if (useMobile) return structuredClone(value.mobile ?? {});
+  const { mobile: _mobile, ...desktop } = value; void _mobile;
+  return structuredClone(desktop);
+}
+export function setElementAppearanceForLayout(value: ElementAppearance | undefined, next: AppearanceValues | undefined, useMobile: boolean): ElementAppearance | undefined {
+  if (useMobile) return { ...structuredClone(value ?? {}), mobile: structuredClone(next ?? {}) };
+  if (!next && value?.mobile === undefined) return undefined;
+  return { ...structuredClone(next ?? {}), ...(value?.mobile !== undefined ? { mobile: structuredClone(value.mobile) } : {}) };
+}
 const fonts = { original: "'MS Reference Sans Serif',Arial,Helvetica,sans-serif", sans: "Arial,Helvetica,sans-serif", serif: "Georgia,'Times New Roman',serif", rounded: "'Trebuchet MS',Arial,sans-serif", mono: "'Courier New',monospace" };
 const scales = { small: 0.85, standard: 1, large: 1.2 };
 const color = (value: unknown): value is string => typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
-const bounded = (value: unknown, min: number, max: number): value is number => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+const positiveSize = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value > 0;
 const alignment = (value: unknown): value is "left" | "center" | "right" => value === "left" || value === "center" || value === "right";
 export function customFontFamily(id: unknown): string | null { return typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(id) ? `TMCFont_${id}` : null; }
 const position = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
@@ -39,12 +53,15 @@ export function getElementAppearanceStyle(appearance?: ElementAppearance): CSSPr
   if (typeof appearance.textSize === "string" && Object.hasOwn(scales, appearance.textSize)) style["--element-text-scale"] = scales[appearance.textSize];
   const customFont = customFontFamily(appearance.fontId);
   if (customFont) style["--element-font"] = `'${customFont}',Arial,Helvetica,sans-serif`;
-  if (bounded(appearance.fontSize, 8, 144)) style["--element-font-size"] = `${appearance.fontSize}px`;
+  if (positiveSize(appearance.fontSize)) style["--element-font-size"] = `${appearance.fontSize}px`;
   if (alignment(appearance.align)) style.textAlign = appearance.align;
   if (alignment(appearance.headingAlign)) style["--element-heading-align"] = appearance.headingAlign;
   if (alignment(appearance.bodyAlign)) style["--element-body-align"] = appearance.bodyAlign;
-  if (bounded(appearance.widthPercent, 10, 100)) { style.width = `${appearance.widthPercent}%`; style.maxWidth = "100%"; }
-  if (bounded(appearance.heightPercent, 10, 200)) style.minHeight = `${appearance.heightPercent}vh`;
+  if (positiveSize(appearance.widthPercent)) style.width = `${appearance.widthPercent}%`;
+  if (positiveSize(appearance.heightPercent)) style.minHeight = `${appearance.heightPercent}vh`;
+  for (const [key, css] of [["marginTopPx","marginTop"],["marginRightPx","marginRight"],["marginBottomPx","marginBottom"],["marginLeftPx","marginLeft"]] as const) {
+    const value = appearance[key]; if (typeof value === "number" && Number.isFinite(value)) style[css] = `${value}px`;
+  }
   return style as CSSProperties;
 }
 export function getElementAppearanceAttributes(appearance?: ElementAppearance) {
@@ -74,7 +91,7 @@ export function getImageAppearanceStyle(appearance?: ElementAppearance): CSSProp
 export function getImageFrameStyle(appearance?: ElementAppearance): CSSProperties {
   if (!appearance || typeof appearance !== "object") return {};
   const style: CSSProperties = {};
-  if (bounded(appearance.imageWidthPercent, 5, 100)) { style.width = `${appearance.imageWidthPercent}%`; style.maxWidth = "100%"; style.marginInline = "auto"; }
-  if (bounded(appearance.imageHeightPx, 16, 2000)) { style.height = `${appearance.imageHeightPx}px`; style.minHeight = 0; style.aspectRatio = "auto"; }
+  if (positiveSize(appearance.imageWidthPercent)) { style.width = `${appearance.imageWidthPercent}%`; style.marginInline = "auto"; }
+  if (positiveSize(appearance.imageHeightPx)) { style.height = `${appearance.imageHeightPx}px`; style.minHeight = 0; style.aspectRatio = "auto"; }
   return style;
 }

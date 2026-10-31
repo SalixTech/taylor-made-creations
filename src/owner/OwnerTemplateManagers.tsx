@@ -279,7 +279,7 @@ export function HomePageManager({ content, onEdit }: ManagerProps) {
   </div>;
 }
 
-export function ContactSettingsManager({ content, onEdit, onRemove, constructionSettings, onEditCommissionForm, ...saveProps }: ManagerProps & SettingsCardSaveProps & { userEmail: string; onSync: () => void; onEditCommissionForm?: () => void; constructionSettings?: import("react").ReactNode }) {
+export function ContactSettingsManager({ content, onEdit, onRemove, constructionSettings, invoiceSettings, onEditCommissionForm, ...saveProps }: ManagerProps & SettingsCardSaveProps & { userEmail: string; onSync: () => void; onEditCommissionForm?: () => void; constructionSettings?: import("react").ReactNode; invoiceSettings?: import("react").ReactNode }) {
   const [formPreviewOpen,setFormPreviewOpen]=useState(false);
   const whimsy = useOwnerWhimsy(), account = useStudioSettings();
     const [whimsyEditorOpen, setWhimsyEditorOpen] = useState(false);
@@ -297,7 +297,7 @@ export function ContactSettingsManager({ content, onEdit, onRemove, construction
     {whimsyEditorOpen && <WhimsyWordsEditor onClose={() => setWhimsyEditorOpen(false)} />}
     <Card title="Client update requests"><GlobalUpdateCooldown /></Card>
     <div className={styles.settingsDetails}>
-      <Card title="Your business"><Field label="Business name" value={content.site.name} onChange={value => onEdit(draft => { draft.site.name = value; })} hint="Shown in your website’s header and footer after publishing." /><SettingsCardActions card="business" {...saveProps} /></Card>
+      <Card title="My Business Info"><div className={ui.businessIdentity}><Field label="Business name" value={content.site.name} onChange={value => onEdit(draft => { draft.site.name = value; })} hint="Shown in your website’s header and footer after publishing." /><SettingsCardActions card="business" {...saveProps} /></div>{invoiceSettings&&<div className={ui.businessInvoicePolicy}>{invoiceSettings}</div>}</Card>
       <Card title="Commission availability">
         <OwnerSelect label="Commission status" value={content.site.commissionStatus} onChange={value => onEdit(draft => { draft.site.commissionStatus = value as OwnerContent["site"]["commissionStatus"]; })} options={COMMISSION_STATUSES.map(status => ({ value: status, label: status }))} hint="Choose Save live on this card to update the website." />
         <Field label="A note for visitors" multiline value={content.site.statusNote} onChange={value => onEdit(draft => { draft.site.statusNote = value; })} placeholder="Let people know what to expect…" />
@@ -306,7 +306,7 @@ export function ContactSettingsManager({ content, onEdit, onRemove, construction
     </div>
     <Card title="Commission form" description="Edit questions, wording, answer options and order. Additional Parts is optional for every suit type except Parts.">
       <Toggle label="Allow quantities for Additional Parts" checked={content.site.additionalPartsQuantities === true} onChange={value => onEdit(draft => { draft.site.additionalPartsQuantities = value; })} hint="Off adds one of each selected extra. On lets clients request multiple extras or spares. Save draft keeps this private; Save live applies this card to the website." />
-      <div className={styles.commissionFormActions}><SettingsCardActions card="commission-form" {...saveProps} inline /><div className={styles.commissionFormEditActions}><button type="button" className={ui.secondary} disabled={!onEditCommissionForm} onClick={onEditCommissionForm}>Edit commission form</button><button type="button" className={ui.secondary} onClick={()=>setFormPreviewOpen(true)}>Preview commission form</button></div></div>
+      <div className={styles.commissionFormActions}><SettingsCardActions card="commission-form" {...saveProps} inline /><div className={styles.commissionFormEditActions}><button type="button" className={ui.secondary} disabled={!onEditCommissionForm} onClick={onEditCommissionForm}>Edit Form</button><button type="button" className={ui.secondary} onClick={()=>setFormPreviewOpen(true)}>Preview Form</button></div></div>
     </Card>
     {formPreviewOpen&&<Dialog title="Commission form preview" wide maximizable onClose={()=>setFormPreviewOpen(false)} actions={<button type="button" className={ui.secondary} onClick={()=>setFormPreviewOpen(false)}>Close preview</button>}><p className={ui.help}>Try your unsaved questions and quantity setting here. This preview does not save a request, upload references, contact clients, or take a payment.</p><CommissionForm previewContent={content} additionalPartsQuantities={content.site.additionalPartsQuantities === true} configuration={content.commissionForm??{}}/></Dialog>}
     <details className={styles.contactsSection}><summary>Socials</summary><div className={styles.contactsContent}><OwnerSocialLinksEditor content={content} onEdit={onEdit} onRemove={onRemove} /><SettingsCardActions card="contacts" {...saveProps} /></div></details>

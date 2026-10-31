@@ -3,7 +3,7 @@ import { PhotoLoading } from "./PhotoLoading";
 
 import Image from "next/image";
 import { lockPageScroll } from "./modal-scroll-lock";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { fursuitGallery } from "@/content/fursuit-gallery";
 import { useOwnerMediaSource } from "@/owner/media-client";
 import { isSafeImageSource } from "@/owner/model";
@@ -21,7 +21,8 @@ function GalleryImage({ photo, expanded = false, unoptimized = false, privateMed
       className={expanded ? styles.expandedImage : styles.thumbnail} onError={() => setFailed(true)} />;
 }
 
-export function FursuitGallery({ photos = fursuitGallery, unoptimized = false, compact = false, editor = false, privateMedia = false }: { photos?: readonly GalleryPhoto[]; unoptimized?: boolean; compact?: boolean; editor?: boolean; privateMedia?: boolean } = {}) {
+export function useFursuitGalleryView({ photos = fursuitGallery, unoptimized = false, compact = false, editor = false, privateMedia = false, decorate }: { decorate?: (photo: GalleryPhoto, part: "card"|"photo"|"caption", element: ReactElement) => ReactNode; photos?: readonly GalleryPhoto[]; unoptimized?: boolean; compact?: boolean; editor?: boolean; privateMedia?: boolean } = {}) {
+  const wrap = (photo:GalleryPhoto, part:"card"|"photo"|"caption", element:ReactElement) => decorate && photo.id ? decorate(photo,part,element) : element;
   const [active, setActive] = useState<number | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -48,14 +49,14 @@ export function FursuitGallery({ photos = fursuitGallery, unoptimized = false, c
 
   return <>
     <div className={`${styles.grid} ${count % 2 === 1 ? styles.odd : ""} ${compact ? styles.compact : ""}`}>
-      {photos.map((item, index) => <figure className={styles.card} key={`${item.src}-${index}`} {...(editor && item.id ? { "data-owner-edit": `gallery:${item.id}`, tabIndex: 0, "aria-label": `Edit ${item.name} gallery photo` } : {})}>
+      {photos.map((item, index) => wrap(item,"card",<figure className={styles.card} key={`${item.src}-${index}`} {...(editor && item.id ? { "data-owner-edit": `gallery:${item.id}`, tabIndex: 0, "aria-label": `Edit ${item.name} gallery photo` } : {})}>
         {editor && item.visible === false && <p className={styles.editorNotice}>Hidden photo · only visible while editing</p>}
-        <button type="button" className={styles.open} aria-label={`Enlarge ${item.name} fursuit photos`} aria-haspopup="dialog"
+        {wrap(item,"photo",<button type="button" className={styles.open} aria-label={`Enlarge ${item.name} fursuit photos`} aria-haspopup="dialog"
           onClick={event => { trigger.current = event.currentTarget; setActive(index); }}>
           <GalleryImage key={`${privateMedia}-${item.src}`} photo={item} unoptimized={unoptimized} privateMedia={privateMedia} />
-        </button>
-        <figcaption className={styles.caption}><span>{item.name}</span><span>{item.displayNumber?.trim() || String(count - index).padStart(2, "0")}</span></figcaption>
-      </figure>)}
+        </button>)}
+        {wrap(item,"caption",<figcaption className={styles.caption}><span>{item.name}</span><span>{item.displayNumber?.trim() || String(count - index).padStart(2, "0")}</span></figcaption>)}
+      </figure>))}
     </div>
     <dialog ref={dialog} className={styles.dialog} aria-labelledby="fursuit-photo-title" aria-describedby="fursuit-photo-help"
       onCancel={event => { event.preventDefault(); setActive(null); }}
@@ -79,3 +80,5 @@ export function FursuitGallery({ photos = fursuitGallery, unoptimized = false, c
     </dialog>
   </>;
 }
+
+export function FursuitGallery(props:Parameters<typeof useFursuitGalleryView>[0]={}){return useFursuitGalleryView(props);}

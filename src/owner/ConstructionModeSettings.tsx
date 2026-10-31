@@ -1,5 +1,6 @@
 "use client";
 
+import {ConstructionWhimsySettings} from "./ConstructionWhimsySettings";
 import { RefreshButton } from "@/components/RefreshButton";
 import { useOutcomeNotice } from "./use-outcome-notice";
 
@@ -111,6 +112,7 @@ export function ConstructionModeSettings({ store, disabled, beginUpdate, endUpda
       {error && <p className={ui.error} role="alert">{error}</p>}
       {noticeView(ui.notice)}
       <details className={styles.refreshNote}><summary>Visitor refresh &amp; cached copies</summary><p className={ui.help}>Visible visitor tabs check about every 30 seconds or on focus. Downloads, public image links and cached copies cannot be recalled.</p></details>
+      <ConstructionWhimsySettings store={store} disabled={disabled||saving} beginUpdate={beginUpdate} endUpdate={endUpdate}/>
     </div>
     {confirmation && <Dialog title={confirmation.constructionMode ? "Turn Construction Mode on?" : "Open the published website to visitors?"} onClose={() => setConfirmation(null)} actions={<>
       <button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} onClick={() => setConfirmation(null)}>Cancel</button>

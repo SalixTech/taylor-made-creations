@@ -1,17 +1,18 @@
-.frame { display:block; position:relative; min-width:0; max-width:100%; box-sizing:border-box; overflow-x:clip; overflow-y:visible; }
+.frame { display:block; position:relative; min-width:0; max-width:none; box-sizing:border-box; overflow:visible; }
 .inline { display:inline-block; vertical-align:top; }
-/* Keep a stable, untransformed in-flow source. It supplies intrinsic width in
-   flex/inline parents; absolute content + inline-size containment had removed
-   that width, allowing aspect-ratio/min-height measurement feedback. */
-.contents { display:flow-root; position:relative; transform-origin:top left; overflow-wrap:anywhere; }
+/* Reflow changes available line width, never the font's horizontal/vertical scale. */
+.contents { display:flow-root; position:relative; width:100%; min-width:0; overflow:visible; overflow-wrap:anywhere; }
 .contents > :first-child { margin:0!important; max-width:100%; }
-/* One explicit frame height reserves scaled content, including later text edits.
-   Horizontal clipping prevents the pre-transform baseline from widening mobile
-   scroll bounds. Vertical overflow stays visible; text edits are never truncated. */
-
-/* New materializations keep one immutable-width normal-flow slot. The selected
-   frame moves within that slot; parent-relative x is NEVER a flex margin. */
-.flowSlot { display:block; position:relative; flex:0 0 auto; min-width:0; max-width:100%; box-sizing:border-box; }
+.contents > :is(p,h1,h2,h3,h4,h5,h6,span,a) { white-space:normal; }
+.flowSlot { display:block; position:relative; flex:0 0 auto; min-width:0; max-width:none; box-sizing:border-box; overflow:visible; }
 .flowSlot.inline { display:inline-block; vertical-align:baseline; }
 .flowFrame { max-width:none; }
-.flowContents { overflow-wrap:inherit; }
+.imageContents { height:100%; }
+.imageContents :global(img) { max-width:100%; max-height:100%; object-fit:contain; }
+
+/* Leave the native parent background/border/padding on its moving frame.
+   Translate only its immediate child elements: no reparenting or flex/grid
+   reflow, and nested geometry retains its own independent transform. */
+.compensatedContents > :first-child > :not([data-owner-compensated-text]):not([data-owner-compensated-inline]) { translate:var(--box-content-offset-x,0px) var(--box-content-offset-y,0px); }
+
+.compensatedContents > :first-child > [data-owner-compensated-inline] { position:relative; left:calc(var(--box-inline-left,0px) + var(--box-content-offset-x,0px))!important; top:calc(var(--box-inline-top,0px) + var(--box-content-offset-y,0px))!important; }

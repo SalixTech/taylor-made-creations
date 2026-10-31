@@ -2,11 +2,13 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { getSiteThemeAttributes, getSiteThemeStyle } from "@/owner/site-design";
+import { getSiteThemeAttributes, getSiteThemeStyle, resolveSiteDesign } from "@/owner/site-design";
 import { SiteFontLoader } from "./SiteFontLoader";
 import { PublicAccountThemeSync } from "./PublicAccountThemeSync";
 import { ColorModeToggle, useColorMode } from "./ColorMode";
 import { usePublicOwnerContent } from "./PublicSiteContext";
+
+import {useMobileSiteLayout} from "@/owner/use-mobile-site-layout";
 
 /** Theme lives on the public frame, never :root/body or the management workspace. */
 export function PublicSiteFrame({ children }: { children: ReactNode }) {
@@ -17,5 +19,7 @@ export function PublicSiteFrame({ children }: { children: ReactNode }) {
   const isOwner = /^\/(?:taylor|owner)(?:\/|$)/.test(pathname);
   const content = usePublicOwnerContent();
   const publicContent = /^\/(?:taylor|owner)(?:\/|$)/.test(pathname) ? null : content;
-  return <div className="selected-design public-site-frame" data-theme-scope={isOwner ? undefined : "public"} data-color-mode={isOwner ? undefined : colorMode} {...getSiteThemeAttributes(publicContent)} style={getSiteThemeStyle(publicContent)}><PublicAccountThemeSync pathname={pathname} /><SiteFontLoader fonts={publicContent?.fonts} />{children}{!isOwner && area !== "hub" && <ColorModeToggle scope={area} />}</div>;
+  const mobile=useMobileSiteLayout(publicContent?.design?.mobileLayoutEnabled===true);
+  const themedContent=publicContent?{design:resolveSiteDesign(publicContent.design,mobile)}:null;
+  return <div className="selected-design public-site-frame" data-theme-scope={isOwner ? undefined : "public"} data-color-mode={isOwner ? undefined : colorMode} {...getSiteThemeAttributes(themedContent)} style={getSiteThemeStyle(themedContent)}><PublicAccountThemeSync pathname={pathname} /><SiteFontLoader fonts={publicContent?.fonts} />{children}{!isOwner && area !== "hub" && <ColorModeToggle scope={area} />}</div>;
 }

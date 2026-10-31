@@ -14,8 +14,26 @@ async function connection(owner:boolean,signal?:AbortSignal){
 function assertScope(clientId:string,expected?:string){if(expected&&clientId!==expected)throw new ClientHubDataError('This invoice belongs to a different account.');}
 async function call(owner:boolean,name:string,input:unknown,signal?:AbortSignal){const session=await connection(owner,signal);session.assertCurrent();const response=await httpsCallable(session.functions,name)(input);session.assertCurrent();if(signal?.aborted)throw new DOMException('Cancelled','AbortError');return{raw:clientHubObject(response.data),clientId:session.clientId};}
 export async function listHubInvoices(owner:boolean,signal?:AbortSignal){const{raw,clientId}=await call(owner,'tmcHubListInvoices',{},signal);if(!Array.isArray(raw.invoices)||raw.invoices.length>100||typeof raw.hasMore!=='boolean')throw new ClientHubDataError('The invoice list could not be verified.');const invoices=raw.invoices.map(value=>{const item=decodeHubInvoice(value);assertScope(item.clientId,clientId);return item;});if(new Set(invoices.map(row=>row.invoiceId)).size!==invoices.length)throw new ClientHubDataError('The invoice list contains duplicate records.');return{invoices,hasMore:raw.hasMore};}
+/** Complete exact-commission read, stable document order; no balance is inferred. */
+export async function listHubProjectInvoices(owner:boolean,projectId:string,signal?:AbortSignal){
+ invoiceId(projectId);const session=await connection(owner,signal),invoices:ReturnType<typeof decodeHubInvoice>[]=[],seen=new Set<string>(),cursors=new Set<string>();let cursor:string|undefined,pages=0;
+ do{if(++pages>100)throw new ClientHubDataError('Too many invoice pages to verify completely. Refresh or ask Spade to review this commission.');session.assertCurrent();if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
+  const response=await httpsCallable(session.functions,'tmcHubListInvoices')({projectId,...(cursor?{cursor}:{})});session.assertCurrent();if(signal?.aborted)throw new DOMException('Cancelled','AbortError');const raw=clientHubObject(response.data);
+  if(!Array.isArray(raw.invoices)||raw.invoices.length>100||typeof raw.hasMore!=="boolean")throw new ClientHubDataError('Commission invoices could not be verified.');
+  for(const value of raw.invoices){const item=decodeHubInvoice(value);assertScope(item.clientId,session.clientId);if(item.projectId!==projectId||seen.has(item.invoiceId))throw new ClientHubDataError('Commission invoices changed while loading. Refresh them.');seen.add(item.invoiceId);invoices.push(item);}
+  if(raw.hasMore){const next=invoiceId(raw.nextCursor);if(cursors.has(next))throw new ClientHubDataError('Commission invoice pagination could not be verified.');cursor=next;cursors.add(next);}else cursor=undefined;
+ }while(cursor);
+ return {invoices,hasMore:false as const};
+}
 export async function readHubInvoice(owner:boolean,id:string,signal?:AbortSignal){invoiceId(id);const{raw,clientId}=await call(owner,'tmcHubReadInvoice',{invoiceId:id},signal);const invoice=decodeHubInvoice(raw.invoice);assertScope(invoice.clientId,clientId);if(invoice.invoiceId!==id)throw new ClientHubDataError('The invoice response did not match.');return invoice;}
 export async function acknowledgeHubInvoiceAlert(owner:boolean,value:HubInvoiceAlert,dismissed:boolean,signal?:AbortSignal){const item=decodeHubInvoiceAlert(value);if(item.recipientRole!==(owner?'owner':'client')||typeof dismissed!=='boolean')throw new ClientHubDataError('Choose your own invoice alert.');const session=await connection(owner,signal);assertScope(item.clientId,session.clientId);session.assertCurrent();const response=await httpsCallable(session.functions,'tmcHubAcknowledgeInvoiceAlert')({alertId:item.alertId,expectedVersion:item.version,dismissed});session.assertCurrent();if(signal?.aborted)throw new DOMException('Cancelled','AbortError');const result=decodeHubInvoiceAlert(clientHubObject(response.data).alert,item.alertId);if(result.clientId!==item.clientId||result.invoiceId!==item.invoiceId||result.recipientRole!==item.recipientRole||result.kind!==item.kind||result.amountCents!==item.amountCents||result.version<item.version||!result.read||dismissed&&!result.dismissed)throw new ClientHubDataError('The invoice alert action could not be confirmed.');return result;}
+/** Capture the complete current authorized set before Clear All; newer arrivals stay untouched. */
+export async function captureHubInvoiceAlerts(owner:boolean,signal?:AbortSignal):Promise<HubInvoiceAlert[]> {
+ const session=await connection(owner,signal);session.assertCurrent();if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
+ const response=await httpsCallable(session.functions,'tmcHubListInvoiceAlerts')({capture:true,supportedDueReminders:true});session.assertCurrent();if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
+ const raw=clientHubObject(response.data);if(!Array.isArray(raw.alerts)||raw.alerts.length>1000||raw.hasMore!==false||raw.nextCursor!==undefined||typeof raw.captureBefore!=="string"||!Number.isFinite(Date.parse(raw.captureBefore)))throw new ClientHubDataError('The complete invoice alert snapshot could not be verified. Nothing was cleared.');
+ const seen=new Set<string>();return raw.alerts.map(value=>{const item=decodeHubInvoiceAlert(value);assertScope(item.clientId,session.clientId);if(item.recipientRole!==(owner?'owner':'client')||item.dismissed||seen.has(item.alertId))throw new ClientHubDataError('The invoice alert snapshot could not be verified. Nothing was cleared.');seen.add(item.alertId);return item;});
+}
 /** Read-only dedicated projection stream; never mixes invoice events into project notifications. */
 export function subscribeHubInvoiceAlerts(owner:boolean,onData:(items:HubInvoiceAlert[],hasMore:boolean)=>void,onError:(error:unknown)=>void){
  let active=true;const controller=new AbortController(),stops:(()=>void)[]=[];
@@ -31,9 +49,16 @@ export function subscribeHubInvoiceAlerts(owner:boolean,onData:(items:HubInvoice
   }else{
    let inFlight=false;let generation=0;
    const poll=async()=>{if(!active||inFlight||typeof document!=="undefined"&&document.visibilityState==="hidden")return;inFlight=true;const current=++generation;
-    try{session.assertCurrent();const response=await httpsCallable(session.functions,'tmcHubListInvoiceAlerts')({});session.assertCurrent();if(!active||current!==generation)return;
-     const raw=clientHubObject(response.data);if(!Array.isArray(raw.alerts)||raw.alerts.length>100||typeof raw.hasMore!=="boolean")throw Error('Invoice alerts could not be verified.');
-     const items=raw.alerts.map(value=>{const item=decodeHubInvoiceAlert(value);assertScope(item.clientId,session.clientId);if(item.recipientRole!=="client")throw Error('Invoice alert scope changed.');return item;});onData(items,raw.hasMore);
+    try{const items:HubInvoiceAlert[]=[];const cursors=new Set<string>();let cursor:string|undefined,more=false,pages=0;
+     do{if(++pages>100)throw new ClientHubDataError('Too many invoice alert pages to verify completely. Refresh alerts.');session.assertCurrent();if(!active||current!==generation)return;const response=await httpsCallable(session.functions,'tmcHubListInvoiceAlerts')({supportedDueReminders:true,...(cursor?{cursor}:{})});session.assertCurrent();if(!active||current!==generation)return;
+      const raw=clientHubObject(response.data);if(!Array.isArray(raw.alerts)||raw.alerts.length>100||typeof raw.hasMore!=="boolean")throw Error('Invoice alerts could not be verified.');
+      const page=raw.alerts.map(value=>{const item=decodeHubInvoiceAlert(value);assertScope(item.clientId,session.clientId);if(item.recipientRole!=="client")throw Error('Invoice alert scope changed.');return item;});
+      for(const item of page)if(!items.some(existing=>existing.alertId===item.alertId))items.push(item);
+      more=raw.hasMore;
+      if(raw.nextCursor!==undefined&&(typeof raw.nextCursor!=="string"||!/^[a-f0-9]{64}$/.test(raw.nextCursor)||cursors.has(raw.nextCursor)||!more))throw Error('The invoice alert page could not be verified.');
+      cursor=raw.nextCursor as string|undefined;if(cursor)cursors.add(cursor);
+     }while(more&&cursor&&items.length<100);
+     onData(items.slice(0,100),more||items.length>100);
     }catch(error){if(active&&current===generation)fail(error);}finally{inFlight=false;}
    };
    const timer=setInterval(()=>{void poll();},20000);const visible=()=>{void poll();};

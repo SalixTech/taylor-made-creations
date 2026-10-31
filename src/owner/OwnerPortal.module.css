@@ -437,3 +437,31 @@
 .sideNav .invoiceNav:hover, .sideNav .invoiceNav[aria-expanded="true"] { background:var(--owner-surface-soft,var(--owner-surface)); border-color:var(--owner-line); }
 .sideNav .invoiceNav:focus-visible { outline:2px solid var(--owner-wine); outline-offset:2px; }
 .sideNav .invoiceNav:disabled { opacity:.5; cursor:not-allowed; }
+
+/* Invoice opens a dialog, but visually belongs to the same navigation list. */
+.portal:global([data-owner-portal][data-color-mode]) .sideNav .invoiceNav {
+  gap:13px; padding:13px 14px; min-height:46px; font-family:inherit!important;
+  font-size:13px!important; font-weight:400!important; line-height:1.5;
+  color:#797174; background:transparent!important; border-color:transparent!important; box-shadow:none!important;
+}
+.portal:global([data-owner-portal][data-color-mode]) .sideNav .invoiceNav:hover,
+.portal:global([data-owner-portal][data-color-mode]) .sideNav .invoiceNav[aria-expanded="true"] { background:#f5f5f4!important; color:var(--owner-wine); }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .sideNav .invoiceNav { color:var(--owner-ink)!important; }
+.portal:global([data-owner-portal][data-color-mode="dark"]) .sideNav .invoiceNav:hover,
+.portal:global([data-owner-portal][data-color-mode="dark"]) .sideNav .invoiceNav[aria-expanded="true"] { background:#7f0011!important; }
+@media(max-width:900px){.portal:global([data-owner-portal][data-color-mode]) .sideNav .invoiceNav{gap:10px;padding:10px;font-size:12px!important}}
+@media(max-width:650px){.portal:global([data-owner-portal][data-color-mode]) .sideNav .invoiceNav{width:auto;gap:7px;padding:8px 12px;font-size:11px!important;min-height:38px}.portal .sideNav .invoiceNav svg{width:16px;height:16px}}
+
+/* Navigation labels inherit the same type, including browser button resets. */
+.portal .sideNav :is(a, .invoiceNav), .portal .sideNav :is(a, .invoiceNav) > span { font-family: 'MS Reference Sans Serif', Arial, Helvetica, sans-serif!important; font-size:13px!important; font-weight:400; line-height:1.5; }
+
+/* Owner forms: independent business saves, readable helpers, centered notices. */
+.businessIdentity{display:grid;gap:8px;}.businessInvoicePolicy{margin-top:26px;padding-top:24px;border-top:1px solid var(--owner-line,#777);}.businessInvoicePolicy h2,.businessInvoicePolicy h3{margin-top:0;}
+.imagePickerFields{display:grid;gap:16px;min-width:0;}.imagePickerFields>.details{margin:0;}.imagePickerFields>.field{margin:0;}.imagePickerFields :global([class*="selectWrap"]){margin-bottom:0;}
+.portal[data-owner-portal] :is(.successNotice,.errorNotice)>.dismissNotice{top:50%;transform:translateY(-50%);}
+.portal[data-owner-portal][data-color-mode="dark"] :is(.quickCard>div svg,.pageIcon svg,.cardTools svg){color:#f3f3f3;}
+.portal[data-owner-portal][data-color-mode="dark"] :global([data-owner-duplicate]){color:#f3f3f3!important;}
+.portal[data-owner-portal][data-color-mode="dark"] button:global([data-owner-duplicate]):is(:enabled,:disabled){color:#f3f3f3!important;border-color:var(--owner-line)!important;background:transparent!important;}
+/* Page controls are separate from the bordered list, not attached to its top edge. */
+.pageManagement{min-width:0}.pageManagementActions{margin:0 0 18px;gap:16px;align-items:center}.pageManagement .pageRow .moveButtons{margin-left:0}.pageManagement .pageRow .textButton{color:var(--owner-ink)!important}.pageManagement [data-owner-trash-icon]{color:var(--owner-ink)!important}.pageManagement button:has(>[data-owner-trash-icon]){border-color:var(--owner-line);background:transparent;color:var(--owner-ink)}
+.portal[data-owner-portal][data-color-mode] .pageManagement .pageRow .textButton,.portal[data-owner-portal][data-color-mode] .pageManagement [data-owner-trash-icon]{color:var(--owner-ink)!important}.portal[data-owner-portal][data-color-mode] .pageManagement button:has(>[data-owner-trash-icon]){background:transparent!important;border-color:var(--owner-line)!important;color:var(--owner-ink)!important}

@@ -11,4 +11,8 @@
 .accessLinks { display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:12px; }
 
 /* Fixed construction branding remains legible in public dark mode. */
-:global([data-color-mode="dark"]) .card h1 span,:global([data-color-mode="dark"]) .card :global(.eyebrow){color:#f4a6b4}
+:global([data-color-mode="dark"]) .card h1 span,:global([data-color-mode="dark"]) .card :global(.eyebrow){color:var(--ink,#d0d0d0)}
+
+/* Keep the two construction actions equal; art and font remain whimsy-only. */
+.accessLinks > :global(.button), .accessLinks > div > button { box-sizing:border-box; width:134px; height:52px; min-height:52px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
+.accessLinks > div > button { padding:0 6px; font-size:16px; line-height:1.2; white-space:nowrap; }

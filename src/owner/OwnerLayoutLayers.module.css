@@ -1,0 +1,14 @@
+.layers { margin: .5rem 0; padding: .65rem .8rem; border: 1px solid var(--owner-border, #68616b); border-radius: .65rem; }
+.layers summary { cursor: pointer; font-weight: 650; }
+.layers p { margin: .5rem 0; }
+.tree { max-height: 17rem; overflow: auto; padding: .4rem 0; }
+.tree, .tree ul { list-style: none; }
+.tree ul { padding-left: 1rem; border-left: 1px solid var(--owner-border, #68616b); margin: .25rem 0 .25rem .5rem; }
+.tree li { margin: .2rem 0; }
+.tree button[aria-pressed="true"] { outline: 2px solid var(--owner-accent, #bd344b); outline-offset: 1px; }
+.actions { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+.actions p, .actions small { flex-basis: 100%; }
+.actions small { opacity: .85; }
+@media (max-width: 540px) { .actions > * { max-width: 100%; } .tree { max-height: 13rem; } }
+
+.destination { border: 0; padding: 0; margin: 0; min-width: 0; }

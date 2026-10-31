@@ -5,7 +5,7 @@ import { themeBootstrap } from "@/components/theme-bootstrap";
 import { THEME_AREAS, type ThemeArea, type ThemeMode } from "@/components/theme-settings";
 import type { Metadata } from "next";
 import { CartProvider, CartButton } from "@/components/Cart";
-import { PublicHeader, PublicFooter } from "@/components/PublicChrome";
+import { PublicChromeLayout } from "@/components/PublicChrome";
 import { PublicSiteFrame } from "@/components/PublicSiteFrame";
 import { PublicSiteProvider } from "@/components/PublicSiteContext";
 import { getPublishedSite } from "@/server/published-site";
@@ -22,5 +22,5 @@ export default async function Layout({ children }: { children: React.ReactNode }
   const [initialState, theme, cookieJar] = await Promise.all([getPublishedSite(), getPublicTheme(), cookies()]);
   const initialModes: Partial<Record<ThemeArea, ThemeMode>> = {};
   for (const area of THEME_AREAS) { const value = cookieJar.get(`tmc-theme-${area}`)?.value; if (value === "light" || value === "dark") initialModes[area] = value; }
-  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrap(theme, initialModes) }} /></head><body><ThemeDefaultsProvider defaults={theme} initialModes={initialModes}><ColorModeRuntime /><CopyrightProvider initialYear={copyrightYearAt()}><PublicSiteProvider initialState={initialState}><CartProvider allowSample={process.env.NODE_ENV === "development"}><PublicSiteFrame><a className="skip" href="#main">Skip to content</a>{initialState.status !== "locked" && <div className="preview-banner"><span>Development preview · No checkout payments are taken.</span></div>}<PublicHeader /><CartButton /><main id="main">{children}</main><PublicFooter /></PublicSiteFrame></CartProvider></PublicSiteProvider></CopyrightProvider></ThemeDefaultsProvider></body></html>;
+  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: themeBootstrap(theme, initialModes) }} /></head><body><ThemeDefaultsProvider defaults={theme} initialModes={initialModes}><ColorModeRuntime /><CopyrightProvider initialYear={copyrightYearAt()}><PublicSiteProvider initialState={initialState}><CartProvider allowSample={process.env.NODE_ENV === "development"}><PublicSiteFrame><a className="skip" href="#main">Skip to content</a>{initialState.status !== "locked" && <div className="preview-banner"><span>Development preview · No checkout payments are taken.</span></div>}<PublicChromeLayout><CartButton /><main id="main">{children}</main></PublicChromeLayout></PublicSiteFrame></CartProvider></PublicSiteProvider></CopyrightProvider></ThemeDefaultsProvider></body></html>;
 }

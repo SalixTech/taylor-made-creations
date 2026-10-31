@@ -22,6 +22,8 @@ export function openHubWorkspaceWindow(project: ClientHubProject, owner: boolean
 }
 
 export function HubWorkspaceWindow({ projects, openVersion = 0, onProjectSelect, onEditCommission, ...props }: WorkspaceProps & { projects: ClientHubProject[]; openVersion?: number; onProjectSelect: (projectId: string) => void; onEditCommission?: () => void; inline?: boolean }) {
+  const [invoiceHistory,setInvoiceHistory]=useState({projectId:"",version:0});
+  const invoiceHistoryVersion=invoiceHistory.projectId===props.project.projectId?invoiceHistory.version:0;
   const [open, setOpen] = useState(false), [error, setError] = useState(""), [workspaceBusy, setWorkspaceBusy] = useState(false);
   const host = useRef<HTMLDivElement>(null), dialog = useRef<HTMLDialogElement>(null), trigger = useRef<HTMLButtonElement>(null), dirty = useRef(false), busy = useRef(false), previousOpenVersion = useRef(0);
   const titleId = `workspace-window-${props.project.projectId}`;
@@ -39,9 +41,9 @@ export function HubWorkspaceWindow({ projects, openVersion = 0, onProjectSelect,
     const element = dialog.current; if (!element.open) element.showModal();
     return () => { if (element.open) element.close(); };
   }, [open]);
-  const workspace = <ProjectWorkspace key={props.project.projectId} {...props} onDirtyChange={value => { dirty.current = value; props.onDirtyChange?.(value); }} onBusyChange={value => { busy.current = value; setWorkspaceBusy(value); props.onBusyChange?.(value); }} />;
+  const workspace = <ProjectWorkspace key={props.project.projectId} {...props} invoiceHistoryVersion={invoiceHistoryVersion} onDirtyChange={value => { dirty.current = value; props.onDirtyChange?.(value); }} onBusyChange={value => { busy.current = value; setWorkspaceBusy(value); props.onBusyChange?.(value); }} />;
   function popout() { try { openHubWorkspaceWindow(props.project, !!props.owner, "all"); setError(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "The Hub window could not open."); } }
-  const controls = <div className={styles.actions}><button type="button" className={styles.popout} onClick={popout}>Pop out to new window<svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M7 7h10v10" /></svg></button></div>;
+  const controls = <div className={styles.actions}>{!props.owner&&<button type="button" className={styles.popout} disabled={props.disabled} onClick={()=>setInvoiceHistory(previous=>({projectId:props.project.projectId,version:previous.version+1}))}>Invoices</button>}<button type="button" className={styles.popout} onClick={popout}>Pop out to new window<svg aria-hidden="true" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17 17 7M7 7h10v10" /></svg></button></div>;
   return <div ref={host} className={styles.host}>
     <div className={styles.launcher}>{props.owner && <strong className={styles.clientIdentity}>{props.clientNickname || props.clientDisplayName || "Client workspace"}</strong>}{props.owner && onEditCommission && <button type="button" disabled={props.disabled || workspaceBusy} onClick={() => moveWorkspace(onEditCommission)}>Edit commission</button>}{props.owner && <button type="button" ref={trigger} onClick={() => moveWorkspace(() => setOpen(true))}>Open workspace popup</button>}{controls}</div>
     {error && <p role="alert" className={styles.error}>{error}</p>}

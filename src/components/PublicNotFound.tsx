@@ -11,7 +11,7 @@ import { PublicUnavailable } from "./PublicUnavailable";
 export function PublicNotFound({ state: routeState }: { state?: PublicSiteState } = {}) {
   const sharedState = usePublicSiteState();
   const state = routeState ?? sharedState;
-  if (state.status === "locked") return <UnderConstruction />;
+  if (state.status === "locked") return <UnderConstruction goldEnabled={state.constructionWhimsyEnabled === true} />;
   if (state.status === "error") return <PublicUnavailable message={state.message} />;
   const content = state.status === "published" ? publicContentToOwnerContent(state.snapshot.content) : null;
   const gallery = content?.pages.find(page => page.builtinKey === "gallery" && isPageAvailable(content, page));

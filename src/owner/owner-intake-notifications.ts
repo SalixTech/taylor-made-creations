@@ -1,5 +1,5 @@
 "use client";
-import { collection, doc, getFirestore, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, doc, getDocsFromServer, where, getFirestore, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from "firebase/firestore";
 import { taylorOwnerSession } from "./taylor-services-client";
 import { timestampText } from "./commission-requests-model";
 export type OwnerIntakeNotification = { notificationId: string; kind: "commission-request" | "code-request"; requestId: string; createdAt: string; readAt: string | null };
@@ -26,4 +26,14 @@ export async function markOwnerIntakeNotificationRead(item: OwnerIntakeNotificat
   session.assertCurrent();
   await updateDoc(doc(getFirestore(session.auth.app), "ownerIntakeNotifications", valid.notificationId), { readAt: serverTimestamp() });
   session.assertCurrent();
+}
+
+/** One authoritative snapshot captures immutable unread IDs before any write.
+ * A size refusal is explicit; never partially clears a truncated result. */
+export async function captureOwnerIntakeNotifications(signal?:AbortSignal):Promise<OwnerIntakeNotification[]> {
+  const session=await taylorOwnerSession(),current=()=>{if(signal?.aborted)throw new DOMException('Cancelled','AbortError');session.assertCurrent();};
+  current();const snapshot=await getDocsFromServer(query(collection(getFirestore(session.auth.app),'ownerIntakeNotifications'),where('readAt','==',null),limit(5001)));current();
+  if(snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites)throw Error('Request alerts could not be verified from the server.');
+  if(snapshot.docs.length>5000)throw Object.assign(Error('Too many request alerts for one safe capture.'),{code:'clear-all-too-large'});
+  const seen=new Set<string>();return snapshot.docs.map(row=>{if(seen.has(row.id))throw Error('Duplicate request alerts.');seen.add(row.id);const item=decode(row.id,row.data());if(item.readAt)throw Error('The unread request alert snapshot changed.');return item;});
 }

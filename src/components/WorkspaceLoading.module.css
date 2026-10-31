@@ -1,0 +1,7 @@
+.wrap { display: grid; place-items: center; width: 100%; min-height: 240px; padding: clamp(18px, 4vw, 44px); box-sizing: border-box; }
+.panel { display: grid; justify-items: center; gap: 18px; width: min(100%, 440px); padding: clamp(28px, 5vw, 48px) 24px; border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: 20px; background: color-mix(in srgb, currentColor 4%, transparent); color: inherit; text-align: center; box-sizing: border-box; }
+.panel strong { font-size: clamp(1.1rem, 2.3vw, 1.4rem); line-height: 1.35; }
+.panel p { margin: 0; max-width: 32ch; font-size: .94rem; line-height: 1.6; opacity: .85; }
+.ring { width: 58px; height: 58px; border: 5px solid color-mix(in srgb, currentColor 17%, transparent); border-top-color: currentColor; border-radius: 50%; animation: workspace-turn 1.2s linear infinite; }
+@keyframes workspace-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ring { animation: none; } }

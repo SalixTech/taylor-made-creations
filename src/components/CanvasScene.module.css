@@ -1,0 +1,7 @@
+.root{position:relative;min-width:0;display:flow-root;}
+.node{position:relative;min-width:0;box-sizing:border-box;}
+.nodeInline{display:inline-block;vertical-align:top;}
+.slot{position:absolute;inset:0;min-width:1px;min-height:1px;border:0;padding:0;margin:0;pointer-events:none;overflow:visible;}
+.placed{position:absolute;left:0;top:0;transform-origin:0 0;box-sizing:border-box;pointer-events:auto;min-width:0;overflow:visible;}
+.placedBody{position:relative;box-sizing:border-box;min-width:0;}
+.placedBody>:first-child{margin:0!important;max-width:none!important;width:100%!important;}

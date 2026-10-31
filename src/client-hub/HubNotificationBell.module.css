@@ -27,3 +27,18 @@
 :global([data-owner-portal][data-color-mode=dark]) .root .actions>button,
 :global([data-owner-portal][data-color-mode=dark]) .root .panel header>button { background:transparent!important; }
 .root .preferences>button { background:transparent; }
+
+/* One adjacent action row; the explanatory receipt boundary remains below. */
+.actions{grid-template-columns:max-content max-content;column-gap:18px;row-gap:4px;align-items:center}.actions>small{grid-column:1/-1}.root .actions>button{white-space:nowrap}
+
+/* Keep this shared widget independent of owner toolbar grid/nowrap rules. */
+.root[data-hub-notifications] .panel{box-sizing:border-box;min-width:0;background:var(--owner-bg,var(--hub-bg,#fff))!important;color:var(--owner-ink,var(--hub-ink,#302c2c));padding:14px 16px 12px;white-space:normal;overflow-wrap:anywhere}
+.root[data-hub-notifications] .panel header{position:relative;min-height:32px;padding-right:30px;margin:0 0 6px}
+.root[data-hub-notifications] .panel header>button{position:absolute;right:-7px;top:-6px;width:32px;height:32px;min-height:32px}
+.root[data-hub-notifications] .actions{display:flex!important;flex-wrap:wrap;justify-content:flex-start!important;align-items:center;gap:4px 16px;width:100%;min-width:0;max-width:100%}
+.root[data-hub-notifications] .actions>button{flex:0 0 auto;width:auto!important;margin:0!important;min-width:0;white-space:normal}
+.root[data-hub-notifications] .actions>small{flex:0 0 100%;min-width:0;max-width:100%;white-space:normal!important;overflow-wrap:anywhere;line-height:1.5}
+.root[data-hub-notifications] .panel :is(p,small,strong,label){white-space:normal!important;overflow-wrap:anywhere;max-width:100%;min-width:0}
+.root[data-hub-notifications] .preferences{gap:8px;padding-top:10px;margin-top:10px}.root[data-hub-notifications] .preferences p{margin:0;line-height:1.5}
+/* Owner chrome has no --owner-bg token; match the client's dark page surface explicitly. */
+:global([data-owner-portal][data-color-mode=dark]) .root[data-hub-notifications] .panel{background:#18181b!important}
