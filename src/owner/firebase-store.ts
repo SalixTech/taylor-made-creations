@@ -183,7 +183,12 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
     try {
       const key = JSON.stringify(input);
       if (pendingPublication?.key !== key) pendingPublication = { key, operationId: crypto.randomUUID() };
-      const result = await callBackup<{ workspace: unknown }>("tmcOwnerPublishContent", { ...input, operationId: pendingPublication.operationId });
+      // Use the same JSON representation as saved drafts and the retry key.
+      // Firebase callable encoding turns optional undefined properties into null;
+      // null is intentionally invalid for appearance objects. Preserve explicit
+      // null/false/zero and every actual style; only omitted JSON fields disappear.
+      const request = JSON.parse(key) as Record<string, unknown>;
+      const result = await callBackup<{ workspace: unknown }>("tmcOwnerPublishContent", { ...request, operationId: pendingPublication.operationId });
       assertOwnerWorkspace(result.workspace); requireOwner(); pendingPublication = null; notify(); return structuredClone(result.workspace);
     } catch (error) { throw cloudError(error, "write"); }
   };

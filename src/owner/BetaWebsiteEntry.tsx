@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import styles from "./BetaWebsiteEntry.module.css";
+import { pendingWebsiteUploads } from "./cloud-files-client";
 import { BUILD_HOST, websiteHostRole } from "./website-hosts";
 import { useEffect, useState } from "react";
 import { FirebaseOwnerGate, type FirebaseOwnerSession } from "./FirebaseOwnerGate";
@@ -12,6 +13,8 @@ import { WorkspaceLoading } from "@/components/WorkspaceLoading";
 function Preview({ session, pathname }: { session: FirebaseOwnerSession; pathname: string }) {
   const [snapshot, setSnapshot] = useState<PublishedOwnerSnapshot | null>(null);
   const [error, setError] = useState("");
+  const [reloadError, setReloadError] = useState("");
+  const reloadPage=()=>{try{session.recoveryIdentity.assertCurrent();if(pendingWebsiteUploads().length)throw new Error("An upload is still retained in this page. Finish or recover it before reloading.");window.location.reload();}catch(cause){setReloadError(cause instanceof Error?cause.message:"This session could not be confirmed. Sign in again before reloading.");}};
   useEffect(() => {
     let active = true; const controller = new AbortController();
     void (async () => {
@@ -37,7 +40,7 @@ function Preview({ session, pathname }: { session: FirebaseOwnerSession; pathnam
   const relative = pathname.startsWith(OWNER_PREVIEW_ROOT) ? pathname.slice(OWNER_PREVIEW_ROOT.length) : pathname;
   const page = getPreviewPage(content, relative.split("/").filter(Boolean));
   if (!page || page.builtinKey === "client-hub") return <section><h1>Page unavailable in beta preview</h1><Link href="/">Return to beta home</Link></section>;
-  return <><aside className={styles.bar}><span>Private beta preview · No changes to the main website.</span><a href={`https://${buildHost}/`} target="_blank" rel="noopener noreferrer">Open builder</a><button type="button" onClick={() => void session.signOut()}>Sign out</button></aside><SiteContentFrame content={content} page={page} mode="private-preview" /></>;
+  return <><aside className={styles.bar}><span>Private beta preview · No changes to the main website.</span><a href={`https://${buildHost}/`} target="_blank" rel="noopener noreferrer">Open builder</a><button type="button" onClick={reloadPage}>Reload Page</button><button type="button" onClick={() => void session.signOut()}>Sign out</button></aside>{reloadError&&<p role="alert">{reloadError}</p>}<SiteContentFrame content={content} page={page} mode="private-preview" /></>;
 }
 /** No private data is embedded in server HTML. Firestore and media enforce owner access. */
 export function BetaWebsiteEntry({ pathname = "/" }: { pathname?: string }) { return <FirebaseOwnerGate>{session => <Preview session={session} pathname={pathname} />}</FirebaseOwnerGate>; }
