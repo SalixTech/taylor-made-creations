@@ -6,12 +6,14 @@ export const CLOUD_FILE_MAX_BYTES = 500_000_000;
 export const CLOUD_DOCUMENT_MAX_BYTES=12*1024*1024;
 export const CLOUD_DOCUMENT_SOURCE=/^\/api\/cloud-documents\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
 export const CLOUD_BUTTONS_FOLDER_ID="00000000-0000-4000-8000-000000000004";
+export const CLOUD_DEFAULTS_FOLDER_ID="00000000-0000-4000-8000-000000000006";
+export const CLOUD_SITE_PHOTOS_FOLDER_ID="00000000-0000-4000-8000-000000000007";
 export const CLOUD_DOCUMENTS_FOLDER_ID="00000000-0000-4000-8000-000000000005";
 export const CLOUD_FONT_MAX_BYTES = 4_000_000;
 export const CLOUD_FONTS_FOLDER_ID = "00000000-0000-4000-8000-000000000001";
 export const CLOUD_GALLERY_FOLDER_ID = "00000000-0000-4000-8000-000000000002";
 export const CLOUD_COMMISSIONS_FOLDER_ID = "00000000-0000-4000-8000-000000000003";
-export const CLOUD_SYSTEM_FOLDERS: Record<string, string> = { [CLOUD_FONTS_FOLDER_ID]: "Fonts", [CLOUD_GALLERY_FOLDER_ID]: "Gallery", [CLOUD_COMMISSIONS_FOLDER_ID]: "Commissions", [CLOUD_BUTTONS_FOLDER_ID]:"Buttons", [CLOUD_DOCUMENTS_FOLDER_ID]:"Website PDFs" };
+export const CLOUD_SYSTEM_FOLDERS: Record<string, string> = { [CLOUD_FONTS_FOLDER_ID]: "Fonts", [CLOUD_GALLERY_FOLDER_ID]: "Gallery", [CLOUD_COMMISSIONS_FOLDER_ID]: "Commissions", [CLOUD_BUTTONS_FOLDER_ID]:"Buttons", [CLOUD_DOCUMENTS_FOLDER_ID]:"Website PDFs", [CLOUD_DEFAULTS_FOLDER_ID]:"Website Defaults", [CLOUD_SITE_PHOTOS_FOLDER_ID]:"Site Photos" };
 export const isProtectedCloudFolder = (id: string): boolean => Object.hasOwn(CLOUD_SYSTEM_FOLDERS, id);
 export const CLOUD_FONT_SOURCE = /^\/api\/cloud-fonts\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
 export const CLOUD_FONT_TYPES = { woff: "font/woff", woff2: "font/woff2", ttf: "font/ttf", otf: "font/otf" } as const;
@@ -66,7 +68,7 @@ export function isFolderTrashed(registry: CloudFolders, parentId: string): boole
 export function assertActiveFolder(registry: CloudFolders, parentId: string): void { if (isFolderTrashed(registry, parentId)) throw new Error("Restore this folder before adding or moving files into it."); }
 /** Only actual image fields from the already projected PUBLIC snapshot are indexed. */
 export function publishedCloudPhotoIds(content: import("./model").PublicOwnerContent): string[] {
-  const sources = [...(content.buttonDesigns??[]).flatMap(design=>design.artwork?[design.artwork.src]:[]),...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(image => image.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
+  const sources = [...Object.values(content.contentOverrides?.links??{}).flatMap(link=>link.buttonAppearance?.artwork?[link.buttonAppearance.artwork.src]:[]),...content.pages.flatMap(page=>page.blocks.flatMap(block=>block.type==="link"&&block.buttonAppearance?.artwork?[block.buttonAppearance.artwork.src]:[])),...(content.buttonDesigns??[]).flatMap(design=>design.artwork?[design.artwork.src]:[]),...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(image => image.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
   const ids = [...new Set(sources.flatMap(source => source.match(CLOUD_PHOTO_SOURCE)?.[1] ?? []))].sort();
   if (ids.length > PUBLIC_PHOTO_LIMIT) throw new Error(`A publication can contain up to ${PUBLIC_PHOTO_LIMIT} distinct cloud photos. Nothing was published.`);
   return ids;

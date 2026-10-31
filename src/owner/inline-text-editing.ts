@@ -4,6 +4,17 @@ const units=(source:string):Unit[]=>parseInlineLinks(source).flatMap(part=>part.
 export const inlinePlainText=(source:string)=>parseInlineLinks(source).map(part=>part.text).join('');
 function serialize(chars:Unit[]):string{let result='';for(let i=0;i<chars.length;){let end=i+1;while(end<chars.length&&chars[end].href===chars[i].href)end++;const text=chars.slice(i,end).map(c=>c.text).join('');const edges=text.match(/^(\s*)([\s\S]*?)(\s*)$/)!;result+=chars[i].href?(edges[1]+(makeInlineLink(edges[2],chars[i].href!)??edges[2])+edges[3]):text;i=end;}return result;}
 export function editInlinePlainText(source:string,next:string):string{const old=units(source),plain=old.map(c=>c.text).join('');if(plain===next)return source;let start=0,end=plain.length,nextEnd=next.length;while(start<end&&start<nextEnd&&plain[start]===next[start])start++;while(end>start&&nextEnd>start&&plain[end-1]===next[nextEnd-1]){end--;nextEnd--;}const href=end>start&&old.slice(start,end).every(c=>c.href===old[start]?.href)?old[start]?.href:start>0&&old[start-1]?.href===old[start]?.href?old[start]?.href:undefined;return serialize([...old.slice(0,start),...next.slice(start,nextEnd).split('').map(text=>({text,href})),...old.slice(end)]);}
+/** Native offsets stay UTF-16, but editing never bisects a grapheme. Missing
+ * Segmenter fails closed for non-ASCII rather than pretending code points are glyphs. */
+export function snapGraphemeRange(text:string,start:number,end:number):{start:number;end:number}|null{
+ if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>text.length)return null;
+ let boundaries:number[];
+ if(typeof Intl.Segmenter==='function')boundaries=[...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(text),part=>part.index),text.length];
+ else {if(/[^\x00-\x7f]/.test(text))return null;boundaries=Array.from({length:text.length+1},(_,index)=>index).filter(index=>!(text[index-1]==='\r'&&text[index]==='\n'));}
+ const before=(offset:number)=>boundaries.filter(value=>value<=offset).at(-1)??0,after=(offset:number)=>boundaries.find(value=>value>=offset)??text.length;
+ if(start===end){const low=before(start),high=after(start),caret=start-low<=high-start?low:high;return{start:caret,end:caret};}
+ return{start:before(start),end:after(end)};
+}
 export type InlineSelection={start:number;end:number;value:string};
 export function applyInlineHyperlink(source:string,selection:InlineSelection,label:string,href:string,mode:'selection'|'insert'):string|null{
  if(selection.value!==source||!Number.isSafeInteger(selection.start)||!Number.isSafeInteger(selection.end)||selection.start<0||selection.end<selection.start)return null;

@@ -8,7 +8,7 @@ import { collection, doc, getDoc, getDocs, runTransaction } from "firebase/fires
 import { getMetadata, getStorage, ref, uploadBytesResumable } from "firebase/storage";
 import { taylorOwnerSession } from "./taylor-services-client";
 import { notifyPrivateAssetLibraryChanged } from "./asset-library-client";
-import { assertActiveFolder, assertCloudId, CLOUD_BUCKET, CLOUD_DOCUMENT_MAX_BYTES, CLOUD_DOCUMENTS_FOLDER_ID, CLOUD_FILE_MAX_BYTES, CLOUD_FONT_MAX_BYTES, CLOUD_FONTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, isProtectedCloudFolder, CLOUD_FONT_TYPES, CLOUD_PRIVATE_EXTENSIONS, CLOUD_ORIGINAL_PHOTO_TYPES, isOriginalCloudPhoto, CLOUD_PHOTO_MAX_BYTES, CLOUD_PHOTO_INPUT_MAX_BYTES, cloudObjectPath, cloudPhotoSource, decodeCloudFile, decodeCloudFolders, emptyCloudFolders, validFileName, type CloudFile, type CloudFolders } from "./cloud-files-model";
+import { assertActiveFolder, assertCloudId, CLOUD_BUCKET, CLOUD_DOCUMENT_MAX_BYTES, CLOUD_DOCUMENTS_FOLDER_ID, CLOUD_DEFAULTS_FOLDER_ID, CLOUD_SITE_PHOTOS_FOLDER_ID, CLOUD_FILE_MAX_BYTES, CLOUD_FONT_MAX_BYTES, CLOUD_FONTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, isProtectedCloudFolder, CLOUD_FONT_TYPES, CLOUD_PRIVATE_EXTENSIONS, CLOUD_ORIGINAL_PHOTO_TYPES, isOriginalCloudPhoto, CLOUD_PHOTO_MAX_BYTES, CLOUD_PHOTO_INPUT_MAX_BYTES, cloudObjectPath, cloudPhotoSource, decodeCloudFile, decodeCloudFolders, emptyCloudFolders, validFileName, type CloudFile, type CloudFolders } from "./cloud-files-model";
 
 import { decodeCloudFileOrder, emptyCloudFileOrder, reorderCloudKeys, type CloudFileOrder } from "./cloud-file-order";
 
@@ -108,7 +108,7 @@ export async function changeCloudFile(file: CloudFile, change: { name?: string; 
 }
 export async function changeCloudFolder(registry: CloudFolders, id: string, change: { name?: string; parentId?: string; trashedAt?: string | null }): Promise<CloudFolders> {
   assertCloudId(id);
-  if (isProtectedCloudFolder(id)) throw new Error("This protected folder stays at the top of File Hub.");
+  if (isProtectedCloudFolder(id)) throw new Error("This protected folder cannot be renamed, moved or deleted.");
   try {
     const session = await connection(); session.assertCurrent();
     const response = await httpsCallable<unknown, { folders: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerChangeCloudFolder")(workspaceCallableInput({ folderId: id, expectedRevision: registry.revision, change }));
@@ -205,21 +205,23 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
   if(WEBSITE_WORKSPACE==="beta"&&!photo&&!fontType&&!options.websiteDocument)throw new Error("Beta accepts website photos, fonts and explicitly selected website PDFs. Private originals are not uploaded through this website gateway.");
   const name = file.name.replace(/[\u0000-\u001f\u007f/\\]/g, " ").trim().slice(0, 150) || "Uploaded file";
   if (!validFileName(name)) throw new Error("Choose a file with a valid name.");
-  if ((fontType||options.websiteDocument) && !options.parentId) await ensureCloudSystemFolders();
+  const automaticWebsiteFolder = (!options.parentId || WEBSITE_WORKSPACE === "beta" && (options.parentId === "root" || options.parentId === CLOUD_DEFAULTS_FOLDER_ID)) && ((WEBSITE_WORKSPACE === "beta" && photo) || fontType || options.websiteDocument);
   if ((WEBSITE_WORKSPACE === "beta" || options.websiteDocument) && pendingWebsiteUploads().some(attempt => attempt.name === name)) throw new Error("The original upload with this name is still retained. Use Retry same upload instead of selecting it again.");
   const id = crypto.randomUUID(), now = new Date().toISOString();
   if (options.parentId === CLOUD_COMMISSIONS_FOLDER_ID) throw new Error("Use the private commission sharing controls for commission files.");
   if (name.length > 42) throw new Error("Use a file name of 42 characters or fewer.");
-  const record: CloudFile = { id, schemaVersion: 1, revision: 1, kind: options.websiteDocument?"document":photo ? "photo" : fontType ? "font" : pdf ? "pdf" : "file", name, parentId: options.parentId ?? (options.websiteDocument?CLOUD_DOCUMENTS_FOLDER_ID:fontType ? CLOUD_FONTS_FOLDER_ID : "root"), contentType: photo ? "image/webp" : fontType ?? (pdf ? "application/pdf" : "application/octet-stream"), bytes: prepared.blob.size, width: prepared.width, height: prepared.height, status: "uploading", trashedAt: null, createdAt: now, updatedAt: now };
+  const record: CloudFile = { id, schemaVersion: 1, revision: 1, kind: options.websiteDocument?"document":photo ? "photo" : fontType ? "font" : pdf ? "pdf" : "file", name, parentId: automaticWebsiteFolder ? (options.websiteDocument ? CLOUD_DOCUMENTS_FOLDER_ID : fontType ? CLOUD_FONTS_FOLDER_ID : CLOUD_SITE_PHOTOS_FOLDER_ID) : options.parentId ?? "root", contentType: photo ? "image/webp" : fontType ?? (pdf ? "application/pdf" : "application/octet-stream"), bytes: prepared.blob.size, width: prepared.width, height: prepared.height, status: "uploading", trashedAt: null, createdAt: now, updatedAt: now };
   try {
     const session = await connection(); signal?.throwIfAborted();
     if (WEBSITE_WORKSPACE === "beta" || record.kind === "document") {
       const known = await getDocs(collection(session.db, CLOUD_FILES_COLLECTION)); session.assertCurrent(); signal?.throwIfAborted();
       if (known.docs.some(item => { const existing = decodeCloudFile(item.data(), item.id); return existing.status === "uploading" && existing.name === name; })) throw new Error("A pending cloud upload already has this name. Check its existing entry. If its original bytes are no longer retained, keep it for review instead of creating another file identity.");
       if (pendingWebsiteUploads().some(attempt => attempt.name === name)) throw new Error("The original upload with this name is still retained. Use Retry same upload instead of selecting it again.");
+      if (automaticWebsiteFolder) { await ensureCloudSystemFolders(); session.assertCurrent(); signal?.throwIfAborted(); }
       websiteUploadAttempts.set(id, { record, blob: prepared.blob, session, running: false });
       return await retryWebsiteUpload(id, { signal, onProgress });
     }
+    if (automaticWebsiteFolder) { await ensureCloudSystemFolders(); session.assertCurrent(); signal?.throwIfAborted(); }
     const target = doc(session.db, CLOUD_FILES_COLLECTION, id);
     await runTransaction(session.db, async transaction => {
       const [existing, folders] = await Promise.all([transaction.get(target), transaction.get(doc(session.db, CLOUD_FOLDERS_DOCUMENT))]);

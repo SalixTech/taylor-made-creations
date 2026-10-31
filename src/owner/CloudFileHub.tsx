@@ -9,7 +9,7 @@ import Image from "next/image";
 import SiteSelect from "@/components/SiteSelect";
 import { useContext, useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { readCloudFileOrder, saveCloudFileOrder, changeCloudFile, changeCloudFolder, confirmCloudUpload, downloadCloudFile, uploadCloudFile, pendingWebsiteUploads, retryWebsiteUpload, ensureCloudFontsFolder, ensureCloudSystemFolders, readCloudGallery, permanentDeleteCloudFiles, permanentlyDeleteEmptyCloudFolders, readCloudCleanupStatus, createCloudWebsitePhoto } from "./cloud-files-client";
-import { CLOUD_FOLDER_LIMIT, CLOUD_UPLOAD_ACCEPT, CLOUD_FONTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, CLOUD_GALLERY_FOLDER_ID, isProtectedCloudFolder, isOriginalCloudPhoto, cloudPhotoSource, folderAncestors, isFolderTrashed, validFileName, type CloudFile, type CloudFolder, type CloudFolders } from "./cloud-files-model";
+import { CLOUD_FOLDER_LIMIT, CLOUD_UPLOAD_ACCEPT, CLOUD_FONTS_FOLDER_ID, CLOUD_DEFAULTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, CLOUD_GALLERY_FOLDER_ID, isProtectedCloudFolder, isOriginalCloudPhoto, cloudPhotoSource, cloudDocumentSource, folderAncestors, isFolderTrashed, validFileName, type CloudFile, type CloudFolder, type CloudFolders } from "./cloud-files-model";
 import { emptyCloudFileOrder, orderedCloudKeys } from "./cloud-file-order";
 import { useCloudFiles } from "./use-cloud-files";
 import { useOwnerMediaSource } from "./media-client";
@@ -49,12 +49,12 @@ function PhotoThumbnail({ file }: { file: CloudFile }) {
 function FolderSymbol() { return <svg viewBox="0 0 48 38" width="44" height="36" aria-hidden="true" className={styles.symbol}><path d="M3 10V4h15l5 6h22v25H3Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>; }
 
 /** Owner-only File Hub and reusable cloud-photo picker. Uploading never publishes or selects a photo. */
-export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyChange }: { selected?: string; onSelect?: (src: string) => void; manager?: boolean; onBusyChange?: (busy: boolean) => void }) {
+export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyChange, pickerKind = "photo", initialFolder = "root" }: { pickerKind?: "photo" | "document"; initialFolder?: string; selected?: string; onSelect?: (src: string) => void; manager?: boolean; onBusyChange?: (busy: boolean) => void }) {
   const library = useCloudFiles();
   // Beta is a website-only workspace, never an entry to live commission files.
   function websiteFolder(id: string): boolean {
     if (WEBSITE_WORKSPACE !== "beta" || id === "root") return true;
-    if (id === CLOUD_COMMISSIONS_FOLDER_ID) return false;
+    if (id === CLOUD_COMMISSIONS_FOLDER_ID) return true;
     try { return !folderAncestors(library.folders, id).includes(CLOUD_COMMISSIONS_FOLDER_ID); } catch { return false; }
   }
   const picker = Boolean(onSelect);
@@ -69,7 +69,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
   const operation = useRef(false);
   const active = useRef<AbortController | null>(null);
   const objectUrls = useRef(new Set<string>());
-  const [parentId, setParentId] = useState("root");
+  const [parentId, setParentId] = useState(initialFolder);
   // Start in the folder view for both the hub and pickers. The optional
   // All photos tab is a flattened view, so using it initially hides folders.
   const [allPhotos, setAllPhotos] = useState(false);
@@ -157,15 +157,15 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
   const folderEntries = Object.entries(library.folders.folders).filter(([id, folder]) => {
     const trashed = isFolderTrashed(library.folders, id);
     return websiteFolder(id) && (!picker || id !== CLOUD_COMMISSIONS_FOLDER_ID) && (!picker || !allPhotos) && (trash ? trashed : !trashed && folder.parentId === currentParent) && (!query || folder.name.toLocaleLowerCase().includes(query));
-  }).sort((a, b) => a[1].name.localeCompare(b[1].name));
+  }).sort((a, b) => Number(b[0] === CLOUD_DEFAULTS_FOLDER_ID) - Number(a[0] === CLOUD_DEFAULTS_FOLDER_ID) || a[1].name.localeCompare(b[1].name));
   const files = library.files.filter(file => {
     const trashed = Boolean(file.trashedAt) || isFolderTrashed(library.folders, file.parentId);
-    return websiteFolder(file.parentId) && (!picker || file.kind === "photo" && file.status === "ready") && (trash ? trashed : !trashed && (picker && allPhotos || file.parentId === currentParent || linkedGalleryIds.has(file.id))) && (!query || file.name.toLocaleLowerCase().includes(query));
+    return file.parentId !== CLOUD_COMMISSIONS_FOLDER_ID && websiteFolder(file.parentId) && (!picker || file.kind === pickerKind && file.status === "ready") && (trash ? trashed : !trashed && (picker && allPhotos || file.parentId === currentParent || linkedGalleryIds.has(file.id))) && (!query || file.name.toLocaleLowerCase().includes(query));
   }).sort((a, b) => a.name.localeCompare(b.name));
   const visibleItems: Item[] = [...folderEntries.map(([id, folder]): Item => ({ kind: "folder", id, folder, registry: library.folders })), ...files.map((file): Item => ({ kind: "file", file }))];
   const sortedKeys = orderedCloudKeys(order, visibleItems.map(itemKey));
   const visibleByKey = new Map(visibleItems.map(item => [itemKey(item), item]));
-  const orderedItems = !trash && !picker ? sortedKeys.map(key => visibleByKey.get(key)!) : visibleItems;
+  const orderedItems = (!trash && !picker ? sortedKeys.map(key => visibleByKey.get(key)!) : visibleItems).sort((a, b) => Number(b.kind === "folder" && b.id === CLOUD_DEFAULTS_FOLDER_ID) - Number(a.kind === "folder" && a.id === CLOUD_DEFAULTS_FOLDER_ID));
   const canReorder = !trash && !picker && !query && orderReady && linkedGalleryIds.size === 0;
   const currentViewing = viewing && library.files.find(file => file.id === viewing.id && file.status === "ready") || null;
   const readyBytes = library.files.filter(file => file.status === "ready").reduce((sum, file) => sum + file.bytes, 0);
@@ -251,13 +251,13 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
         if (!alive.current || controller.signal.aborted) break;
         setUpload({ name: file.name, index: index + 1, count: incoming.length, percent: 0 });
         try {
-          await uploadCloudFile(file, { parentId: destination, signal: controller.signal, photoOnly: picker, preserveOriginal: WEBSITE_WORKSPACE==="beta"?false:!picker, onProgress: percent => { if (alive.current && !controller.signal.aborted) setUpload({ name: file.name, index: index + 1, count: incoming.length, percent }); } });
+          await uploadCloudFile(file, { parentId: destination, signal: controller.signal, photoOnly: picker && pickerKind === "photo", websiteDocument: picker && pickerKind === "document", preserveOriginal: WEBSITE_WORKSPACE==="beta"?false:!picker, onProgress: percent => { if (alive.current && !controller.signal.aborted) setUpload({ name: file.name, index: index + 1, count: incoming.length, percent }); } });
           if (controller.signal.aborted || !alive.current) break;
           completed++;
         } catch (failure) { if (controller.signal.aborted) break; failures.push(`${file.name}: ${failure instanceof Error ? failure.message : "Upload was not confirmed."}`); }
       }
       if (alive.current) {
-        if (completed) setMessage(`${completed} ${completed === 1 ? "file uploaded" : "files uploaded"}.${picker ? " Choose Use photo to place an image." : ""}`);
+        if (completed) setMessage(`${completed} ${completed === 1 ? "file uploaded" : "files uploaded"}.${picker ? pickerKind === "document" ? " Choose Use PDF to set the link." : " Choose Use photo to place an image." : ""}`);
         if (controller.signal.aborted) setError(`Upload stopped. Previously confirmed files are kept. An interrupted file may have finished: ${picker ? "open File Hub" : "refresh"} and check the pending entry. Use Retry same upload if its original bytes are still retained; do not select it again automatically.`);
         else if (failures.length) setError(`${failures.join("\n")}\n${picker ? "Open File Hub" : "Refresh"} to check pending entries. ${WEBSITE_WORKSPACE === "beta" ? "Use Retry same upload for retained attempts. After a page reload, only a read-only check is available; do not select the file again." : "To retry, select the file again; existing bytes are never overwritten."}`);
       }
@@ -405,7 +405,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
   function folderBranch(id: string, depth = 0) {
     const children = Object.entries(library.folders.folders)
       .filter(([key, folder]) => websiteFolder(key) && folder.parentId === id && !isFolderTrashed(library.folders, key))
-      .sort((a, b) => a[1].name.localeCompare(b[1].name));
+      .sort((a, b) => Number(b[0] === CLOUD_DEFAULTS_FOLDER_ID) - Number(a[0] === CLOUD_DEFAULTS_FOLDER_ID) || a[1].name.localeCompare(b[1].name));
     const name = id === "root" ? "My files" : library.folders.folders[id].name;
     const expanded = expandedFolders[id] ?? (id === "root" || breadcrumbs.includes(id));
     return <div key={id} className={styles.folderBranch} data-folder-branch={id}>
@@ -427,6 +427,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
     </div>;
   }
   const targets = [{ id: "root", label: "My files" }, ...Object.entries(library.folders.folders).filter(([id]) => websiteFolder(id) && !isFolderTrashed(library.folders, id) && !(editing?.target?.kind === "folder" && folderAncestors(library.folders, id).includes(editing.target.id))).map(([id]) => ({ id, label: folderPath(library.folders, id) })).sort((a, b) => a.label.localeCompare(b.label))];
+  if (WEBSITE_WORKSPACE === "beta" && !picker && currentParent === CLOUD_COMMISSIONS_FOLDER_ID && library.ready) return <section className={styles.hub}><h2>Commissions</h2><p className={styles.copy}>This protected folder is reserved for private commission files. Beta is website-only and does not load Taylor’s main Client Hub files.</p><button type="button" data-owner-button className={secondary} onClick={() => navigate(CLOUD_DEFAULTS_FOLDER_ID)}>Back to Website Defaults</button></section>;
   if (WEBSITE_WORKSPACE === "main" && !picker && currentParent === CLOUD_COMMISSIONS_FOLDER_ID && library.ready) return <CommissionFileHub onBack={() => navigate("root")} />;
   return <section className={`${styles.hub} ${manager ? styles.manager : ""}`} aria-label={picker ? "Cloud photo library" : "File Hub"} onKeyDown={event => { if (event.key === "Escape") { clearDrag(); setPlacing(null); } }} onDragEnd={clearDrag} onDragOver={event => dragOver(event, currentParent)} onDrop={event => drop(event, currentParent)}>
     <div className={styles.heading}><div>{manager ? <h2>File Hub</h2> : <h3>Cloud photo library</h3>}<small>{picker ? "Your uploaded photos" : "Your files, organized your way"}</small></div><div className={styles.headingActions}><RefreshButton label="Refresh files" busy={library.loading} disabled={busy} onClick={refreshFiles} />{!picker && <button type="button" data-owner-button className={`${secondary} ${styles.trashView}`} aria-label="Trash" title="View Trash" disabled={busy} aria-pressed={trash} onClick={() => { setTrash(true); setSearch(""); setError(""); }}><TrashIcon /></button>}</div></div>
@@ -441,7 +442,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
     {library.ready && placing && <div className={styles.moveStatus} data-file-move-toolbar><p className={styles.hint} role="status">Moving “{titleOf(placing)}”. Choose a position or destination folder.</p><button type="button" data-owner-button className={secondary} onClick={() => setPlacing(null)}>Cancel move</button></div>}
     {!trash && !allPhotos && breadcrumbs.length > 0 && <nav className={styles.breadcrumbs} aria-label="Folder path">{breadcrumbs.map(id => <span key={id}>/ <button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { if (placing) void movePlaced(id); else navigate(id); }} aria-current={currentParent === id ? "location" : undefined} onDragOver={event => dragOver(event, id)} onDrop={event => drop(event, id)} data-drop-target={dropTarget === id}>{library.folders.folders[id].name}</button></span>)}</nav>}
     {!trash && <div className={styles.tools}>
-      <input ref={fileInput} id={inputId} type="file" className={styles.fileInput} accept={picker ? photoAccept : CLOUD_UPLOAD_ACCEPT} multiple disabled={unavailable} aria-label={picker ? "Upload cloud photos" : "Upload cloud files"} onChange={event => { void uploadFiles(Array.from(event.target.files ?? [])); }} />
+      <input ref={fileInput} id={inputId} type="file" className={styles.fileInput} accept={picker ? pickerKind === "document" ? ".pdf,application/pdf" : photoAccept : CLOUD_UPLOAD_ACCEPT} multiple disabled={unavailable} aria-label={picker ? pickerKind === "document" ? "Upload website PDFs" : "Upload cloud photos" : "Upload cloud files"} onChange={event => { void uploadFiles(Array.from(event.target.files ?? [])); }} />
       <button type="button" data-owner-button className={primary} disabled={unavailable} onClick={() => fileInput.current?.click()}>{picker ? "Upload photos" : "Upload files"}</button>
       <button type="button" data-owner-button className={secondary} disabled={unavailable || Boolean(editing) || Object.keys(library.folders.folders).length >= CLOUD_FOLDER_LIMIT} onClick={() => { setAllPhotos(false); edit("new"); }}>New folder</button>
       <label className={styles.search}><input aria-label="Find files in this view" type="search" placeholder={picker && allPhotos ? "Find a cloud photo…" : "Find in this folder…"} value={search} onChange={event => setSearch(event.target.value)} /></label>
@@ -465,10 +466,10 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
         const { id, folder } = item;
         return <li className={styles.item} key={id} draggable={!unavailable && !trash && !picker && !editing && !isProtectedCloudFolder(id)} onDragStart={event => startDrag(event, item)} onDragOver={event => cardOver(event, item)} onDrop={event => cardDrop(event, item)} data-insert={insertion?.startsWith(`${itemKey(item)}:`) ? insertion.split(":").at(-1) : undefined} data-dragging={dragging === itemKey(item)} data-drop-target={dropTarget === id} onDoubleClick={() => { if (!trash && !editing) navigate(id); }}><div className={styles.preview}><FolderSymbol /></div><div className={styles.identity}>{editing?.mode === "rename" && editing.target && itemKey(editing.target) === itemKey(item) ? inlineName() : <p className={styles.name}>{folder.name}</p>}<small className={styles.meta}>{trash ? folderPath(library.folders, folder.parentId) : isProtectedCloudFolder(id) ? `${folder.name} folder · Protected` : "Folder"}</small></div><div className={styles.actions}>{placementControls(item)}{trash ? <><button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void restore(item); }}>Restore folder</button>{!isProtectedCloudFolder(id) && <button type="button" data-owner-button className={danger} disabled={unavailable || !cleanup?.available || isProtectedCloudFolder(id)} aria-label={`Delete permanently: ${titleOf(item)}`} onClick={() => askDelete(item)}>Delete</button>}</> : <><button type="button" data-owner-button className={primary} disabled={busy} onClick={() => navigate(id)}>Open</button>{!isProtectedCloudFolder(id) && <><button type="button" data-owner-button className={secondary} aria-label={`Rename: ${titleOf(item)}`} disabled={unavailable || isProtectedCloudFolder(id)} onClick={() => edit("rename", item)}>Rename</button><button type="button" data-owner-button className={secondary} aria-label={`Move: ${titleOf(item)}`} disabled={unavailable || isProtectedCloudFolder(id)} onClick={() => edit("move", item)}>Move</button><button type="button" data-owner-button className={`${secondary} ${buttons.icon}`} aria-label={`Move to Trash: ${titleOf(item)}`} title={`Move to Trash: ${titleOf(item)}`} disabled={unavailable || isProtectedCloudFolder(id)} onClick={() => edit("trash", item)}><TrashIcon /></button></>}</>}</div></li>;
       }
-        const file = item.file, linked = linkedGalleryIds.has(file.id), src = file.kind === "photo" ? cloudPhotoSource(file.id) : "";
+        const file = item.file, linked = linkedGalleryIds.has(file.id), src = file.kind === "photo" ? cloudPhotoSource(file.id) : file.kind === "document" ? cloudDocumentSource(file.id) : "";
         return <li className={styles.item} key={file.id} draggable={!linked && !unavailable && !trash && !picker && !editing} onDragStart={event => startDrag(event, item)} onDragOver={event => cardOver(event, item)} onDrop={event => cardDrop(event, item)} data-insert={insertion?.startsWith(`${itemKey(item)}:`) ? insertion.split(":").at(-1) : undefined} data-dragging={dragging === itemKey(item)} data-selected={Boolean(src) && selected === src}>
           {file.kind === "photo" && file.status === "ready" ? <PhotoThumbnail file={file} /> : <div className={styles.preview}><span className={styles.fileType}>{file.status === "uploading" ? "PENDING" : file.name.split(".").pop()?.toUpperCase().slice(0,8) || "FILE"}</span></div>}
-          <div className={styles.identity}>{editing?.mode === "rename" && editing.target && itemKey(editing.target) === itemKey(item) ? inlineName() : <p className={styles.name}>{file.name}</p>}<small className={styles.meta}>{bytesLabel(file.bytes)}{file.kind === "photo" ? ` · ${file.width} × ${file.height} · Website photo` : isOriginalCloudPhoto(file) ? " · Original image" : file.kind === "font" ? " · Font" : " · Private file"}{file.status === "uploading" ? " · Upload not confirmed" : ""}</small>{linked && <small className={styles.meta}>Linked from {folderPath(library.folders, file.parentId)}</small>}{(allPhotos || trash) && <small className={styles.meta}>{folderPath(library.folders, file.parentId)}</small>}</div>
+          <div className={styles.identity}>{editing?.mode === "rename" && editing.target && itemKey(editing.target) === itemKey(item) ? inlineName() : <p className={styles.name}>{file.name}</p>}<small className={styles.meta}>{bytesLabel(file.bytes)}{file.kind === "photo" ? ` · ${file.width} × ${file.height} · Website photo` : isOriginalCloudPhoto(file) ? " · Original image" : file.kind === "font" ? " · Font" : file.kind === "document" ? " · Website PDF" : " · Private file"}{file.status === "uploading" ? " · Upload not confirmed" : ""}</small>{linked && <small className={styles.meta}>Linked from {folderPath(library.folders, file.parentId)}</small>}{(allPhotos || trash) && <small className={styles.meta}>{folderPath(library.folders, file.parentId)}</small>}</div>
           <div className={styles.actions}>
             {!linked && placementControls(item)}
             {linked && <button type="button" data-owner-button className={secondary} onClick={() => navigate(file.parentId)}>Open original folder</button>}
@@ -476,7 +477,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
             {file.status === "ready" && !picker && !trash && isOriginalCloudPhoto(file) && <button type="button" data-owner-button className={primary} aria-label={`Create optimized website copy: ${file.name}`} disabled={unavailable} onClick={() => { void makeWebsitePhoto(file); }}>Create optimized website copy</button>}
             {file.status === "ready" && !picker && <button type="button" data-owner-button className={secondary} aria-label={`Download file: ${file.name}`} disabled={unavailable} onClick={() => { void download(file); }}>{file.kind === "pdf" ? "Download PDF" : "Download"}</button>}
             {trash ? <><button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void restore(item); }}>Restore file</button><button type="button" data-owner-button className={danger} disabled={unavailable || !cleanup?.available} aria-label={`Delete permanently: ${titleOf(item)}`} onClick={() => askDelete(item)}>Delete</button></> : <>
-              {picker && file.status === "ready" && onSelect && <button type="button" data-owner-button className={primary} disabled={unavailable} aria-pressed={selected === src} aria-label={`Use photo: ${file.name}`} onClick={() => onSelect(src)}>{selected === src ? "Selected photo" : "Use photo"}</button>}
+              {picker && file.status === "ready" && onSelect && <button type="button" data-owner-button className={primary} disabled={unavailable} aria-pressed={selected === src} aria-label={`Use ${pickerKind === "document" ? "PDF" : "photo"}: ${file.name}`} onClick={() => { if (!unavailable && !operation.current && file.kind === pickerKind && !file.trashedAt) onSelect(src); }}>{selected === src ? "Selected" : pickerKind === "document" ? "Use PDF" : "Use photo"}</button>}
               {file.status === "uploading" && <button type="button" data-owner-button className={secondary} disabled={unavailable} onClick={() => { void run(async () => { await confirmCloudUpload(file); }, "Completed upload verified and added to your cloud files."); }}>Check completed upload</button>}
               {!picker && !linked && <><button type="button" data-owner-button className={secondary} aria-label={`Rename: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("rename", item)}>Rename</button><button type="button" data-owner-button className={secondary} aria-label={`Move: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("move", item)}>Move</button><button type="button" data-owner-button className={`${secondary} ${buttons.icon}`} aria-label={`Move to Trash: ${titleOf(item)}`} title={`Move to Trash: ${titleOf(item)}`} disabled={unavailable} onClick={() => edit("trash", item)}><TrashIcon /></button></>}
             </>}
@@ -490,7 +491,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyC
     {library.ready && currentViewing && <Dialog title={currentViewing.name} wide onClose={() => setViewing(null)} actions={<button type="button" data-owner-button className={secondary} onClick={() => setViewing(null)}>Close photo</button>}><PrivatePhoto file={currentViewing} full /><p className={styles.copy}>{currentViewing.width} × {currentViewing.height} · {bytesLabel(currentViewing.bytes)}. Viewing does not change a page or publish this photo.</p></Dialog>}
     {library.ready && editing && editing.mode !== "new" && editing.mode !== "rename" && <Dialog title={`${editing.mode === "move" ? "Move" : "Move to Trash:"} ${editing.target ? titleOf(editing.target) : ""}`} dismissDisabled={busy} onClose={() => { if (!operation.current) { setEditing(null); setError(""); } }} actions={<><button type="button" data-owner-button className={secondary} disabled={busy} onClick={() => { setEditing(null); setError(""); }}>Cancel</button><button type="button" data-owner-button className={primary} disabled={busy || library.loading} aria-busy={busy} onClick={() => { void saveEdit(); }}>{busy ? "Saving…" : editing.mode === "trash" ? "Move to Trash" : "Save change"}</button></>}>
       {editing.mode === "move" && <fieldset className={styles.destination} disabled={busy}><legend>Destination folder</legend><SiteSelect id={`${inputId}-move`} value={editing.parentId} onChange={value => setEditing(current => current ? { ...current, parentId: value } : null)} options={targets.map(target => ({ value: target.id, label: target.label }))} /></fieldset>}
-      {editing.mode === "trash" && <p className={styles.copy}>{editing.target?.kind === "folder" ? "The folder and everything inside it will appear in Trash. " : "This file will appear in Trash. "}No bytes are deleted. Existing page and published photo references are kept. You can restore it later.</p>}
+      {editing.mode === "trash" && <p className={styles.copy}>{editing.target?.kind === "folder" ? "The folder and everything inside it will appear in Trash. " : "This file will appear in Trash. "}No bytes are deleted. Existing page and published photo references are kept. You can restore it later. Website files may be used by your live site or saved drafts; changing or permanently deleting them can affect that content. Files still in use remain protected from permanent deletion.</p>}
       {editing.mode === "move" && <p className={styles.copy}>Moving only changes its folder. Stable photo references and existing pages are unchanged.</p>}
       {error && <p className={styles.error} role="alert">{error}</p>}
     </Dialog>}

@@ -1,3 +1,4 @@
+import {initializeInlineTextMobile} from "./rich-text";
 import {initializeCanvasMobileLayouts} from "./canvas-layout";
 /** Safe editor operations: stable identities and bounded values, never arbitrary CSS. */
 export function normalizeHexColor(value: string): string | null {
@@ -51,6 +52,7 @@ export function editContentForLayout(draft:OwnerContent,change:(draft:OwnerConte
 /** Snapshot both layout dimensions once; re-enabling never erases a saved mobile layout. */
 export function initializeMobileLayout(content:OwnerContent){
  initializeCanvasMobileLayouts(content);
+ initializeInlineTextMobile(content);
  if(content.design?.mobileDesign!==undefined){content.design.mobileLayoutEnabled=true;return;}
  const snapshot=(value:import("./appearance").ElementAppearance|undefined)=>value?.mobile!==undefined?value:{...value,mobile:structuredClone(resolveElementAppearance(value,false)??{})};
  for(const page of content.pages){page.titleAppearance=snapshot(page.titleAppearance);page.blocks.forEach((block,index)=>{block.appearance=snapshot(block.appearance);if(block.mobileParentId===undefined)block.mobileParentId=block.parentId??null;if(block.mobileOrder===undefined)block.mobileOrder=index;});}

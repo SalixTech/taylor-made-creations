@@ -1,3 +1,5 @@
+import { BUTTON_PRESETS, validateButtonStyle, type ButtonAppearance } from "./button-import";
+import {validateInlineTextStyles,projectInlineTextStyles} from "./rich-text";
 import { validateContentCanvasLayout, projectCanvasLayouts, type CanvasLayout } from "./canvas-layout";
 import { isCanvasStyleKey, canvasStyleKeyIsPublic } from "./canvas-target-registry";
 import { validElementBox } from "./box-geometry";
@@ -16,8 +18,10 @@ export const BUILTIN_ROUTES = {
 export type BuiltinPageKey = keyof typeof BUILTIN_ROUTES;
 export type TextBlock = { id: string; type: "text"; heading: string; body: string };
 export type ImageBlock = { id: string; type: "image"; src: string; alt: string; caption: string };
-export type LinkBlock = { id: string; type: "link"; label: string; href: string; buttonDesignId?:string };
-export type ButtonDesign={id:string;name:string;preset:"solid"|"outline"|"plain";artwork?:{src:string}};
+export type LinkBlock = { id: string; type: "link"; label: string; href: string; buttonDesignId?:string; buttonAppearance?:ButtonAppearance };
+export function buttonAppearanceSources(content:OwnerContent|PublicOwnerContent):string[]{return [...Object.values(content.contentOverrides?.links??{}).flatMap(link=>link.buttonAppearance?.artwork?[link.buttonAppearance.artwork.src]:[]),...content.pages.flatMap(page=>page.blocks.flatMap(block=>block.type==="link"&&block.buttonAppearance?.artwork?[block.buttonAppearance.artwork.src]:[]))];}
+function copyButtonAppearance(value:ButtonAppearance):ButtonAppearance{if(value.artwork?.src.startsWith("data:"))throw new OwnerValidationError([{path:"buttonAppearance.artwork",message:"Upload button artwork before publishing. Browser-local images cannot be published."}]);return {preset:value.preset,...(value.artwork?{artwork:{src:value.artwork.src}}:{}),...(value.imported?{imported:{...value.imported}}:{}),...(value.hover?{hover:{...value.hover}}:{}),...(value.focus?{focus:{...value.focus}}:{})};}
+export type ButtonDesign={id:string;name:string}&ButtonAppearance;
 export type HeadingBlock = { id: string; type: "heading"; text: string; level: 2 | 3 };
 export type ListBlock = { id: string; type: "list"; items: string[]; style: "bullet" | "numbered" };
 export type DividerBlock = { id: string; type: "divider" };
@@ -237,12 +241,18 @@ function validateContent(value: unknown, published = false): ValidationResult {
   };
   if (root.design !== undefined) validateDesign(root.design, "design");
   const buttonIds=new Set<string>();
-  if(root.buttonDesigns!==undefined)list(root.buttonDesigns,"buttonDesigns",100).forEach((value,index)=>{const path=`buttonDesigns[${index}]`,entry=object(value,path);exact(entry,["id","name","preset","artwork"],path);id(entry.id,`${path}.id`,"buttonDesigns");if(typeof entry.id==="string")buttonIds.add(entry.id);text(entry.name,`${path}.name`,100);if(!["solid","outline","plain"].includes(entry.preset as string))issue(`${path}.preset`,"Choose a button preset.");if(entry.artwork!==undefined){const artwork=object(entry.artwork,`${path}.artwork`);exact(artwork,["src"],`${path}.artwork`);if(typeof artwork.src!=="string"||!isSafeButtonArtwork(artwork.src))issue(`${path}.artwork.src`,"Choose an uploaded raster button image.");}});
+  const buttonAppearance=(value:unknown,path:string,reusable=false)=>{
+    const entry=object(value,path);exact(entry,[...(reusable?["id","name"]:[]),"preset","artwork","imported","hover","focus"],path);
+    if(!BUTTON_PRESETS.includes(entry.preset as ButtonAppearance["preset"]))issue(`${path}.preset`,"Choose a button preset.");
+    for(const state of ["imported","hover","focus"])if(entry[state]!==undefined&&!validateButtonStyle(entry[state]))issue(`${path}.${state}`,"Choose supported structured button styles.");
+    if(entry.artwork!==undefined){const artwork=object(entry.artwork,`${path}.artwork`);exact(artwork,["src"],`${path}.artwork`);if(typeof artwork.src!=="string"||!isSafeButtonArtwork(artwork.src))issue(`${path}.artwork.src`,"Choose an uploaded raster button image.");}
+  };
+  if(root.buttonDesigns!==undefined)list(root.buttonDesigns,"buttonDesigns",100).forEach((value,index)=>{const path=`buttonDesigns[${index}]`,entry=object(value,path);buttonAppearance(value,path,true);id(entry.id,`${path}.id`,"buttonDesigns");if(typeof entry.id==="string")buttonIds.add(entry.id);text(entry.name,`${path}.name`,100);});
   if(root.gallerySettings!==undefined){const settings=object(root.gallerySettings,"gallerySettings");exact(settings,["showNumbers"],"gallerySettings");bool(settings.showNumbers,"gallerySettings.showNumbers");}
   const buttonRef=(value:unknown,path:string)=>{if(value!==undefined&&(typeof value!=="string"||!buttonIds.has(value)))issue(path,"Choose an existing reusable button design.");};
   if (root.contentOverrides !== undefined) {
     const overrides = object(root.contentOverrides, "contentOverrides");
-    exact(overrides, ["text", "images", "links", "styles"], "contentOverrides");
+    exact(overrides, ["text", "images", "links", "styles", "inlineStyles"], "contentOverrides");
     if (overrides.styles !== undefined) {
       const fields = object(overrides.styles, "contentOverrides.styles"); exact(fields, [...STYLE_FIELDS.map(field => field.key), ...Object.keys(fields).filter(isCanvasStyleKey)], "contentOverrides.styles");
       for (const [key, value] of Object.entries(fields)) appearance(value, `contentOverrides.styles.${key}`);
@@ -261,7 +271,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (overrides.links !== undefined) {
       const fields = object(overrides.links, "contentOverrides.links"); exact(fields, LINK_FIELDS.map(field => field.key), "contentOverrides.links");
       for (const [key, value] of Object.entries(fields)) {
-        const path = `contentOverrides.links.${key}`; const entry = object(value, path); exact(entry, ["label", "href", "buttonDesignId"], path);buttonRef(entry.buttonDesignId,`${path}.buttonDesignId`); text(entry.label, `${path}.label`, 150);
+        const path = `contentOverrides.links.${key}`; const entry = object(value, path); exact(entry, ["label", "href", "buttonDesignId", "buttonAppearance"], path);buttonRef(entry.buttonDesignId,`${path}.buttonDesignId`);if(entry.buttonAppearance!==undefined)buttonAppearance(entry.buttonAppearance,`${path}.buttonAppearance`); text(entry.label, `${path}.label`, 150);
         countText(entry.href); if (typeof entry.href !== "string" || !isSafeLink(entry.href)) issue(`${path}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed.");
       }
     }
@@ -392,7 +402,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
       if (block.type === "section") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); }
       else if (block.type === "text") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "body", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); text(block.body, `${b}.body`, 20000, false); }
       else if (block.type === "image") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "src", "alt", "caption", "appearance"], b); image(block.src, `${b}.src`); text(block.alt, `${b}.alt`, 500); text(block.caption, `${b}.caption`, 1000, false); }
-      else if (block.type === "link") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "label", "href", "buttonDesignId", "appearance"], b);buttonRef(block.buttonDesignId,`${b}.buttonDesignId`); text(block.label, `${b}.label`, 150); if (typeof block.href !== "string" || !isSafeLink(block.href)) issue(`${b}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed."); }
+      else if (block.type === "link") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "label", "href", "buttonDesignId", "buttonAppearance", "appearance"], b);buttonRef(block.buttonDesignId,`${b}.buttonDesignId`);if(block.buttonAppearance!==undefined)buttonAppearance(block.buttonAppearance,`${b}.buttonAppearance`); text(block.label, `${b}.label`, 150); if (typeof block.href !== "string" || !isSafeLink(block.href)) issue(`${b}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed."); }
       else if (block.type === "heading") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "text", "level", "appearance"], b); text(block.text, `${b}.text`, 200); if (block.level !== 2 && block.level !== 3) issue(`${b}.level`, "Choose heading level 2 or 3."); }
       else if (block.type === "list") {
         exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "items", "style", "appearance"], b);
@@ -433,6 +443,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
   for (const key of published ? ["home"] : Object.keys(BUILTIN_ROUTES)) if (!seenBuiltins.has(key)) issue("pages", `The ${key} built-in page must be retained; use the trash instead of deleting it.`);
   if(issues.length===0){
     const content=value as OwnerContent;
+    issues.push(...validateInlineTextStyles(content));
     if(content.chromeLayout!==undefined)issues.push(...validateContentCanvasLayout(content,"chrome",content.chromeLayout,"chromeLayout"));
     for(const [index,page] of content.pages.entries())if(page.canvasLayout!==undefined)issues.push(...validateContentCanvasLayout(content,page,page.canvasLayout,`pages[${index}].canvasLayout`));
   }
@@ -590,7 +601,7 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
         if (block.type === "section") return {...blockLayout(block),id:block.id,type:block.type,heading:block.heading};
         if (block.type === "text") return { ...blockLayout(block), id: block.id, type: block.type, heading: block.heading, body: block.body };
         if (block.type === "image") return { ...blockLayout(block), id: block.id, type: block.type, src: publicImage(block.src, `pages.${page.id}.${block.id}.src`), alt: block.alt, caption: block.caption };
-        if (block.type === "link") return { ...blockLayout(block), id: block.id, type: block.type, label: block.label, href: block.href, ...(block.buttonDesignId?{buttonDesignId:block.buttonDesignId}:{}) };
+        if (block.type === "link") return { ...blockLayout(block), id: block.id, type: block.type, label: block.label, href: block.href, ...(block.buttonDesignId?{buttonDesignId:block.buttonDesignId}:{}),...(block.buttonAppearance?{buttonAppearance:copyButtonAppearance(block.buttonAppearance)}:{}) };
         if (block.type === "heading") return { ...blockLayout(block), id: block.id, type: block.type, text: block.text, level: block.level };
         if (block.type === "list") return { ...blockLayout(block), id: block.id, type: block.type, items: [...block.items], style: block.style };
         if (block.type === "divider") return { ...blockLayout(block), id: block.id, type: block.type };
@@ -613,17 +624,19 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
   }
   if (content.contentOverrides !== undefined) {
     snapshot.contentOverrides = {};
+    if(content.contentOverrides.inlineStyles!==undefined)snapshot.contentOverrides.inlineStyles=structuredClone(content.contentOverrides.inlineStyles);
     const isActive = (group: string) => group === "site" || content.pages.some(page => page.builtinKey === group && !page.trashedAt && page.availability !== "hidden");
     if (content.contentOverrides.styles !== undefined) snapshot.contentOverrides.styles = Object.fromEntries(Object.entries(content.contentOverrides.styles).filter(([key]) => STYLE_FIELDS.some(field => field.key === key && isActive(field.group)) || canvasStyleKeyIsPublic(key,snapshot)).map(([key,value]) => [key,publicAppearance(value)]));
     if (content.contentOverrides.text !== undefined) snapshot.contentOverrides.text = Object.fromEntries(TEXT_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.text!, field.key)).map(field => [field.key, content.contentOverrides!.text![field.key]]));
     if (content.contentOverrides.images !== undefined) snapshot.contentOverrides.images = Object.fromEntries(IMAGE_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.images!, field.key)).map(field => { const value = content.contentOverrides!.images![field.key]; return [field.key, { src: publicImage(value.src, `contentOverrides.images.${field.key}.src`), alt: value.alt }]; }));
-    if (content.contentOverrides.links !== undefined) snapshot.contentOverrides.links = Object.fromEntries(LINK_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.links!, field.key)).map(field => { const value = content.contentOverrides!.links![field.key]; return [field.key, { label: value.label, href: value.href, ...(value.buttonDesignId?{buttonDesignId:value.buttonDesignId}:{}) }]; }));
+    if (content.contentOverrides.links !== undefined) snapshot.contentOverrides.links = Object.fromEntries(LINK_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.links!, field.key)).map(field => { const value = content.contentOverrides!.links![field.key]; return [field.key, { label: value.label, href: value.href, ...(value.buttonDesignId?{buttonDesignId:value.buttonDesignId}:{}),...(value.buttonAppearance?{buttonAppearance:copyButtonAppearance(value.buttonAppearance)}:{}) }]; }));
   }
+  projectInlineTextStyles(snapshot);
   if(content.gallerySettings!==undefined)snapshot.gallerySettings={showNumbers:content.gallerySettings.showNumbers};
-  if(content.buttonDesigns!==undefined){const used=new Set([...Object.values(snapshot.contentOverrides?.links??{}).map(link=>link.buttonDesignId),...snapshot.pages.flatMap(page=>page.blocks.flatMap(block=>block.type==="link"?[block.buttonDesignId]:[]))]);snapshot.buttonDesigns=content.buttonDesigns.filter(design=>used.has(design.id)).map(design=>({id:design.id,name:design.name,preset:design.preset,...(design.artwork?{artwork:{src:publicImage(design.artwork.src,`buttonDesigns.${design.id}.artwork.src`)}}:{})}));}
+  if(content.buttonDesigns!==undefined){const used=new Set([...Object.values(snapshot.contentOverrides?.links??{}).map(link=>link.buttonDesignId),...snapshot.pages.flatMap(page=>page.blocks.flatMap(block=>block.type==="link"?[block.buttonDesignId]:[]))]);snapshot.buttonDesigns=content.buttonDesigns.filter(design=>used.has(design.id)).map(design=>({id:design.id,name:design.name,preset:design.preset,...(design.imported?{imported:{...design.imported}}:{}),...(design.hover?{hover:{...design.hover}}:{}),...(design.focus?{focus:{...design.focus}}:{}),...(design.artwork?{artwork:{src:publicImage(design.artwork.src,`buttonDesigns.${design.id}.artwork.src`)}}:{})}));}
   projectCanvasLayouts(snapshot);
   if (snapshot.fonts !== undefined) {
-    const used = new Set([snapshot.design?.bodyFontId, snapshot.design?.headingFontId, snapshot.design?.mobileDesign?.bodyFontId, snapshot.design?.mobileDesign?.headingFontId, ...Object.values(snapshot.contentOverrides?.styles ?? {}).flatMap(style => [style.fontId,style.mobile?.fontId]), ...snapshot.pages.flatMap(page => [page.titleAppearance?.fontId,page.titleAppearance?.mobile?.fontId, ...page.blocks.flatMap(block => [block.appearance?.fontId,block.appearance?.mobile?.fontId])])].filter(Boolean));
+    const used = new Set([...Object.values(snapshot.contentOverrides?.inlineStyles??{}).flatMap(record=>[...record.spans,...(record.mobile??[])].map(span=>span.style.fontId)), snapshot.design?.bodyFontId, snapshot.design?.headingFontId, snapshot.design?.mobileDesign?.bodyFontId, snapshot.design?.mobileDesign?.headingFontId, ...Object.values(snapshot.contentOverrides?.styles ?? {}).flatMap(style => [style.fontId,style.mobile?.fontId]), ...snapshot.pages.flatMap(page => [page.titleAppearance?.fontId,page.titleAppearance?.mobile?.fontId, ...page.blocks.flatMap(block => [block.appearance?.fontId,block.appearance?.mobile?.fontId])])].filter(Boolean));
     snapshot.fonts = snapshot.fonts.filter(font => used.has(font.id));
   }
   if (new TextEncoder().encode(JSON.stringify(snapshot)).byteLength > 700_000) throw new OwnerValidationError([{ path: "content", message: "This public text document is too large. Reduce the text or number of blocks before publishing." }]);
@@ -661,7 +674,7 @@ export function assertPublicOwnerContent(value: unknown): asserts value is Publi
   const content = expanded as OwnerContent;
   // Turning the published shop off retains its already-public inventory so a
   // flag-only Update Live can turn it back on without publishing draft edits.
-  const imageSources = [...(content.buttonDesigns??[]).flatMap(design=>design.artwork?[design.artwork.src]:[]),...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(item => item.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
+  const imageSources = [...buttonAppearanceSources(content),...(content.buttonDesigns??[]).flatMap(design=>design.artwork?[design.artwork.src]:[]),...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(item => item.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
   if (imageSources.some(src => src.startsWith("data:"))) throw new OwnerValidationError([{ path: "content", message: "Published photos must use local site assets or secure HTTPS image storage, never browser data images." }]);
   if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 700_000) throw new OwnerValidationError([{ path: "content", message: "The published content exceeds the 700 KB limit." }]);
 }

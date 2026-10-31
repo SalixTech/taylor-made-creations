@@ -1,3 +1,4 @@
+import {projectInlineTextStyles,reconcileInlineTextStyles,getInlineTextSource} from "./rich-text";
 import {projectCanvasLayouts} from "./canvas-layout";
 import { isCanvasStyleKey, canvasStyleKeyIsPublic } from "./canvas-target-registry";
 import { createPublicContentSnapshot, assertPublicOwnerContent, type OwnerContent, type PublicOwnerContent } from "./model";
@@ -79,6 +80,20 @@ export function selectPublication(draft: OwnerContent, live: PublicOwnerContent 
   // A website-only selection must not publish layout identities belonging to
   // unchecked new/private listings or photos. Resolve after all selected groups.
   if (output.contentOverrides?.styles) output.contentOverrides.styles = Object.fromEntries(Object.entries(output.contentOverrides.styles).filter(([key]) => !isCanvasStyleKey(key) || canvasStyleKeyIsPublic(key,output)));
+  if(live){
+    reconcileInlineTextStyles(live,output);
+    // A website-only formatting record may belong to unchecked new price text.
+    // Keep the already-public matching formatting, never that unchecked source.
+    for(const [id,record] of Object.entries(output.contentOverrides?.inlineStyles??{})){
+      const text=getInlineTextSource(output,id)?.text,prior=live.contentOverrides?.inlineStyles?.[id];
+      if(text!==undefined&&prior&&record.text!==text&&prior.text===text){
+        output.contentOverrides!.inlineStyles![id]=structuredClone(prior);
+        const used=new Set([...prior.spans,...(prior.mobile??[])].map(span=>span.style.fontId));
+        for(const font of live.fonts??[])if(used.has(font.id)&&!output.fonts?.some(item=>item.id===font.id)){output.fonts??=[];output.fonts.push(structuredClone(font));}
+      }
+    }
+  }
+  projectInlineTextStyles(output);
   assertPublicOwnerContent(output);
   projectCanvasLayouts(output);
   return output;

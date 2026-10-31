@@ -319,3 +319,10 @@
 .boxMore>summary::-webkit-details-marker{display:none;}
 .pagePicker{transform:translateY(-4px);}
 .editTextAction{margin-block:12px;}
+
+.panelContent [data-owner-advanced-position]{margin-block:12px 18px;}
+.panelContent [data-owner-advanced-position]>summary{padding-block:6px;}
+
+/* Compact canvas menu; keep every action keyboard reachable. */
+.canvasContextMenu{min-width:150px;padding:5px;}
+.canvasContextMenu button{padding:6px 10px;}
