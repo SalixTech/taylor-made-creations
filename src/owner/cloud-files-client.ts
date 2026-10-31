@@ -130,6 +130,53 @@ async function normalizePhoto(file: File): Promise<{ blob: Blob; width: number; 
     return { blob, width: canvas.width, height: canvas.height };
   } finally { image.close(); }
 }
+type WebsiteUploadAttempt = { record: CloudFile; blob: Blob; session: Awaited<ReturnType<typeof connection>>; running: boolean };
+// Page-memory only: never persist private bytes or carry a pending operation into another login.
+const websiteUploadAttempts = new Map<string, WebsiteUploadAttempt>();
+export function pendingWebsiteUploads(): { id: string; name: string; bytes: number; running: boolean }[] {
+  const result: { id: string; name: string; bytes: number; running: boolean }[] = [];
+  for (const [id, attempt] of websiteUploadAttempts) {
+    try { attempt.session.assertCurrent(); } catch { websiteUploadAttempts.delete(id); continue; }
+    result.push({ id, name: attempt.record.name, bytes: attempt.record.bytes, running: attempt.running });
+  }
+  return result;
+}
+function sameUploadReservation(current: CloudFile, original: CloudFile) {
+  const stable = ["id", "schemaVersion", "kind", "name", "parentId", "contentType", "bytes", "width", "height", "trashedAt", "createdAt"] as const;
+  return stable.every(key => current[key] === original[key])
+    && (current.status === "uploading" && current.revision === original.revision && current.updatedAt === original.updatedAt || current.status === "ready" && current.revision === original.revision + 1);
+}
+export async function retryWebsiteUpload(id: string, options: { signal?: AbortSignal; onProgress?: (percent: number) => void } = {}): Promise<CloudFile> {
+  const attempt = websiteUploadAttempts.get(id);
+  if (!attempt) throw new Error("The original upload bytes are not retained in this page. Check its pending entry; do not create a replacement automatically.");
+  if (attempt.running) throw new Error("This exact upload is already being checked.");
+  const { record, blob, session } = attempt;
+  const check = () => { session.assertCurrent(); options.signal?.throwIfAborted(); };
+  check(); attempt.running = true;
+  try {
+    const target = doc(session.db, CLOUD_FILES_COLLECTION, id);
+    await runTransaction(session.db, async transaction => {
+      const [existing, folders] = await Promise.all([transaction.get(target), transaction.get(doc(session.db, CLOUD_FOLDERS_DOCUMENT))]);
+      check(); assertActiveFolder(folders.exists() ? decodeCloudFolders(folders.data()) : emptyCloudFolders(), record.parentId);
+      if (existing.exists()) {
+        if (!sameUploadReservation(decodeCloudFile(existing.data(), id), record)) throw new Error("This upload record changed. Keep its pending entry and check it before retrying.");
+      } else transaction.set(target, fileData(record));
+    });
+    check();
+    const bytes = new Uint8Array(await blob.arrayBuffer()); let binary = "";
+    for (let index = 0; index < bytes.length; index += 32768) binary += String.fromCharCode(...bytes.subarray(index, index + 32768));
+    check();
+    const result = await httpsCallable<unknown, { file: unknown }>(getFunctions(session.auth.app, "us-central1"), "tmcOwnerWebsiteAssets")({ workspace: WEBSITE_WORKSPACE, action: "upload", fileId: id, expectedRevision: record.revision, base64: btoa(binary) });
+    check();
+    const raw = result.data.file as Record<string, unknown>;
+    if (!raw || typeof raw !== "object" || raw.id !== id) throw new Error("The website upload returned another file identity.");
+    const { id: returnedId, ...data } = raw; void returnedId;
+    const confirmed = decodeCloudFile(data, id);
+    if (confirmed.status !== "ready" || !sameUploadReservation(confirmed, record)) throw new Error("The website upload could not be verified.");
+    websiteUploadAttempts.delete(id); options.onProgress?.(100); changed(); return confirmed;
+  } catch (error) { changed(); throw message(error); }
+  finally { attempt.running = false; changed(); }
+}
 export async function uploadCloudFile(file: File, options: { parentId?: string; signal?: AbortSignal; onProgress?: (percent: number) => void; photoOnly?: boolean; preserveOriginal?: boolean; websiteDocument?: boolean } = {}): Promise<CloudFile> {
   const { signal, onProgress } = options;
   signal?.throwIfAborted();
@@ -159,12 +206,20 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
   const name = file.name.replace(/[\u0000-\u001f\u007f/\\]/g, " ").trim().slice(0, 150) || "Uploaded file";
   if (!validFileName(name)) throw new Error("Choose a file with a valid name.");
   if ((fontType||options.websiteDocument) && !options.parentId) await ensureCloudSystemFolders();
+  if ((WEBSITE_WORKSPACE === "beta" || options.websiteDocument) && pendingWebsiteUploads().some(attempt => attempt.name === name)) throw new Error("The original upload with this name is still retained. Use Retry same upload instead of selecting it again.");
   const id = crypto.randomUUID(), now = new Date().toISOString();
   if (options.parentId === CLOUD_COMMISSIONS_FOLDER_ID) throw new Error("Use the private commission sharing controls for commission files.");
   if (name.length > 42) throw new Error("Use a file name of 42 characters or fewer.");
   const record: CloudFile = { id, schemaVersion: 1, revision: 1, kind: options.websiteDocument?"document":photo ? "photo" : fontType ? "font" : pdf ? "pdf" : "file", name, parentId: options.parentId ?? (options.websiteDocument?CLOUD_DOCUMENTS_FOLDER_ID:fontType ? CLOUD_FONTS_FOLDER_ID : "root"), contentType: photo ? "image/webp" : fontType ?? (pdf ? "application/pdf" : "application/octet-stream"), bytes: prepared.blob.size, width: prepared.width, height: prepared.height, status: "uploading", trashedAt: null, createdAt: now, updatedAt: now };
   try {
     const session = await connection(); signal?.throwIfAborted();
+    if (WEBSITE_WORKSPACE === "beta" || record.kind === "document") {
+      const known = await getDocs(collection(session.db, CLOUD_FILES_COLLECTION)); session.assertCurrent(); signal?.throwIfAborted();
+      if (known.docs.some(item => { const existing = decodeCloudFile(item.data(), item.id); return existing.status === "uploading" && existing.name === name; })) throw new Error("A pending cloud upload already has this name. Check its existing entry. If its original bytes are no longer retained, keep it for review instead of creating another file identity.");
+      if (pendingWebsiteUploads().some(attempt => attempt.name === name)) throw new Error("The original upload with this name is still retained. Use Retry same upload instead of selecting it again.");
+      websiteUploadAttempts.set(id, { record, blob: prepared.blob, session, running: false });
+      return await retryWebsiteUpload(id, { signal, onProgress });
+    }
     const target = doc(session.db, CLOUD_FILES_COLLECTION, id);
     await runTransaction(session.db, async transaction => {
       const [existing, folders] = await Promise.all([transaction.get(target), transaction.get(doc(session.db, CLOUD_FOLDERS_DOCUMENT))]);
@@ -173,10 +228,6 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
       session.assertCurrent(); signal?.throwIfAborted(); transaction.set(target, fileData(record));
     });
     session.assertCurrent(); signal?.throwIfAborted();
-    if(WEBSITE_WORKSPACE==="beta"||record.kind==="document"){
-      const bytes=new Uint8Array(await prepared.blob.arrayBuffer());let binary="";for(let index=0;index<bytes.length;index+=32768)binary+=String.fromCharCode(...bytes.subarray(index,index+32768));session.assertCurrent();signal?.throwIfAborted();
-      const result=await httpsCallable<unknown,{file:unknown}>(getFunctions(session.auth.app,"us-central1"),"tmcOwnerWebsiteAssets")({workspace:WEBSITE_WORKSPACE,action:"upload",fileId:record.id,expectedRevision:record.revision,base64:btoa(binary)});session.assertCurrent();signal?.throwIfAborted();const raw=result.data.file as Record<string,unknown>;const {id:returnedId,...data}=raw;if(returnedId!==record.id)throw new Error("The website upload returned another file identity.");const confirmed=decodeCloudFile(data,record.id);if(confirmed.status!=="ready"||confirmed.kind!==record.kind||confirmed.bytes!==record.bytes||confirmed.contentType!==record.contentType)throw new Error("The website upload could not be verified.");onProgress?.(100);changed();return confirmed;
-    }
     const task = uploadBytesResumable(ref(session.storage, workspaceObject(cloudObjectPath(record))), prepared.blob, { contentType: record.contentType, cacheControl: "private, no-store, max-age=0", contentDisposition: photo || fontType ? "inline" : "attachment", customMetadata: { fileId: id } });
     const cancel = () => { task.cancel(); };
     const unsubscribe = session.auth.onAuthStateChanged(() => { try { session.assertCurrent(); } catch { cancel(); } });
@@ -192,7 +243,16 @@ export async function uploadCloudFile(file: File, options: { parentId?: string; 
 export async function confirmCloudUpload(file: CloudFile): Promise<CloudFile> {
   try {
     const session = await connection();
-    if(WEBSITE_WORKSPACE==="beta"||file.kind==="document"){const{betaAssetMetadata}=await import("./beta-assets-client");const result=await betaAssetMetadata(file.id,session);session.assertCurrent();if(result.file.status!=="ready"||result.file.kind!==file.kind||result.file.bytes!==file.bytes)throw new Error("This beta upload is not yet confirmed.");changed();return result.file;}
+    if (WEBSITE_WORKSPACE === "beta" || file.kind === "document") {
+      const { betaAssetMetadata, betaUploadStatus } = await import("./beta-assets-client");
+      if (WEBSITE_WORKSPACE === "beta") {
+        const status = await betaUploadStatus(file.id, session); session.assertCurrent();
+        if (status.registryStatus !== "ready" || status.objectStatus !== "matching" || status.receiptStatus !== "matching") throw new Error(status.objectStatus === "matching" ? "Stored bytes were found, but this upload is not confirmed. Nothing was changed. Retry the retained original attempt if available; otherwise keep this pending entry for review." : "This upload is not confirmed. Nothing was changed. Retry the retained original attempt if available; otherwise keep this pending entry for review.");
+      }
+      const result = await betaAssetMetadata(file.id, session); session.assertCurrent();
+      if (result.file.status !== "ready" || result.file.kind !== file.kind || result.file.bytes !== file.bytes) throw new Error("This website upload is not yet confirmed.");
+      changed(); return result.file;
+    }
     const metadata = await getMetadata(ref(session.storage, workspaceObject(cloudObjectPath(file)))); session.assertCurrent();
     if (metadata.size !== file.bytes || metadata.contentType !== file.contentType || metadata.customMetadata?.fileId !== file.id) throw new Error("Uploaded bytes do not match this file’s metadata. Nothing was activated.");
     const result = await runTransaction(session.db, async transaction => {

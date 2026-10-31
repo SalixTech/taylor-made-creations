@@ -132,6 +132,12 @@ export function LegacyAssetLibrary({ selected = "", onSelect, manager = false }:
 }
 
 /** The current chooser uses cloud storage. Legacy files are not deleted or rewritten. */
+export function CloudFileDialog({onClose,...props}: {selected?:string;onSelect?:(src:string)=>void;manager?:boolean;onClose:()=>void}) {
+  const busyRef=useRef(false),[busy,setBusy]=useState(false);
+  const close=()=>{if(!busyRef.current)onClose();};
+  return <div onKeyDown={event=>{if(event.key==="Escape")event.stopPropagation();}}><Dialog wide maximizable title={props.manager?"File Hub":"Cloud photo library"} dismissDisabled={busy} onClose={close} actions={null}><CloudFileHub {...props} onBusyChange={value=>{busyRef.current=value;setBusy(value);}} onSelect={props.onSelect?src=>{if(busyRef.current)return;props.onSelect?.(src);onClose();}:undefined}/></Dialog></div>;
+}
 export function AssetLibrary(props: { selected?: string; onSelect?: (src: string) => void; manager?: boolean }) {
-  return props.manager ? <CloudFileHub {...props} /> : <details className={styles.collapsedLibrary}><summary>Cloud photo library</summary><CloudFileHub {...props} /></details>;
+  const [open,setOpen]=useState(false);
+  return props.manager ? <CloudFileHub {...props} /> : <><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} aria-haspopup="dialog" onClick={()=>setOpen(true)}>Open photo library</button>{open&&<CloudFileDialog {...props} onClose={()=>setOpen(false)}/>}</>;
 }

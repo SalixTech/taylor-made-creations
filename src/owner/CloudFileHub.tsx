@@ -8,7 +8,7 @@ import { RefreshButton } from "@/components/RefreshButton";
 import Image from "next/image";
 import SiteSelect from "@/components/SiteSelect";
 import { useContext, useEffect, useId, useRef, useState, type DragEvent } from "react";
-import { readCloudFileOrder, saveCloudFileOrder, changeCloudFile, changeCloudFolder, confirmCloudUpload, downloadCloudFile, uploadCloudFile, ensureCloudFontsFolder, ensureCloudSystemFolders, readCloudGallery, permanentDeleteCloudFiles, permanentlyDeleteEmptyCloudFolders, readCloudCleanupStatus, createCloudWebsitePhoto } from "./cloud-files-client";
+import { readCloudFileOrder, saveCloudFileOrder, changeCloudFile, changeCloudFolder, confirmCloudUpload, downloadCloudFile, uploadCloudFile, pendingWebsiteUploads, retryWebsiteUpload, ensureCloudFontsFolder, ensureCloudSystemFolders, readCloudGallery, permanentDeleteCloudFiles, permanentlyDeleteEmptyCloudFolders, readCloudCleanupStatus, createCloudWebsitePhoto } from "./cloud-files-client";
 import { CLOUD_FOLDER_LIMIT, CLOUD_UPLOAD_ACCEPT, CLOUD_FONTS_FOLDER_ID, CLOUD_COMMISSIONS_FOLDER_ID, CLOUD_GALLERY_FOLDER_ID, isProtectedCloudFolder, isOriginalCloudPhoto, cloudPhotoSource, folderAncestors, isFolderTrashed, validFileName, type CloudFile, type CloudFolder, type CloudFolders } from "./cloud-files-model";
 import { emptyCloudFileOrder, orderedCloudKeys } from "./cloud-file-order";
 import { useCloudFiles } from "./use-cloud-files";
@@ -49,7 +49,7 @@ function PhotoThumbnail({ file }: { file: CloudFile }) {
 function FolderSymbol() { return <svg viewBox="0 0 48 38" width="44" height="36" aria-hidden="true" className={styles.symbol}><path d="M3 10V4h15l5 6h22v25H3Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg>; }
 
 /** Owner-only File Hub and reusable cloud-photo picker. Uploading never publishes or selects a photo. */
-export function CloudFileHub({ selected = "", onSelect, manager = false }: { selected?: string; onSelect?: (src: string) => void; manager?: boolean }) {
+export function CloudFileHub({ selected = "", onSelect, manager = false, onBusyChange }: { selected?: string; onSelect?: (src: string) => void; manager?: boolean; onBusyChange?: (busy: boolean) => void }) {
   const library = useCloudFiles();
   // Beta is a website-only workspace, never an entry to live commission files.
   function websiteFolder(id: string): boolean {
@@ -81,6 +81,10 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   const [editing, setEditing] = useState<Editing | null>(null);
   const [viewing, setViewing] = useState<CloudFile | null>(null);
   const [busy, setBusy] = useState(false);
+  function updateBusy(value: boolean) {
+    if (!alive.current) return;
+    onBusyChange?.(value); setBusy(value);
+  }
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const cleanupGeneration = useRef(0);
@@ -168,6 +172,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   const pendingCount = library.files.filter(file => file.status === "uploading").length;
   const trashFiles = library.files.filter(file => websiteFolder(file.parentId) && (Boolean(file.trashedAt) || isFolderTrashed(library.folders, file.parentId)));
   const unavailable = busy || library.loading || !library.ready;
+  const retainedUploads = library.ready ? pendingWebsiteUploads() : [];
 
   function refreshFiles() {
     setError(""); void library.refresh();
@@ -183,10 +188,10 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
   }
   async function run(action: () => Promise<void>, success = "") {
     if (operation.current) return;
-    operation.current = true; setBusy(true); setError(""); setMessage("");
+    operation.current = true; updateBusy(true); setError(""); setMessage("");
     try { await action(); if (alive.current && success) setMessage(success); }
     catch (failure) { if (alive.current) setError(failure instanceof Error ? failure.message : "The change was not confirmed. Refresh before retrying."); }
-    finally { operation.current = false; active.current = null; if (alive.current) { setBusy(false); void library.refresh(); } }
+    finally { operation.current = false; active.current = null; if (alive.current) { updateBusy(false); void library.refresh(); } }
   }
   async function saveEdit() {
     if (!editing) return;
@@ -220,9 +225,24 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
       window.setTimeout(() => { URL.revokeObjectURL(url); objectUrls.current.delete(url); }, 30_000);
     }, "File handed to your browser for download. Check your browser’s Downloads list.");
   }
+  async function retryUpload(id: string) {
+    if (operation.current || !library.ready) return;
+    operation.current = true; updateBusy(true); setError(""); setMessage("");
+    const controller = new AbortController(); active.current = controller;
+    finishUpload.current = uploadActivity.begin(() => controller.abort());
+    try {
+      await retryWebsiteUpload(id, { signal: controller.signal });
+      if (alive.current && !controller.signal.aborted && accessAllowed.current) setMessage("The same upload was confirmed. No new file identity was created.");
+    } catch (failure) {
+      if (alive.current && !controller.signal.aborted && accessAllowed.current) setError(failure instanceof Error ? failure.message : "This upload is not confirmed. The original attempt is retained.");
+    } finally {
+      operation.current = false; active.current = null; finishUpload.current?.(); finishUpload.current = null;
+      if (alive.current) { updateBusy(false); void library.refresh(); }
+    }
+  }
   async function uploadFiles(incoming: File[], destination = currentParent) {
     if (!incoming.length || operation.current || !library.ready) return;
-    operation.current = true; setBusy(true); setError(""); setMessage("");
+    operation.current = true; updateBusy(true); setError(""); setMessage("");
     const controller = new AbortController(); active.current = controller;
     finishUpload.current = uploadActivity.begin(() => controller.abort());
     let completed = 0; const failures: string[] = [];
@@ -238,12 +258,12 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
       }
       if (alive.current) {
         if (completed) setMessage(`${completed} ${completed === 1 ? "file uploaded" : "files uploaded"}.${picker ? " Choose Use photo to place an image." : ""}`);
-        if (controller.signal.aborted) setError(`Upload stopped. Previously confirmed files are kept. An interrupted file may have finished: ${picker ? "open File Hub" : "refresh"} and use Check completed upload before selecting the same file again.`);
-        else if (failures.length) setError(`${failures.join("\n")}\n${picker ? "Open File Hub" : "Refresh"} to check pending entries. To retry, select the file again; existing bytes are never overwritten.`);
+        if (controller.signal.aborted) setError(`Upload stopped. Previously confirmed files are kept. An interrupted file may have finished: ${picker ? "open File Hub" : "refresh"} and check the pending entry. Use Retry same upload if its original bytes are still retained; do not select it again automatically.`);
+        else if (failures.length) setError(`${failures.join("\n")}\n${picker ? "Open File Hub" : "Refresh"} to check pending entries. ${WEBSITE_WORKSPACE === "beta" ? "Use Retry same upload for retained attempts. After a page reload, only a read-only check is available; do not select the file again." : "To retry, select the file again; existing bytes are never overwritten."}`);
       }
     } finally {
       operation.current = false; active.current = null; finishUpload.current?.(); finishUpload.current = null;
-      if (alive.current) { setBusy(false); setUpload(null); void library.refresh(); }
+      if (alive.current) { updateBusy(false); setUpload(null); void library.refresh(); }
       if (fileInput.current) fileInput.current.value = "";
     }
   }
@@ -433,6 +453,7 @@ export function CloudFileHub({ selected = "", onSelect, manager = false }: { sel
     {library.error && <p className={styles.error} role="alert">{library.error} No local fallback was used.</p>}
     {library.ready && error && !editing && !deleting && <p className={styles.error} role="alert">{error}</p>}
     {library.ready && message && <p className={styles.success} role="status">{message}</p>}
+    {retainedUploads.length > 0 && <section aria-label="Unconfirmed uploads" className={styles.copy}><p>The original file is kept in this page for a safe retry. Closing this panel keeps it; reloading the page loses these local bytes, not the pending cloud record.</p>{retainedUploads.map(attempt => <div key={attempt.id}><span>{attempt.name} · {bytesLabel(attempt.bytes)} </span><button type="button" data-owner-button className={secondary} disabled={unavailable || attempt.running} onClick={() => void retryUpload(attempt.id)}>Retry same upload</button></div>)}</section>}
     {galleryRead === "loading" && <p role="status">Reading saved gallery links…</p>}
     {galleryRead === "error" && <p className={styles.error} role="alert">Saved gallery links could not be read. Folder photos are still shown; refresh to try again.</p>}
     {library.loading && <p className={styles.status} role="status">Reading your private Firebase file list…</p>}

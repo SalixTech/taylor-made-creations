@@ -92,7 +92,7 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
   }, [clearWorkspace]);
 
   useEffect(() => {
-    const lock = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.role !== "owner" || detail.uid !== clientRef.current?.ownerUid) return; ++authIntent.current; ++generation.current; clearWorkspace(); setPassword(""); setState({ status: "session-error", message: "Signed out in another window. Your private workspace is locked.", canSignOut: true }); };
+    const lock = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.role !== "owner" || detail.uid !== clientRef.current?.ownerUid) return; if (signingOut.current) return; if (!clientRef.current?.auth.currentUser && !loginPending.current && !signInTransition.current) return; ++authIntent.current; ++generation.current; clearWorkspace(); setPassword(""); setState({ status: "session-error", message: "Signed out in another window. Your private workspace is locked.", canSignOut: true }); };
     window.addEventListener("tmc-hub-session-lock", lock); return () => window.removeEventListener("tmc-hub-session-lock", lock);
   }, [clearWorkspace]);
 
@@ -136,7 +136,7 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
   return <OwnerGateFrame><main className={styles.gate}>
     <section className={styles.card} aria-labelledby="owner-signin-title">
       <Link className={styles.brand} href="/" aria-label="Taylor Made Creations home"><OwnerBrandLogo decorative /></Link>
-      <p className={styles.eyebrow}>TAYLOR’S SPACE</p>
+      <p className={styles.eyebrow}>{WEBSITE_WORKSPACE === "beta" ? "BETA BUILD" : "TAYLOR’S SPACE"}</p>
       <h1 id="owner-signin-title">{state.status === "setup" ? "A little setup first." : state.status === "denied" ? "Owner access only." : "Welcome back, Spoodle."}</h1>
       {state.status === "checking" || state.status === "signing-out" ? <p role="status" aria-live="polite">{state.status === "signing-out" ? "Signing out and locking your workspace…" : "Checking your owner sign-in…"}</p>
         : state.status === "setup" ? <>
@@ -152,7 +152,7 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
                 <label className={styles.field}>Head Floof Email<input type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} disabled={busy} /></label>
                 <label className={styles.field}>Pawsword<input type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} disabled={busy} /></label>
                 {message && <p className={styles.alert} role="alert">{message}</p>}
-                <button data-owner-button className={styles.primary} type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in to Taylor’s Space"}</button>
+                <button data-owner-button className={styles.primary} type="submit" disabled={busy}>{busy ? "Signing in…" : WEBSITE_WORKSPACE === "beta" ? "Sign in to BETA BUILD" : "Sign in to Taylor’s Space"}</button>
               </form>
               <p className={styles.hint}>Your sign-in stays in this browser tab’s session. Sign out when you’re finished on a shared device. There is no public account registration.</p>
             </>}

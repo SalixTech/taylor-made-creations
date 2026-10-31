@@ -46,3 +46,13 @@ export function betaAssetSourceId(source: string, kind: "photo" | "font" | "docu
   if (!match) throw new Error("This asset is not a beta website asset.");
   assertCloudId(match[1]); return match[1];
 }
+
+export type BetaUploadStatus = { fileId: string; registryStatus: "absent" | "uploading" | "ready"; objectStatus: "unknown" | "absent" | "matching" | "mismatch"; receiptStatus: "absent" | "matching" | "mismatch" };
+/** Read-only inspection; presence of bytes is never represented as a completed upload. */
+export async function betaUploadStatus(id: string, session: Session, signal?: AbortSignal): Promise<BetaUploadStatus> {
+  assertCloudId(id);
+  if (WEBSITE_WORKSPACE !== "beta") throw new Error("Pending upload inspection is available only in beta.");
+  const value = await requestWebsiteAsset({ action: "uploadStatus", fileId: id }, signal, session) as BetaUploadStatus;
+  if (!value || typeof value !== "object" || Object.keys(value).sort().join(",") !== "fileId,objectStatus,receiptStatus,registryStatus" || value.fileId !== id || !["absent", "uploading", "ready"].includes(value.registryStatus) || !["unknown", "absent", "matching", "mismatch"].includes(value.objectStatus) || !["absent", "matching", "mismatch"].includes(value.receiptStatus)) throw new Error("This pending upload status could not be verified.");
+  return value;
+}
