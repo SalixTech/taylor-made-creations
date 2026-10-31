@@ -2,6 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { websiteDeployment } from "./server/website-deployment";
 /** Deployment routing is NOT authentication. Every beta data endpoint verifies owner auth. */
 export function proxy(request: NextRequest) {
+  // Temporary, exact-host alias only. Never copy caller paths or query values.
+  if (request.headers.get("host") === "dev.taylormadecreations.dog") {
+    if (request.method !== "GET" && request.method !== "HEAD") return new NextResponse("Method not allowed.", { status: 405, headers: { "Allow": "GET, HEAD", "Cache-Control": "private, no-store" } });
+    return NextResponse.redirect("https://taylormadecreations.dog/taylor", {
+      status: 307,
+      headers: { "Cache-Control": "private, no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow" },
+    });
+  }
   try {
     const deployment = websiteDeployment(request.headers.get("host"));
     if (deployment.workspace === "beta") {
