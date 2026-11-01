@@ -1,4 +1,6 @@
 'use client';
+import {getTemplateText} from '@/owner/site-design';
+import {WebsiteTemplateText} from './WebsiteTemplateText';
 
 import {useEffect,useRef} from 'react';
 import terms from '@/data/terms-of-service.json';
@@ -12,6 +14,9 @@ export default function TermsAgreement({onAgree,onDismiss,previewContent}:{onAgr
   const publication = usePublicSiteState();
   const publishedContent = usePublicOwnerContent();
   const content = previewContent ?? publishedContent;
+  const copyContent=content;
+  const copyText=(field:string,fallback:string)=>copyContent?getTemplateText(copyContent,field):fallback;
+  const copy=(field:string,fallback:string)=>copyContent?<WebsiteTemplateText content={copyContent} field={field} mode={previewContent?'private-preview':'public'}/>:fallback;
   const page = content?.pages.find(page => page.builtinKey === "terms" && !page.trashedAt && page.availability !== "hidden");
   const canAgree = (previewContent ? previewTermsIdentity(previewContent) : currentTermsIdentity(publication)) !== null;
   const dialogRef=useRef<HTMLDialogElement>(null);
@@ -32,20 +37,20 @@ export default function TermsAgreement({onAgree,onDismiss,previewContent}:{onAgr
 
   return <dialog data-terms-dialog ref={dialogRef} className={styles.dialog} aria-labelledby="commission-terms-heading" onCancel={event=>{event.preventDefault();onDismiss();}}>
     <header className={styles.header}>
-      <div><p className={styles.eyebrow}>BEFORE WE BEGIN</p><h2 ref={headingRef} tabIndex={-1} id="commission-terms-heading">{page?.title ?? "Terms of service"}</h2></div>
+      <div><p className={styles.eyebrow}>{copy("commissions.termsEyebrow","BEFORE WE BEGIN")}</p><h2 ref={headingRef} tabIndex={-1} id="commission-terms-heading">{page?.title ?? copy("commissions.termsFallbackTitle","Terms of service")}</h2></div>
       <button type="button" className={styles.close} aria-label="Close terms of service" onClick={onDismiss}>×</button>
     </header>
     <div className={styles.content} tabIndex={0} aria-label="Full terms of service">
-      <p className={styles.intro}>Please read the terms below before agreeing to continue with your request.</p>
-      {!previewContent && publication.status === "error" ? <p role="alert">The current terms could not be loaded. Please try again before agreeing.</p> : content ? (page?.blocks.length ? <SiteContentBlocks content={content} blocks={page.blocks} presentation="terms" mode={previewContent ? "private-preview" : "public"} /> : <p role="alert">The terms are currently unavailable. Please contact Taylor before continuing.</p>) : <>{terms.sections.map(({id,heading,items})=><section key={id} aria-labelledby={`commission-terms-${id}`}>
+      <p className={styles.intro}>{copy("commissions.termsIntro","Please read the terms below before agreeing to continue with your request.")}</p>
+      {!previewContent && publication.status === "error" ? <p role="alert">{copy("commissions.termsLoadError","The current terms could not be loaded. Please try again before agreeing.")}</p> : content ? (page?.blocks.length ? <SiteContentBlocks content={content} blocks={page.blocks} presentation="terms" mode={previewContent ? "private-preview" : "public"} /> : <p role="alert">{copy("commissions.termsUnavailable","The terms are currently unavailable. Please contact Taylor before continuing.")}</p>) : <>{terms.sections.map(({id,heading,items})=><section key={id} aria-labelledby={`commission-terms-${id}`}>
         <h3 id={`commission-terms-${id}`}>{heading}</h3>
         <ul>{items.map(item=><li key={item}>{item}</li>)}</ul>
       </section>)}
       <p className={styles.agreement}>{terms.agreement}</p></>}
     </div>
     <footer className={styles.actions}>
-      <button type="button" className={styles.cancel} onClick={onDismiss}>Cancel</button>
-      <button type="button" className={styles.agree} disabled={!canAgree} onClick={() => { if (canAgree) onAgree(); }}>I agree to the terms of service</button>
+      <button type="button" className={styles.cancel} onClick={onDismiss}>{copyText("commissions.termsCancelButton","Cancel")}</button>
+      <button type="button" className={styles.agree} disabled={!canAgree} onClick={() => { if (canAgree) onAgree(); }}>{copyText("commissions.termsAgreeButton","I agree to the terms of service")}</button>
     </footer>
   </dialog>;
 }

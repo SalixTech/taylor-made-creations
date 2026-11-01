@@ -1,3 +1,4 @@
+import {defaultCommissionCopy,nonemptyCommissionCopy,type CommissionCopyFormatter} from './commission-presentation';
 import {countryName} from './countries.js';
 import {acceptedImages, suitTypes, partTypes} from './commission-options';
 import {getCommissionField, getCommissionOptionLabel, getCommissionQuestionOrder, getCommissionSectionOrder, type CommissionFieldId, type CommissionFormConfig} from './commission-form-config';
@@ -55,8 +56,9 @@ export function cleanDraft(d:Draft, options:CommissionFormOptions={}):Draft {
 export function transition(d:Draft, patch:Partial<Draft>, options:CommissionFormOptions={}):Draft {const next={...d,...patch};if(next.tos!=='Yes')next.tosAgreed=false;return cleanDraft(next,options);}
 export function hasTermsAgreement(d:Draft):boolean {return d.tos==='Yes'&&d.tosAgreed===true;}
 export type Reference = {name:string;size:number;type:string};
-export function referenceError(files:Reference[]) {if(!files.length)return 'Add a two-view reference sheet (one image can contain both views).';if(files.length>5)return 'Choose no more than 5 images.';if(files.some(f=>!acceptedImages.includes(f.type)))return 'Use JPG, PNG, WebP, GIF or AVIF images only (no SVG).';if(files.some(f=>f.size>30*1024*1024))return 'Each image must be 30 MB or smaller.';if(files.some(f=>f.size===0))return 'Empty image files cannot be used.';return '';}
-export function validate(d:Draft, files:Reference[], options:CommissionFormOptions={}) {
+export function referenceError(files:Reference[],display:CommissionCopyFormatter=defaultCommissionCopy) {display=nonemptyCommissionCopy(display);if(!files.length)return display("ReferenceRequired");if(files.length>5)return display("ReferenceCount");if(files.some(f=>!acceptedImages.includes(f.type)))return display("ReferenceType");if(files.some(f=>f.size>30*1024*1024))return display("ReferenceSize");if(files.some(f=>f.size===0))return display("ReferenceEmpty");return '';}
+export function validate(d:Draft, files:Reference[], options:CommissionFormOptions={},display:CommissionCopyFormatter=defaultCommissionCopy) {
+  display=nonemptyCommissionCopy(display);
   const errors:Record<string,string>={};
   const config=options.configuration,e=eligible(d);
   const shown=(key:CommissionFieldId):boolean=>{
@@ -82,54 +84,54 @@ export function validate(d:Draft, files:Reference[], options:CommissionFormOptio
     if(!Object.hasOwn(emptyDraft,key)||!shown(key as CommissionFieldId)||key==='references')continue;
     const field=getCommissionField(config,key as CommissionFieldId),value=d[key as keyof Draft];
     const missing=Array.isArray(value)?value.length===0:typeof value==='boolean'?!value:!String(value??'').trim();
-    if(field.required&&missing)errors[key]=`Complete “${field.label}”.`;
+    if(field.required&&missing)errors[key]=display("Required",{label:field.label});
     // Required is an owner preference. Supplied values must still use the field's data format.
     if(field.options&&key!=='additionalParts'&&!missing){
       const values=Array.isArray(value)?value:[value];
-      if(values.some(item=>typeof item!=='string'||!field.options!.includes(item)))errors[key]=`Choose a valid option for “${field.label}”.`;
+      if(values.some(item=>typeof item!=='string'||!field.options!.includes(item)))errors[key]=display("InvalidOption",{label:field.label});
     }
   }
-  if(d.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim()))errors.email='Enter a valid email address.';
-  if(getCommissionField(config,'tos').required&&!hasTermsAgreement(d))errors.tos='Read and agree to the terms of service to continue.';
+  if(d.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim()))errors.email=display("EmailInvalid");
+  if(getCommissionField(config,'tos').required&&!hasTermsAgreement(d))errors.tos=display("TermsRequired");
   // Optional consent is never fabricated: a supplied Yes still needs real acceptance.
-  if(d.tos==='Yes'&&!hasTermsAgreement(d))errors.tos='Read and agree to the terms of service to confirm Yes.';
-  if(d.usa==='No'&&d.country&&!countryName(d.country))errors.country='Choose a valid shipping country.';
-  if(options.additionalPartsQuantities===true&&allowsAdditionalParts(d)&&(d.additionalParts||[]).some(item=>!partTypes.includes(item.part)||!Number.isSafeInteger(item.quantity)||item.quantity<1))errors.additionalParts='Choose a whole-number quantity of at least 1 for each additional part.';
+  if(d.tos==='Yes'&&!hasTermsAgreement(d))errors.tos=display("TermsConfirm");
+  if(d.usa==='No'&&d.country&&!countryName(d.country))errors.country=display("CountryInvalid");
+  if(options.additionalPartsQuantities===true&&allowsAdditionalParts(d)&&(d.additionalParts||[]).some(item=>!partTypes.includes(item.part)||!Number.isSafeInteger(item.quantity)||item.quantity<1))errors.additionalParts=display("QuantityInvalid");
   if(allowsAdditionalParts(d))for(const item of d.additionalParts||[]){
     if(!partTypes.includes(item.part))continue;
     for(const key of additionalPartFollowups(item.part)){
       const field=getCommissionField(config,key),value=item.details?.[key];
       const missing=Array.isArray(value)?!value.length:typeof value==='boolean'?!value:!String(value??'').trim();
       const errorKey=additionalPartFieldId(item.part,key),partLabel=getCommissionOptionLabel(config,'additionalParts',item.part);
-      if(field.required&&missing)errors[errorKey]=`Complete “${field.label}” for ${partLabel}.`;
-      if(!missing&&field.options&&(Array.isArray(value)?value:[value]).some(option=>typeof option!=='string'||!field.options!.includes(option)))errors[errorKey]=`Choose a valid option for “${field.label}” for ${partLabel}.`;
-      if(key==='sandals'&&value!==undefined&&typeof value!=='boolean')errors[errorKey]=`Choose a valid option for “${field.label}” for ${partLabel}.`;
+      if(field.required&&missing)errors[errorKey]=display("RequiredPart",{label:field.label,part:partLabel});
+      if(!missing&&field.options&&(Array.isArray(value)?value:[value]).some(option=>typeof option!=='string'||!field.options!.includes(option)))errors[errorKey]=display("InvalidPartOption",{label:field.label,part:partLabel});
+      if(key==='sandals'&&value!==undefined&&typeof value!=='boolean')errors[errorKey]=display("InvalidPartOption",{label:field.label,part:partLabel});
     }
   }
   const answers=cleanCustomAnswers(d,options.configuration);
   for(const question of options.configuration?.customQuestions||[]){
     const value=answers[question.id];
-    if(question.required&&(Array.isArray(value)?!value.length:!value?.trim()))errors[`custom-${question.id}`]=`Complete “${question.label}”.`;
+    if(question.required&&(Array.isArray(value)?!value.length:!value?.trim()))errors[`custom-${question.id}`]=display("Required",{label:question.label});
   }
-  const ref=files.length||getCommissionField(config,'references').required?referenceError(files):'';if(ref)errors.references=ref;
+  const ref=files.length||getCommissionField(config,'references').required?referenceError(files,display):'';if(ref)errors.references=ref;
   return errors;
 }
-export function reviewRows(input:Draft, files:Reference[], options:CommissionFormOptions={}):[string,string][] {
+export function reviewRows(input:Draft, files:Reference[], options:CommissionFormOptions={},display:CommissionCopyFormatter=defaultCommissionCopy):[string,string][] {
   const d=cleanDraft(input,options),e=eligible(d),config=options.configuration;
   const rows:Partial<Record<CommissionFieldId,[string,string]>>={};
   const label=(key:CommissionFieldId,fallback:string)=>config?.fields?.[key]?.label||fallback;
   const option=(key:CommissionFieldId,value:string)=>getCommissionOptionLabel(config,key,value);
   const add=(key:CommissionFieldId,title:string,value:string)=>{if(value.trim())rows[key]=[label(key,title),value];};
   add('email','Email',d.email.trim());add('telegram','Telegram',d.telegram);add('discord','Discord',d.discord);
-  add('tos','Terms of service',hasTermsAgreement(d)?'Agreed':'Not agreed');add('usa','Shipping within USA',option('usa',d.usa));add('country','Shipping country',countryName(d.country));
-  add('character','Character',d.character);add('species','Species',d.species);add('references','Reference images',files.map(f=>`${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`).join('; '));add('suit','Suit type',option('suit',d.suit));
+  add('tos','Terms of service',hasTermsAgreement(d)?display("Agreed"):display("NotAgreed"));add('usa','Shipping within USA',option('usa',d.usa));add('country','Shipping country',countryName(d.country));
+  add('character','Character',d.character);add('species','Species',d.species);add('references','Reference images',files.map(f=>display("FileReview",{name:f.name,size:(f.size/1024/1024).toFixed(2)})).join('; '));add('suit','Suit type',option('suit',d.suit));
   if(d.suit==='Parts')add('parts','Parts',d.parts.map(value=>option('parts',value)).join(', '));
-  if(e.head)add('head','Head extras',d.head.map(value=>option('head',value)).join(', ')||'None selected');
-  if(e.hands)add('hands','Hand paw extras',d.hands.map(value=>option('hands',value)).join(', ')||'None selected');
-  if(e.tail){if(d.tailSize)add('tailSize','Tail size',option('tailSize',d.tailSize));if(d.suit==='Parts'||d.tailSize!=='No Tail')add('tail','Tail extras',d.tail.map(value=>option('tail',value)).join(', ')||'None selected');}
-  if(e.body)add('pockets','Body pockets',option('pockets',d.pockets)||'None selected');
-  if(e.feet){add('feet','Feet paws',d.suit==='Parts'?d.parts.filter(p=>p.startsWith('Feetpaws')).map(value=>option('parts',value)).join(', '):option('feet',d.feet));add('sandals','Sandals',d.sandals?'Requested':'Not requested');}
-  if(d.additionalParts?.length)add('additionalParts','Additional Parts',d.additionalParts.map(item=>`${option('additionalParts',item.part)} (quantity: ${item.quantity})`).join('; '));
+  if(e.head)add('head','Head extras',d.head.map(value=>option('head',value)).join(', ')||display("NoneSelected"));
+  if(e.hands)add('hands','Hand paw extras',d.hands.map(value=>option('hands',value)).join(', ')||display("NoneSelected"));
+  if(e.tail){if(d.tailSize)add('tailSize','Tail size',option('tailSize',d.tailSize));if(d.suit==='Parts'||d.tailSize!=='No Tail')add('tail','Tail extras',d.tail.map(value=>option('tail',value)).join(', ')||display("NoneSelected"));}
+  if(e.body)add('pockets','Body pockets',option('pockets',d.pockets)||display("NoneSelected"));
+  if(e.feet){add('feet','Feet paws',d.suit==='Parts'?d.parts.filter(p=>p.startsWith('Feetpaws')).map(value=>option('parts',value)).join(', '):option('feet',d.feet));add('sandals','Sandals',d.sandals?display("Requested"):display("NotRequested"));}
+  if(d.additionalParts?.length)add('additionalParts','Additional Parts',d.additionalParts.map(item=>display("PartQuantity",{part:option("additionalParts",item.part),quantity:String(item.quantity)})).join('; '));
   add('previous','Commissioned before',option('previous',d.previous));add('previousCharacter','Previous character',d.previousCharacter);add('discovery','How you found Taylor',option('discovery',d.discovery));add('friendName','Friend’s name',d.friendName);add('personName','Person met',d.personName);add('discoveryOther','Other source',d.discoveryOther);add('additional','Additional information',d.additional);
   const customRows:Record<string,[string,string]>={};
   for(const question of config?.customQuestions||[]){
@@ -142,8 +144,8 @@ export function reviewRows(input:Draft, files:Reference[], options:CommissionFor
     const detailRows:[string,string][]=[];
     for(const item of d.additionalParts||[])for(const detailKey of additionalPartFollowups(item.part)){
       const value=item.details?.[detailKey];
-      const text=Array.isArray(value)?value.map(answer=>option(detailKey,answer)).join(', '):typeof value==='boolean'?(value?'Requested':'Not requested'):typeof value==='string'?option(detailKey,value):'';
-      if(text)detailRows.push([`${option('additionalParts',item.part)} · ${getCommissionField(config,detailKey).label}`,text]);
+      const text=Array.isArray(value)?value.map(answer=>option(detailKey,answer)).join(', '):typeof value==='boolean'?(value?display("Requested"):display("NotRequested")):typeof value==='string'?option(detailKey,value):'';
+      if(text)detailRows.push([display("PartDetail",{part:option("additionalParts",item.part),label:getCommissionField(config,detailKey).label}),text]);
     }
     return [row,...detailRows];}));
 }
@@ -175,37 +177,39 @@ export async function checkReferenceSelection<T extends ReadableReference>(
   existing:CheckedReference<T>[],
   selected:T[],
   isCurrent:()=>boolean=()=>true,
+  display:CommissionCopyFormatter=defaultCommissionCopy,
 ):Promise<ReferenceSelection<T>> {
+  display=nonemptyCommissionCopy(display);
   const files=[...existing];
   const fingerprints=new Set(existing.map(reference=>reference.fingerprint));
   const errors:string[]=[];
   for(const file of selected) {
     if(!isCurrent())return {status:'stale'};
-    const problem=referenceError([file]);
-    if(problem) {errors.push(`“${file.name}”: ${problem}`);continue;}
+    const problem=referenceError([file],display);
+    if(problem) {errors.push(display("FileProblem",{name:file.name,problem}));continue;}
     try {
       const buffer=await file.arrayBuffer();
       if(!isCurrent())return {status:'stale'};
       if(!imageSignatureMatches(new Uint8Array(buffer,0,Math.min(buffer.byteLength,4096)),file.type)) {
-        errors.push(`“${file.name}” does not contain a supported image format. Choose genuine JPG, PNG, WebP, GIF or AVIF files.`);
+        errors.push(display("FileSignature",{name:file.name}));
         continue;
       }
       const digest=await crypto.subtle.digest('SHA-256',buffer);
       if(!isCurrent())return {status:'stale'};
       const fingerprint=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
       if(fingerprints.has(fingerprint)) {
-        errors.push(`“${file.name}” is a duplicate and was not added. Each image can only be added once.`);
+        errors.push(display("FileDuplicate",{name:file.name}));
         continue;
       }
       if(files.length>=5) {
-        errors.push(`“${file.name}” was not added. Choose no more than 5 images.`);
+        errors.push(display("FileExcess",{name:file.name}));
         continue;
       }
       files.push({file,fingerprint});
       fingerprints.add(fingerprint);
     } catch {
       if(!isCurrent())return {status:'stale'};
-      errors.push(`“${file.name}” could not be checked. Please choose it again.`);
+      errors.push(display("FileCheck",{name:file.name}));
     }
   }
   return isCurrent()?{status:'checked',files,errors}:{status:'stale'};

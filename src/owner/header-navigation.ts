@@ -1,3 +1,4 @@
+import {getTemplateText} from "./site-design";
 import { getMoreNavigation, getVisibleNavigation, isPageAvailable, pageHref, type OwnerContent, type OwnerPage } from "./model";
 
 export const TRELLO_BOARD_URL = "https://trello.com/b/mjEvvCqI/";
@@ -20,6 +21,6 @@ export function getHeaderNavigation(content: OwnerContent): { main: HeaderNaviga
   const main = getVisibleNavigation(content).filter(page => page.id !== automatic?.id).map(pageLink);
   const terms = content.pages.find(page => page.builtinKey === "terms" && isPageAvailable(content, page));
   if (terms && !main.some(link => link.pageId === terms.id)) main.push(pageLink(terms));
-  main.push({ id: "trello-board", href: TRELLO_BOARD_URL, label: "Trello" });
+  main.push({ id: "trello-board", href: TRELLO_BOARD_URL, label: getTemplateText(content,"site.trelloLabel") });
   return { main, more: automatic ? [pageLink(automatic)] : getMoreNavigation(content).filter(page => page.builtinKey !== "terms").map(pageLink) };
 }

@@ -35,3 +35,11 @@ export function inlineLinkAtSelection(source:string,selection:InlineSelection):{
  }
  return null;
 }
+
+/** Remove destination metadata only within a captured valid range; preserve every visible character. */
+export function removeInlineHyperlink(source:string,selection:InlineSelection):string|null{
+ if(selection.value!==source||!Number.isSafeInteger(selection.start)||!Number.isSafeInteger(selection.end)||selection.start<0||selection.end<=selection.start)return null;
+ const chars=units(source);if(selection.end>chars.length)return null;
+ const safe=snapGraphemeRange(chars.map(unit=>unit.text).join(''),selection.start,selection.end);if(!safe||safe.start!==selection.start||safe.end!==selection.end)return null;
+ return serialize(chars.map((unit,index)=>index>=selection.start&&index<selection.end?{text:unit.text}:unit));
+}

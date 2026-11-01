@@ -1,3 +1,4 @@
+import {authorTextField} from './canvas-author-text';
 import type {OwnerContent,OwnerPage} from './model';
 import {TEXT_FIELDS,LINK_FIELDS,getTemplateText,getTemplateLink} from './site-design';
 import {templateSupportsInlineLinks} from './inline-links';
@@ -9,6 +10,12 @@ export function parseCanvasPrice(value:string):number|null{const text=value.trim
 export function canvasTextField(content:OwnerContent,page:OwnerPage,target:string|null):CanvasTextField|null{
  if(!target)return null;
  const field=(value:string,label:string,links:boolean,write:CanvasTextField['write'],styleKey?:string,appearance:CanvasTextField['appearance']='style',blockId?:string):CanvasTextField=>({value,label,links,write,styleKey,appearance,blockId});
+ const statusKey=content.site.commissionStatus==='Closed'?'commissions.statusClosed':content.site.commissionStatus==='Waitlist'?'commissions.statusWaitlist':content.site.commissionStatus==='Open!'?'commissions.statusOpen':'commissions.statusOpeningSoon';
+ const displayKey=target==='canvas:layout.commissions.statusValue'||/^canvas:layout\.block:[^:]+:[^:]+:status-value$/.test(target)?statusKey:target==='canvas:layout.site.more'?'site.moreLabel':target==='canvas:layout.navigation:trello-board'?'site.trelloLabel':/^canvas:layout\.price-group:[^:]+:number$/.test(target)?'prices.groupNumber':null;
+ if(displayKey){const value=getTemplateText(content,displayKey);return field(value,'Display text (does not change the underlying value)',false,(draft,next)=>{if(next.length>2000)return false;draft.contentOverrides??={};draft.contentOverrides.text??={};draft.contentOverrides.text[displayKey]=next;return true;},target.slice(7));}
+ const author=authorTextField(content,page,target);if(author)return field(author.value,author.label,author.links,author.write,target.startsWith('canvas:')?target.slice(7):target==='site'?'site.brand':undefined);
+ const premadePrice=/^canvas:layout\.premade:([^:]+):price$/.exec(target);
+ if(premadePrice&&page.builtinKey==='premades'){const item=content.premades.find(i=>i.id===premadePrice[1]);if(!item||item.price===null)return null;return {...field(String(item.price),'Listing price in USD',false,(draft,value)=>{const amount=parseCanvasPrice(value),item=draft.premades.find(i=>i.id===premadePrice[1]);if(amount===null||!item)return false;item.price=amount;return true;},target.slice(7)),inputKind:'money'};}
  const priceTarget=target.match(/^canvas:layout\.price-(group|item|parts|extras):([^:]+):(title|note|name|detail|amount)$/);
  if(priceTarget){
   if(page.builtinKey!=='prices')return null;
@@ -23,7 +30,7 @@ export function canvasTextField(content:OwnerContent,page:OwnerPage,target:strin
  }
  if(target==='page-title')return field(page.title,'Page title',getInlineTextSource(content,`page:${page.id}:title`)?.links??true,(draft,value)=>{const p=draft.pages.find(p=>p.id===page.id);if(!p)return false;p.title=value;return true;},undefined,'page');
  if(target.startsWith('core-text:')){const key=target.slice(10);if(['home.title','home.eyebrow','home.description','home.caption'].includes(key)){const property=key.slice(5) as 'title'|'eyebrow'|'description'|'caption';return field(content.home[property],property,true,(draft,value)=>{draft.home[property]=value;return true;},key);}if(key==='prices.intro')return field(content.prices.intro,'Prices introduction',true,(draft,value)=>{draft.prices.intro=value;return true;},key);}
- if(target.startsWith('template-text:')){const key=target.slice(14),entry=TEXT_FIELDS.find(f=>f.key===key);if(!entry||/\{[^}]+\}/.test(getTemplateText(content,key)))return null;return field(getTemplateText(content,key),entry.label,getInlineTextSource(content,`template:${key}`)?.links??templateSupportsInlineLinks(key),(draft,value)=>{draft.contentOverrides??={};draft.contentOverrides.text??={};draft.contentOverrides.text[key]=value;return true;},key);}
+ if(target.startsWith('template-text:')){const key=target.slice(14),entry=TEXT_FIELDS.find(f=>f.key===key);if(!entry)return null;return field(getTemplateText(content,key),entry.label,getInlineTextSource(content,`template:${key}`)?.links??templateSupportsInlineLinks(key),(draft,value)=>{draft.contentOverrides??={};draft.contentOverrides.text??={};draft.contentOverrides.text[key]=value;return true;},key);}
  const linkKey=target.startsWith('template-link:')?target.slice(14):target==='canvas:layout.home.pricesCardTitle'?'home.pricesCard':target==='canvas:layout.home.careCardTitle'?'home.careCard':null;
  if(target.startsWith('template-link:')&&['home.pricesCard','home.careCard'].includes(linkKey??''))return null;
  if(linkKey&&LINK_FIELDS.some(f=>f.key===linkKey)){const link=getTemplateLink(content,linkKey);return field(link.label,'Button text',false,(draft,value)=>{draft.contentOverrides??={};draft.contentOverrides.links??={};draft.contentOverrides.links[linkKey]={...getTemplateLink(draft,linkKey),label:value};return true;},target.startsWith('canvas:')?target.slice(7):linkKey);}

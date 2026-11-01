@@ -1,5 +1,5 @@
 /* One quiet row, isolated from broad owner form/select sizing. */
-.bar{display:flex;align-items:center;color:var(--owner-ink,#eee);flex-basis:auto;flex-wrap:nowrap;gap:4px;width:max-content;max-width:100%;min-width:0;box-sizing:border-box;margin:0 auto;padding:4px 10px;border:1px solid var(--owner-line,#555);border-top:0;border-radius:0 0 10px 10px;background:var(--owner-surface,#292929);justify-content:center;overflow:visible;align-items:center;}
+.bar{display:flex;align-items:center;color:var(--owner-ink,#eee);flex-basis:auto;flex-wrap:wrap;gap:4px;width:max-content;max-width:100%;min-width:0;box-sizing:border-box;margin:0 auto;padding:4px 10px;border:1px solid var(--owner-line,#555);border-top:0;border-radius:0 0 10px 10px;background:var(--owner-surface,#292929);justify-content:center;overflow:visible;align-items:center;}
 .bar>.fontControl{flex:0 0 10.5rem;min-width:0;width:10.5rem;max-width:10.5rem;margin:0;padding:0;border:0;}
 .bar .fontControl [role="combobox"]{box-sizing:border-box;width:100%;min-height:28px;height:28px;margin:0;padding:3px 25px 3px 8px;font-size:12px;line-height:20px;border:1px solid var(--owner-control-line,#777);border-radius:5px;background:var(--owner-raised,#292929);color:var(--owner-ink,#eee);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bar .fontControl [data-site-select-menu]{background:var(--owner-surface,#292929);color:var(--owner-ink,#eee);border-color:var(--owner-control-line,#777);}
@@ -11,3 +11,12 @@
 @media(max-width:650px){.bar{flex-wrap:wrap;}.bar>.fontControl{flex-basis:9rem;width:9rem;max-width:9rem;}}
 
 .editor{box-sizing:border-box;outline:2px solid var(--owner-accent,#7f0011);border:0;white-space:pre-wrap;overflow-wrap:break-word;z-index:14;min-width:1px;caret-color:currentColor}.editor:focus{outline-offset:2px}.menu{position:fixed;z-index:950;display:flex;flex-direction:column;gap:3px;padding:5px;background:var(--owner-surface,#222);color:var(--owner-ink,#eee);border:1px solid var(--owner-line,#777);border-radius:6px}.menu button{font:inherit;font-size:12px;text-align:left;padding:5px 10px;border:0;background:transparent;color:inherit}.menu button:hover{background:var(--owner-line,#555)}
+
+/* Numeric fallback is one card, not two floating boxes across a price column. */
+.priceCard{position:fixed;z-index:950;box-sizing:border-box;display:flex;flex-direction:column;gap:10px;padding:12px;overflow:auto;background:var(--owner-surface,#222);color:var(--owner-ink,#eee);border:1px solid var(--owner-line,#777);border-radius:8px;box-shadow:0 5px 20px #0004;}
+.priceLabel{font:600 14px/1.3 system-ui,sans-serif;}
+.priceCard .editor{flex:0 0 auto;font-variant-numeric:tabular-nums;border-radius:4px;}
+.priceActions{display:flex;flex-wrap:wrap;gap:8px;font:14px/1.4 system-ui,sans-serif;}
+.priceActions small,.priceActions p{flex-basis:100%;margin:0;}
+.priceActions button{min-height:36px;padding:6px 10px;font:inherit;border:1px solid var(--owner-control-line,#777);border-radius:5px;background:var(--owner-raised,#292929);color:inherit;cursor:pointer;}
+.priceActions button:hover{background:var(--owner-line,#555);}.priceActions button:focus-visible{outline:2px solid var(--owner-accent,#a60022);outline-offset:2px;}.priceActions button:disabled{opacity:.5;cursor:default;}

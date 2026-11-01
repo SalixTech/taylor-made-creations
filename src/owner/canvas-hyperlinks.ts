@@ -17,12 +17,15 @@ function knownElementLinkKey(c:Content,key:string):boolean{
  if(key==='site.brand')return true;
  if(key==='home.image')return c.pages.some(p=>p.builtinKey==='home');
  if(IMAGE_FIELDS.some(f=>f.key===key&&key!=='site.logo'))return true;
- if(key.startsWith('template:'))return TEXT_FIELDS.some(f=>`template:${f.key}`===key&&templateSupportsInlineLinks(f.key));
+ if(key.startsWith('template:'))return TEXT_FIELDS.some(f=>`template:${f.key}`===key&&(templateSupportsInlineLinks(f.key)||['site.designCredit','site.platformCredit'].includes(f.key)));
  if(/^core:(home\.(title|eyebrow|description|caption)|prices\.intro)$/.test(key))return true;
  const title=/^page:([^:]+):title$/.exec(key);if(title)return c.pages.some(p=>p.id===title[1]);
  const block=/^layout\.block:([^:]+):([^:]+):(.+)$/.exec(key);
  if(block){const b=(block[1]==='shared-footer'?c.footerBlocks:c.pages.find(p=>p.id===block[1])?.blocks)?.find(b=>b.id===block[2]);if(!b)return false;const part=block[3];if(part==='photo')return b.type==='image'||b.type==='feature';if(part==='heading')return 'heading'in b;if(part==='body')return b.type==='text'||b.type==='feature';if(part==='caption')return b.type==='image';if(part==='text')return b.type==='heading';if(part==='status-value'||part==='status-label'||part==='status-note'||part==='status-action')return b.type==='commission-status';if(/^list-\d+$/.test(part))return b.type==='list'&&Number(part.slice(5))<b.items.length;if(/^faq-.+-(question|answer)$/.test(part))return b.type==='faq'&&b.items.some(i=>part===`faq-${i.id}-question`||part===`faq-${i.id}-answer`);return false;}
- const gallery=/^layout\.gallery:([^:]+):(photo|caption)$/.exec(key);if(gallery)return c.gallery.some(p=>p.id===gallery[1]);
+ const gallery=/^layout\.gallery:([^:]+):(photo|caption|name)$/.exec(key);if(gallery)return c.gallery.some(p=>p.id===gallery[1]);
+ const contact=/^layout\.contact-row:([^:]+)$/.exec(key);if(contact)return getOwnerSocialLinks(c as OwnerContent).some(r=>r.id===contact[1]);
+ const photoCaption=/^layout\.premade:([^:]+):photo-caption:([^:]+)$/.exec(key);if(photoCaption){const item=c.premades.find(p=>p.id===photoCaption[1]);return !!item&&(item.photos?.length?item.photos.some(p=>p.id===photoCaption[2]):photoCaption[2]===(`legacy-${item.id}`.length<=96?`legacy-${item.id}`:'legacy-photo'));}
+ const tag=/^layout\.premade:([^:]+):tag-(\d+)$/.exec(key);if(tag){const item=c.premades.find(p=>p.id===tag[1]),index=Number(tag[2]);return !!item&&index<(item.tags??(item.badge?[item.badge]:[])).length;}
  const premade=/^layout\.premade:([^:]+):(destination|body|price|tags)$/.exec(key);if(premade)return c.premades.some(p=>p.id===premade[1]);
  const price=/^layout\.price-(group|item|parts|extras):([^:]+):(number|title|note|name|detail|amount|examples)$/.exec(key);if(price){const[,family,id,part]=price;return family==='group'?['number','title','note','examples'].includes(part)&&c.prices.groups.some(g=>g.id===id):family==='item'?['name','detail','amount'].includes(part)&&c.prices.groups.some(g=>g.items.some(i=>i.id===id)):['name','amount'].includes(part)&&c.prices[family as 'parts'|'extras'].some(i=>i.id===id);}
  const nav=/^layout\.navigation:([^:]+)$/.exec(key);if(nav)return nav[1]==='trello-board'||c.pages.some(p=>p.id===nav[1]);
@@ -33,6 +36,8 @@ export function elementLinkKeyIsPublic(c:Content,key:string):boolean{
  if(key==='site.brand')return true;
  if(key.startsWith('template:'))return active(c,TEXT_FIELDS.find(f=>`template:${f.key}`===key)!.group);
  if(key.startsWith('core:'))return active(c,key.slice(5).split('.')[0]);
+ if(key.startsWith('layout.contact-row:'))return active(c,'contact')&&getOwnerSocialLinks(c as OwnerContent).some(r=>`layout.contact-row:${r.id}`===key&&!!r.value);if(/^layout\.gallery:[^:]+:name$/.test(key))return active(c,'gallery')&&c.gallery.some(i=>`layout.gallery:${i.id}:name`===key&&(!('visible'in i)||i.visible));if(/^layout\.premade:[^:]+:tag-\d+$/.test(key))return active(c,'premades')&&c.premades.some(i=>key.startsWith(`layout.premade:${i.id}:tag-`)&&(!('visible'in i)||i.visible));
+ if(/^layout\.premade:[^:]+:photo-caption:[^:]+$/.test(key))return active(c,'premades')&&c.premades.some(i=>key.startsWith(`layout.premade:${i.id}:photo-caption:`)&&(!('visible'in i)||i.visible));
  if(key.startsWith('page:'))return c.pages.some(p=>`page:${p.id}:title`===key&&!( 'trashedAt'in p&&p.trashedAt)&&p.availability!=='hidden');
  if(key==='home.image'||IMAGE_FIELDS.some(f=>f.key===key))return active(c,key.split('.')[0]);
  const premade=/^layout\.premade:([^:]+):destination$/.exec(key);if(premade)return canvasStyleKeyIsPublic(`layout.premade:${premade[1]}:photo`,c);
@@ -58,8 +63,8 @@ export function getCanvasHyperlinkKey(c:OwnerContent,page:OwnerPage,target:strin
  if(target.startsWith('template-image:'))return target.slice(15);
  const home=/^(?:template-text:home\.(prices|care)(?:Eyebrow|Body)|canvas:layout\.home\.(prices|care)CardTitle)$/.exec(target);if(home)return `template-link:home.${home[1]??home[2]}Card`;
  if(target==='template-text:prices.exampleLabel'&&instance.includes('@price-group:'))return `layout.price-group:${instance.split('@price-group:')[1]}:examples`;
- const contact=/^(?:canvas:)?layout\.contact-row:([^:]+)(?::(?:label|value))?$/.exec(target);if(contact)return `social:${contact[1]}`;
- const legacy=/^template-text:contact\.(telegram|discord|tiktok|twitch|email)Label$/.exec(target);if(legacy)return `social:${legacy[1]}`;
+ const contact=/^(?:canvas:)?layout\.contact-row:([^:]+)(?::(?:label|value))?$/.exec(target);if(contact)return `layout.contact-row:${contact[1]}`;
+ const legacy=/^template-text:contact\.(telegram|discord|tiktok|twitch|email)Label$/.exec(target);if(legacy)return `layout.contact-row:${legacy[1]}`;
  const premade=/^layout\.premade:([^:]+):(photo|title|purchase)$/.exec(key);if(premade)return `layout.premade:${premade[1]}:destination`;
  if(target.startsWith('gallery:'))return `layout.gallery:${target.slice(8)}:photo`;
  if(target.startsWith('premade:'))return `layout.premade:${target.slice(8)}:destination`;
@@ -82,7 +87,7 @@ export function canvasHyperlinkTarget(c:OwnerContent,page:OwnerPage,target:strin
  if(textId&&source?.links)return {kind:'inline',textId};
  if(!isElementLinkKey(c,key))return null;
  let defaultHref:string|undefined;
- if(key==='site.brand')defaultHref='/';
+ if(key==='site.brand')defaultHref='/';if(key==='template:site.designCredit')defaultHref='https://taylormadecreations.dog';if(key==='template:site.platformCredit')defaultHref='https://salixtechnologies.com';if(key.startsWith('layout.contact-row:'))defaultHref=getOwnerSocialLinks(c).find(r=>r.id===key.slice('layout.contact-row:'.length))?.url;
  if(['layout.commissions.requestButton','layout.commissions.formButton'].includes(key)||/^layout\.block:[^:]+:[^:]+:status-action$/.test(key)){const request=c.pages.find(p=>p.builtinKey==='commissions'&&!p.trashedAt&&p.availability!=='hidden');if(request)defaultHref=`/${encodeURIComponent(request.slug)}/request`;}
  const listing=/^layout\.premade:([^:]+):destination$/.exec(key);if(listing){const item=c.premades.find(i=>i.id===listing[1]),p=c.pages.find(p=>p.builtinKey==='premades'&&!p.trashedAt);if(item&&p)defaultHref=!c.site.catalogMode&&item.soldChannel==='third-party'&&item.externalUrl&&isSafeLink(item.externalUrl)?item.externalUrl:`/${p.slug}/${encodeURIComponent(item.id)}`;}
  if(key.startsWith('layout.navigation:'))defaultHref=[...getHeaderNavigation(c).main,...getHeaderNavigation(c).more].find(n=>`layout.navigation:${n.id}`===key)?.href;

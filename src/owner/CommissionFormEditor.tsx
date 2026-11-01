@@ -1,4 +1,5 @@
 "use client";
+import {OwnerLinkedTextField} from "./OwnerLinkedTextField";
 import { PencilIcon } from "@/components/PencilIcon";
 
 import { useState } from "react";
@@ -120,7 +121,7 @@ export function CommissionFormEditor({content,onEdit,onSaveDraft,onPublishLive,b
           {builtIn&&field&&<>
             <Field label="Question wording" required value={field.label} onChange={value=>editField({label:value.slice(0,MAX_COMMISSION_LABEL_LENGTH)})}/>
             {!field.label.trim()&&<p className={styles.error} role="status">Add question wording before saving or publishing.</p>}
-            <Field label="Help text (optional)" multiline value={field.hint??""} onChange={value=>editField({hint:value.slice(0,MAX_COMMISSION_HINT_LENGTH)})}/>
+            <OwnerLinkedTextField label="Help text (optional)" multiline revision={content} disabled={locked} contextKey={`commission-hint:${builtIn.id}`} hint={`Up to ${MAX_COMMISSION_HINT_LENGTH} characters including link destinations.`} value={field.hint??""} onChange={value=>{if(locked||value.length>MAX_COMMISSION_HINT_LENGTH)return false;editField({hint:value});return true;}}/>
             <Toggle label="Require an answer" checked={field.required} onChange={required=>editField({required})}/>
             {!!builtIn.options?.length&&<div className={styles.options}><h4>Option wording</h4><p className={ui.help}>These labels can change, but the original option values and form conditions stay the same.</p>{builtIn.options.map(option=><Field key={option} label={`Label for ${option}`} value={getCommissionOptionLabel(config,builtIn.id,option)} onChange={label=>editField({optionLabels:{...config?.fields?.[builtIn.id]?.optionLabels,[option]:label.slice(0,MAX_COMMISSION_LABEL_LENGTH)}})}/>)}</div>}
             <button type="button" data-owner-button="secondary" className={`${buttonStyles.button} ${buttonStyles.secondary}`} disabled={!Object.keys(config?.fields?.[builtIn.id]??{}).some(key=>key!=="required")} onClick={()=>update(next=>{if(!next.fields)return;const required=next.fields[builtIn.id]?.required;if(required===undefined)delete next.fields[builtIn.id];else next.fields[builtIn.id]={required};})}>Reset question wording</button>
@@ -128,7 +129,7 @@ export function CommissionFormEditor({content,onEdit,onSaveDraft,onPublishLive,b
           {custom&&<>
             <Field label="Question wording" required value={custom.label} onChange={label=>editCustom({label:label.slice(0,MAX_COMMISSION_LABEL_LENGTH)})}/>
             {!custom.label.trim()&&<p className={styles.error} role="status">Add question wording before saving or publishing.</p>}
-            <Field label="Help text (optional)" multiline value={custom.hint??""} onChange={hint=>editCustom({hint:hint.slice(0,MAX_COMMISSION_HINT_LENGTH)})}/>
+            <OwnerLinkedTextField label="Help text (optional)" multiline revision={content} disabled={locked} contextKey={`commission-custom-hint:${custom.id}`} hint={`Up to ${MAX_COMMISSION_HINT_LENGTH} characters including link destinations.`} value={custom.hint??""} onChange={hint=>{if(locked||hint.length>MAX_COMMISSION_HINT_LENGTH)return false;editCustom({hint});return true;}}/>
             <OwnerSelect label="Question section" value={custom.section} options={COMMISSION_SECTIONS.filter(item=>item.id!=="additionalParts").map(item=>({value:item.id,label:config?.sectionTitles?.[item.id]??item.title}))} onChange={value=>{
               const destination=value as CustomCommissionQuestion["section"];
               if(destination===custom.section||!COMMISSION_SECTIONS.some(item=>item.id===value&&item.id!=="additionalParts"))return;

@@ -4,7 +4,7 @@ import {ButtonDesignEditor} from "./ButtonDesignEditor";
 import {WebsiteAssetPicker} from "./WebsiteAssetPicker";
 import { useState } from "react";
 import type { OwnerContent } from "./model";
-import { IMAGE_FIELDS, LINK_FIELDS, TEXT_FIELDS, getTemplateLink } from "./site-design";
+import { IMAGE_FIELDS, LINK_FIELDS, TEXT_FIELDS, STYLE_FIELDS, getTemplateLink } from "./site-design";
 import { Field, ImagePicker } from "./OwnerFields";
 import { OwnerElementAppearance } from "./OwnerAppearancePanel";
 import { OwnerLinkedTextField } from "./OwnerLinkedTextField";
@@ -13,6 +13,7 @@ import ui from "./OwnerPortal.module.css";
 import styles from "./OwnerDesignPanel.module.css";
 
 type Props = {
+  disabled?: boolean;
   content: OwnerContent;
   onEdit: (change: (draft: OwnerContent) => void) => void;
   /** Without a target, show the full template group. A target shows its exact clicked control. */
@@ -21,7 +22,7 @@ type Props = {
 };
 
 /** Catalog identities, not array positions, keep delayed photo uploads on the correct image. */
-export function OwnerTemplateEditor({ content, onEdit, group, target }: Props) {
+export function OwnerTemplateEditor({ content, onEdit, group, target, disabled=false }: Props) {
   const [query, setQuery] = useState("");
   const [kind, ...parts] = target?.split(":") ?? [];
   const key = parts.join(":");
@@ -40,9 +41,9 @@ export function OwnerTemplateEditor({ content, onEdit, group, target }: Props) {
     </>}
     <div className={styles.templateList}>
       {textFields.map(field => { const TextField = templateSupportsInlineLinks(field.key) ? OwnerLinkedTextField : Field; return <section key={field.key} className={styles.templateField}>
-        <TextField contextKey={`template:${target ?? group ?? "all"}:${field.key}`} label={field.label} value={content.contentOverrides?.text?.[field.key] ?? field.defaultValue} multiline={field.defaultValue.length > 80 || /description|paragraph|intro|note|message|copy|body/i.test(field.label)} hint={field.optional ? "Leave blank to hide this text. The photo description for screen readers stays unchanged." : undefined} onChange={value => onEdit(draft => { draft.contentOverrides = { ...draft.contentOverrides, text: { ...draft.contentOverrides?.text, [field.key]: value } }; })} />
+        <TextField revision={content} disabled={disabled} contextKey={`template:${target ?? group ?? "all"}:${field.key}`} label={field.label} value={content.contentOverrides?.text?.[field.key] ?? field.defaultValue} multiline={field.defaultValue.length > 80 || /description|paragraph|intro|note|message|copy|body/i.test(field.label)} hint={field.optional ? "Leave blank to hide this text. The photo description for screen readers stays unchanged." : undefined} onChange={value => onEdit(draft => { draft.contentOverrides = { ...draft.contentOverrides, text: { ...draft.contentOverrides?.text, [field.key]: value } }; })} />
         {field.optional && (content.contentOverrides?.text?.[field.key] ?? field.defaultValue).trim() && <button type="button" className={styles.reset} aria-label={`Hide ${field.label.toLowerCase()}`} onClick={() => onEdit(draft => { draft.contentOverrides = { ...draft.contentOverrides, text: { ...draft.contentOverrides?.text, [field.key]: "" } }; })}>Hide text</button>}
-        <OwnerElementAppearance content={content} styleKey={field.key} onEdit={onEdit} />
+        {STYLE_FIELDS.some(style=>style.key===field.key)&&<OwnerElementAppearance content={content} styleKey={field.key} onEdit={onEdit} />}
         {content.contentOverrides?.text?.[field.key] !== undefined && <button type="button" className={styles.reset} aria-label={`Reset ${field.label.toLowerCase()}`} onClick={() => onEdit(draft => { if (draft.contentOverrides?.text) delete draft.contentOverrides.text[field.key]; })}>Reset to original text</button>}
       </section>; })}
       {imageFields.map(field => {
