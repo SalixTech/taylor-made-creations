@@ -1,15 +1,17 @@
 'use client';
 
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {getTemplateText} from '@/owner/site-design';
+import type {OwnerContent,PublicOwnerContent} from '@/owner/model';
 import styles from './SiteSelect.module.css';
 import { DropdownChevron } from './DropdownChevron';
 
 export type SelectOption = {value:string;label:string};
 export type InlineSelectCreate = { active: boolean; name: string; label: string; maxLength?: number; busy?: boolean; error?: string; onStart: () => void; onCancel: () => void; onNameChange: (value: string) => void; onSubmit: () => Promise<boolean> };
-export type SiteSelectProps = {id:string;value:string;onChange:(value:string)=>void;options:readonly SelectOption[];placeholder?:string;required?:boolean;invalid?:boolean;describedBy?:string;searchable?:boolean;listLabel?:string;emptyMessage?:string;inlineCreate?:InlineSelectCreate};
+export type SiteSelectProps = {copyContent?:OwnerContent|PublicOwnerContent|null;id:string;value:string;onChange:(value:string)=>void;options:readonly SelectOption[];placeholder?:string;required?:boolean;invalid?:boolean;describedBy?:string;searchable?:boolean;listLabel?:string;emptyMessage?:string;inlineCreate?:InlineSelectCreate};
 
 /** Focus stays on the combobox while aria-activedescendant tracks its listbox. */
-export default function SiteSelect({id,value,onChange,options,placeholder='Choose an option',required,invalid,describedBy,searchable=false,listLabel='Available options',emptyMessage='No matching options. Try another search.',inlineCreate}:SiteSelectProps) {
+export default function SiteSelect({copyContent,id,value,onChange,options,placeholder=getTemplateText(copyContent,"site.selectPlaceholder"),required,invalid,describedBy,searchable=false,listLabel=getTemplateText(copyContent,"site.selectListLabel"),emptyMessage=getTemplateText(copyContent,"site.selectEmpty"),inlineCreate}:SiteSelectProps) {
   const [open,setOpen]=useState(false);
   const [query,setQuery]=useState('');
   const [active,setActive]=useState(0);

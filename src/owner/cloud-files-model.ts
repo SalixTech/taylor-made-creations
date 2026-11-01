@@ -1,13 +1,21 @@
+import {getInlineTextSource} from "./rich-text";
+import {TEXT_FIELDS} from "./site-design";
 /** IDs, not display names, form every Storage path. No paths or URLs are accepted as IDs. */
 export const CLOUD_FILE_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export const CLOUD_PHOTO_SOURCE = /^\/api\/cloud-media\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
 export const CLOUD_BUCKET = "taylor-made-creations.firebasestorage.app";
 export const CLOUD_FILE_MAX_BYTES = 500_000_000;
+export const CLOUD_DOCUMENT_MAX_BYTES=12*1024*1024;
+export const CLOUD_DOCUMENT_SOURCE=/^\/api\/cloud-documents\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
+export const CLOUD_BUTTONS_FOLDER_ID="00000000-0000-4000-8000-000000000004";
+export const CLOUD_DEFAULTS_FOLDER_ID="00000000-0000-4000-8000-000000000006";
+export const CLOUD_SITE_PHOTOS_FOLDER_ID="00000000-0000-4000-8000-000000000007";
+export const CLOUD_DOCUMENTS_FOLDER_ID="00000000-0000-4000-8000-000000000005";
 export const CLOUD_FONT_MAX_BYTES = 4_000_000;
 export const CLOUD_FONTS_FOLDER_ID = "00000000-0000-4000-8000-000000000001";
 export const CLOUD_GALLERY_FOLDER_ID = "00000000-0000-4000-8000-000000000002";
 export const CLOUD_COMMISSIONS_FOLDER_ID = "00000000-0000-4000-8000-000000000003";
-export const CLOUD_SYSTEM_FOLDERS: Record<string, string> = { [CLOUD_FONTS_FOLDER_ID]: "Fonts", [CLOUD_GALLERY_FOLDER_ID]: "Gallery", [CLOUD_COMMISSIONS_FOLDER_ID]: "Commissions" };
+export const CLOUD_SYSTEM_FOLDERS: Record<string, string> = { [CLOUD_FONTS_FOLDER_ID]: "Fonts", [CLOUD_GALLERY_FOLDER_ID]: "Gallery", [CLOUD_COMMISSIONS_FOLDER_ID]: "Commissions", [CLOUD_BUTTONS_FOLDER_ID]:"Buttons", [CLOUD_DOCUMENTS_FOLDER_ID]:"Website PDFs", [CLOUD_DEFAULTS_FOLDER_ID]:"Website Defaults", [CLOUD_SITE_PHOTOS_FOLDER_ID]:"Site Photos" };
 export const isProtectedCloudFolder = (id: string): boolean => Object.hasOwn(CLOUD_SYSTEM_FOLDERS, id);
 export const CLOUD_FONT_SOURCE = /^\/api\/cloud-fonts\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
 export const CLOUD_FONT_TYPES = { woff: "font/woff", woff2: "font/woff2", ttf: "font/ttf", otf: "font/otf" } as const;
@@ -18,14 +26,14 @@ export const CLOUD_PHOTO_INPUT_MAX_BYTES = 30_000_000;
 export const CLOUD_FOLDER_LIMIT = 200;
 export const CLOUD_FOLDER_DEPTH = 8;
 export const PUBLIC_PHOTO_LIMIT = 500;
-export type CloudFile = { id: string; schemaVersion: 1; revision: number; kind: "photo" | "pdf" | "file" | "font"; name: string; parentId: string; contentType: "image/webp" | "application/pdf" | "application/octet-stream" | "font/woff" | "font/woff2" | "font/ttf" | "font/otf"; bytes: number; width: number; height: number; status: "uploading" | "ready" | "deleting"; trashedAt: string | null; createdAt: string; updatedAt: string };
+export type CloudFile = { id: string; schemaVersion: 1; revision: number; kind: "photo" | "pdf" | "document" | "file" | "font"; name: string; parentId: string; contentType: "image/webp" | "application/pdf" | "application/octet-stream" | "font/woff" | "font/woff2" | "font/ttf" | "font/otf"; bytes: number; width: number; height: number; status: "uploading" | "ready" | "deleting"; trashedAt: string | null; createdAt: string; updatedAt: string };
 export type CloudFolder = { name: string; parentId: string; trashedAt: string | null };
 export type CloudFolders = { schemaVersion: 1; revision: number; folders: Record<string, CloudFolder> };
 export const emptyCloudFolders = (): CloudFolders => ({ schemaVersion: 1, revision: 0, folders: {} });
 export function validFileName(value: unknown): value is string { return typeof value === "string" && value === value.trim() && value.length > 0 && value.length <= 150 && !/[\u0000-\u001f\u007f/\\]/.test(value) && value !== "." && value !== ".."; }
 export function assertCloudId(id: string): void { if (!CLOUD_FILE_ID.test(id)) throw new Error("Choose a valid cloud file or folder."); }
 export function cloudPhotoSource(id: string): string { assertCloudId(id); return `/api/cloud-media/${id}`; }
-export function cloudObjectPath(file: Pick<CloudFile, "id" | "kind">): string { assertCloudId(file.id); return file.kind === "photo" ? `photos/${file.id}.webp` : file.kind === "pdf" ? `files/${file.id}.pdf` : file.kind === "font" ? `fonts/${file.id}.font` : `files/${file.id}.bin`; }
+export function cloudObjectPath(file: Pick<CloudFile, "id" | "kind">): string { assertCloudId(file.id); return file.kind === "photo" ? `photos/${file.id}.webp` : file.kind === "document" ? `documents/${file.id}.pdf` : file.kind === "pdf" ? `files/${file.id}.pdf` : file.kind === "font" ? `fonts/${file.id}.font` : `files/${file.id}.bin`; }
 const iso = (value: unknown) => typeof value === "string" && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 export function decodeCloudFile(raw: unknown, id: string): CloudFile {
   assertCloudId(id);
@@ -35,7 +43,7 @@ export function decodeCloudFile(raw: unknown, id: string): CloudFile {
   if (Object.keys(file).length !== keys.length || Object.keys(file).some(key => !keys.includes(key)) || file.schemaVersion !== 1 || !Number.isSafeInteger(file.revision) || file.revision < 1 || !validFileName(file.name)
     || !(file.parentId === "root" || CLOUD_FILE_ID.test(file.parentId)) || !["uploading", "ready", "deleting"].includes(file.status) || !(file.trashedAt === null || iso(file.trashedAt)) || !iso(file.createdAt) || !iso(file.updatedAt)
     || !Number.isSafeInteger(file.bytes) || file.bytes <= 0 || !Number.isSafeInteger(file.width) || !Number.isSafeInteger(file.height)
-    || !(file.kind === "photo" && file.contentType === "image/webp" && file.bytes <= CLOUD_PHOTO_MAX_BYTES && file.width > 0 && file.width <= 4096 && file.height > 0 && file.height <= 4096 || file.kind === "pdf" && file.contentType === "application/pdf" && file.bytes <= CLOUD_FILE_MAX_BYTES && file.width === 0 && file.height === 0 || file.kind === "file" && file.contentType === "application/octet-stream" && file.bytes <= CLOUD_FILE_MAX_BYTES && file.width === 0 && file.height === 0 || file.kind === "font" && Object.values(CLOUD_FONT_TYPES).includes(file.contentType as "font/woff") && file.bytes <= CLOUD_FONT_MAX_BYTES && file.width === 0 && file.height === 0)) throw new Error("Cloud file metadata is invalid. Nothing was overwritten.");
+    || !(file.kind === "photo" && file.contentType === "image/webp" && file.bytes <= CLOUD_PHOTO_MAX_BYTES && file.width > 0 && file.width <= 4096 && file.height > 0 && file.height <= 4096 || file.kind === "document" && file.contentType === "application/pdf" && file.bytes <= CLOUD_DOCUMENT_MAX_BYTES && file.width === 0 && file.height === 0 || file.kind === "pdf" && file.contentType === "application/pdf" && file.bytes <= CLOUD_FILE_MAX_BYTES && file.width === 0 && file.height === 0 || file.kind === "file" && file.contentType === "application/octet-stream" && file.bytes <= CLOUD_FILE_MAX_BYTES && file.width === 0 && file.height === 0 || file.kind === "font" && Object.values(CLOUD_FONT_TYPES).includes(file.contentType as "font/woff") && file.bytes <= CLOUD_FONT_MAX_BYTES && file.width === 0 && file.height === 0)) throw new Error("Cloud file metadata is invalid. Nothing was overwritten.");
   return { ...file, id };
 }
 export function folderAncestors(registry: CloudFolders, parentId: string): string[] {
@@ -62,7 +70,7 @@ export function isFolderTrashed(registry: CloudFolders, parentId: string): boole
 export function assertActiveFolder(registry: CloudFolders, parentId: string): void { if (isFolderTrashed(registry, parentId)) throw new Error("Restore this folder before adding or moving files into it."); }
 /** Only actual image fields from the already projected PUBLIC snapshot are indexed. */
 export function publishedCloudPhotoIds(content: import("./model").PublicOwnerContent): string[] {
-  const sources = [...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(image => image.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
+  const sources = [...Object.values(content.contentOverrides?.links??{}).flatMap(link=>link.buttonAppearance?.artwork?[link.buttonAppearance.artwork.src]:[]),...[...content.pages.flatMap(page=>page.blocks),...(content.footerBlocks??[])].flatMap(block=>block.type==="link"&&block.buttonAppearance?.artwork?[block.buttonAppearance.artwork.src]:[]),...(content.buttonDesigns??[]).flatMap(design=>design.artwork?[design.artwork.src]:[]),...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(image => image.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
   const ids = [...new Set(sources.flatMap(source => source.match(CLOUD_PHOTO_SOURCE)?.[1] ?? []))].sort();
   if (ids.length > PUBLIC_PHOTO_LIMIT) throw new Error(`A publication can contain up to ${PUBLIC_PHOTO_LIMIT} distinct cloud photos. Nothing was published.`);
   return ids;
@@ -73,8 +81,8 @@ export function cloudFileToOwnerFont(file: CloudFile): import("./model").OwnerFo
   return file.kind === "font" && file.status === "ready" && !file.trashedAt && format ? { id: file.id, name: file.name.replace(/\.(woff2?|ttf|otf)$/i, "").slice(0, 100), src: `/api/cloud-fonts/${file.id}`, format } : null;
 }
 export function publishedCloudAssetIds(content: import("./model").PublicOwnerContent): string[] {
-  const ids = [...new Set([...publishedCloudPhotoIds(content), ...(content.fonts ?? []).flatMap(font => font.src.match(CLOUD_FONT_SOURCE)?.[1] ?? [])])].sort();
-  if (ids.length > PUBLIC_PHOTO_LIMIT) throw new Error(`A publication can contain up to ${PUBLIC_PHOTO_LIMIT} cloud photos and fonts.`);
+  const ids = [...new Set([...publishedCloudPhotoIds(content), ...publishedCloudDocumentIds(content), ...(content.fonts ?? []).flatMap(font => font.src.match(CLOUD_FONT_SOURCE)?.[1] ?? [])])].sort();
+  if (ids.length > PUBLIC_PHOTO_LIMIT) throw new Error(`A publication can contain up to ${PUBLIC_PHOTO_LIMIT} cloud photos, fonts and website PDFs.`);
   return ids;
 }
 
@@ -84,10 +92,31 @@ export function isOriginalCloudPhoto(file: CloudFile): boolean { return file.kin
 /** Exact app-owned references only; never treat arbitrary URLs as storage paths. */
 export function cloudReferencedAssetIds(value: unknown): string[] {
   const ids = new Set<string>(); const seen = new Set<object>();
-  function visit(node: unknown, depth: number) {
+  const exact=(text:string)=>{const match=text.match(/^\/api\/(?:cloud-media|cloud-fonts|cloud-files|cloud-documents)\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:\?kind=(?:file|pdf))?$/);if(match)ids.add(match[1]);};
+  function visit(node: unknown, depth: number, semantic=false,key='',parentKey='') {
     if (depth > 100) throw new Error("Content is too deeply nested to check its file references.");
-    if (typeof node === "string") { const match = node.match(/^\/api\/(?:cloud-media|cloud-fonts|cloud-files)\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:\?kind=(?:file|pdf))?$/); if (match) ids.add(match[1]); }
-    else if (node && typeof node === "object") { if (seen.has(node)) throw new Error("Content contains a circular reference."); seen.add(node); for (const entry of Object.values(node)) visit(entry, depth + 1); seen.delete(node); }
+    if (typeof node === "string") {
+      // Within a website model, an exact URL display label is not an asset.
+      // Unknown non-website envelopes retain the older conservative scan.
+      if(!semantic||['src','href','image'].includes(key)||parentKey==='elementLinks')exact(node);
+      if(!semantic)for(const id of websitePdfTextIds(node))ids.add(id);
+    } else if (node && typeof node === "object") {
+      if (seen.has(node)) throw new Error("Content contains a circular reference."); seen.add(node);
+      const object=node as Record<string,unknown>;
+      const website=object.schemaVersion===1&&object.site&&object.home&&object.prices&&Array.isArray(object.pages)&&Array.isArray(object.gallery)&&Array.isArray(object.premades);
+      if(website){semantic=true;for(const id of publishedCloudDocumentIds(node as import("./model").PublicOwnerContent))ids.add(id);}
+      for(const [childKey,entry] of Object.entries(node))visit(entry,depth+1,semantic,childKey,key);
+      seen.delete(node);
+    }
   }
   visit(value, 0); return [...ids].sort();
+}
+
+export function cloudDocumentSource(id:string):string{assertCloudId(id);return `/api/cloud-documents/${id}`;}
+function websitePdfTextIds(text:string):string[]{return [...text.matchAll(/\[[^\]\r\n]{1,300}\]\((\/api\/cloud-documents\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\)/g)].flatMap(match=>match[1].match(CLOUD_DOCUMENT_SOURCE)?.[1]??[]);}
+export function publishedCloudDocumentIds(content:import("./model").PublicOwnerContent):string[]{
+ const links=[...Object.values(content.contentOverrides?.elementLinks??{}),...Object.values(content.contentOverrides?.links??{}).map(link=>link.href),...[...content.pages.flatMap(page=>page.blocks),...(content.footerBlocks??[])].flatMap(block=>block.type==="link"?[block.href]:[])];
+ const ids=[...TEXT_FIELDS.map(f=>`template:${f.key}`),...['home.eyebrow','home.title','home.description','home.caption','prices.intro'].map(k=>`core:${k}`),...content.pages.map(p=>`page:${p.id}:title`),...content.pages.flatMap(p=>p.blocks.flatMap(b=>['text','heading','body','caption','note'].filter(k=>k in b).map(k=>`block:${p.id}:${b.id}:${k}`))),...(content.footerBlocks??[]).flatMap(b=>['text','heading','body'].filter(k=>k in b).map(k=>`block:shared-footer:${b.id}:${k}`))];
+ const text=[...ids.flatMap(id=>{const source=getInlineTextSource(content,id);return source?.links?[source.source]:[];}),content.site.statusNote,...content.pages.flatMap(p=>p.blocks.flatMap(b=>b.type==='faq'?b.items.flatMap(i=>[i.question,i.answer]):b.type==='list'?b.items:[])),...content.premades.map(p=>p.description),...Object.values(content.commissionForm?.fields??{}).flatMap(field=>typeof field?.hint==='string'?[field.hint]:[]),...(content.commissionForm?.customQuestions??[]).flatMap(question=>typeof question.hint==='string'?[question.hint]:[])];
+ return [...new Set([...links.flatMap(href=>href.match(CLOUD_DOCUMENT_SOURCE)?.[1]??[]),...text.flatMap(websitePdfTextIds)])].sort();
 }

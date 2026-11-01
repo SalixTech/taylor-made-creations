@@ -22,8 +22,8 @@ function subscribe(onChange: () => void) {
   return () => { clearTimeout(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", onVisible); };
 }
 const getCurrentYear = () => copyrightYearAt();
-export function CopyrightRange() {
+export function CopyrightRange({renderText}:{renderText?:(variables:Record<string,string>)=>ReactNode}={}) {
   const initialYear = useContext(CopyrightContext);
   const year = useSyncExternalStore(subscribe, getCurrentYear, () => initialYear);
-  return <>© {COPYRIGHT_START_YEAR}-{year ?? "present"}</>;
+  return renderText?<>{renderText({start:String(COPYRIGHT_START_YEAR),year:String(year??"present")})}</>:<>© {COPYRIGHT_START_YEAR}-{year ?? "present"}</>;
 }

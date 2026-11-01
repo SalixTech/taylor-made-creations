@@ -18,14 +18,15 @@
 .control:focus-visible,.open:focus-visible { outline:3px solid #ee9acb; outline-offset:4px; }
 .help { color:#e0d6dc; text-align:center; font-size:12px; margin:10px 0 0; flex-shrink:0; }
 .unavailable { display:flex; align-items:center; justify-content:center; min-height:200px; padding:28px; background:var(--blush,#f5e5e8); color:var(--ink,#30212b); text-align:center; }
-@media(max-width:650px) { .grid { grid-template-columns:1fr; gap:25px; } .dialog { padding:12px; } .control { padding:9px 11px; } .help { font-size:11px; } }
+@media(max-width:650px) { .dialog { padding:12px; } .control { padding:9px 11px; } .help { font-size:11px; } }
+@container site-viewport (max-width:650px) { .grid { grid-template-columns:1fr; gap:25px; } }
 
 .compact { grid-template-columns:1fr; gap:25px; }
 
 .editorNotice { padding:9px 12px; border:1px dashed var(--wine); background:var(--blush); color:var(--wine); font-size:12px; }
-@container site-editor (max-width:650px) { .grid { grid-template-columns:1fr; gap:25px; } }
 
 /* Newest-first ordering is untouched: the first card gets its own centered row. */
 .odd:not(.compact) > .card:first-child { grid-column:1 / -1; width:calc((100% - 26px) / 2); justify-self:center; }
-@media(max-width:650px) { .odd:not(.compact) > .card:first-child { grid-column:auto; width:100%; } }
-@container site-editor (max-width:650px) { .odd:not(.compact) > .card:first-child { grid-column:auto; width:100%; } }
+@container site-viewport (max-width:650px) { .odd:not(.compact) > .card:first-child { grid-column:auto; width:100%; } }
+
+.caption{justify-content:flex-end;}.caption[hidden]{display:none;}@media (max-width:650px) { .grid:not(:global(:where([data-site-render-mode] *))) { grid-template-columns:1fr; gap:25px; } }@media (max-width:650px) { .odd:not(.compact) > .card:first-child:not(:global(:where([data-site-render-mode] *))) { grid-column:auto; width:100%; } }

@@ -1,3 +1,6 @@
+import {isElementLinkKey,elementLinkKeyIsPublic} from "./canvas-hyperlinks";
+import { BUTTON_PRESETS, validateButtonStyle, type ButtonAppearance } from "./button-import";
+import {validateInlineTextStyles,projectInlineTextStyles} from "./rich-text";
 import { validateContentCanvasLayout, projectCanvasLayouts, type CanvasLayout } from "./canvas-layout";
 import { isCanvasStyleKey, canvasStyleKeyIsPublic } from "./canvas-target-registry";
 import { validElementBox } from "./box-geometry";
@@ -16,7 +19,10 @@ export const BUILTIN_ROUTES = {
 export type BuiltinPageKey = keyof typeof BUILTIN_ROUTES;
 export type TextBlock = { id: string; type: "text"; heading: string; body: string };
 export type ImageBlock = { id: string; type: "image"; src: string; alt: string; caption: string };
-export type LinkBlock = { id: string; type: "link"; label: string; href: string };
+export type LinkBlock = { id: string; type: "link"; label: string; href: string; buttonDesignId?:string; buttonAppearance?:ButtonAppearance };
+export function buttonAppearanceSources(content:OwnerContent|PublicOwnerContent):string[]{return [...Object.values(content.contentOverrides?.links??{}).flatMap(link=>link.buttonAppearance?.artwork?[link.buttonAppearance.artwork.src]:[]),...[...content.pages.flatMap(page=>page.blocks),...(content.footerBlocks??[])].flatMap(block=>block.type==="link"&&block.buttonAppearance?.artwork?[block.buttonAppearance.artwork.src]:[])];}
+function copyButtonAppearance(value:ButtonAppearance):ButtonAppearance{if(value.artwork?.src.startsWith("data:"))throw new OwnerValidationError([{path:"buttonAppearance.artwork",message:"Upload button artwork before publishing. Browser-local images cannot be published."}]);return {preset:value.preset,...(value.artwork?{artwork:{src:value.artwork.src}}:{}),...(value.imported?{imported:{...value.imported}}:{}),...(value.hover?{hover:{...value.hover}}:{}),...(value.focus?{focus:{...value.focus}}:{})};}
+export type ButtonDesign={id:string;name:string}&ButtonAppearance;
 export type HeadingBlock = { id: string; type: "heading"; text: string; level: 2 | 3 };
 export type ListBlock = { id: string; type: "list"; items: string[]; style: "bullet" | "numbered" };
 export type DividerBlock = { id: string; type: "divider" };
@@ -24,8 +30,10 @@ export type CanvasSpaceBlock = { id: string; type: "canvas-space"; widthPx: numb
 export type SpacerBlock = { id: string; type: "spacer"; size: "small" | "medium" | "large" };
 export type FaqBlock = { id: string; type: "faq"; items: { id: string; question: string; answer: string }[] };
 export type FeatureBlock = { id: string; type: "feature"; heading: string; body: string; src: string; alt: string; imageSide: "left" | "right" };
+export type CommissionStatusBlock = {id:string;type:"commission-status";label:string;note:string;actionLabel:string};
 export type SectionBlock = { id: string; type: "section"; heading: string };
-export type PageBlock = (SectionBlock | TextBlock | ImageBlock | LinkBlock | HeadingBlock | ListBlock | DividerBlock | SpacerBlock | CanvasSpaceBlock | FaqBlock | FeatureBlock) & { appearance?: ElementAppearance; parentId?: string; mobileParentId?: string | null; mobileOrder?: number };
+export type PageBlock = (SectionBlock | CommissionStatusBlock | TextBlock | ImageBlock | LinkBlock | HeadingBlock | ListBlock | DividerBlock | SpacerBlock | CanvasSpaceBlock | FaqBlock | FeatureBlock) & { appearance?: ElementAppearance; parentId?: string; mobileParentId?: string | null; mobileOrder?: number };
+export type FooterBlock = (TextBlock | HeadingBlock | LinkBlock) & {appearance?:ElementAppearance};
 export type PageNavPlacement = "main" | "more" | "unlisted";
 export type PageAvailability = "public" | "hidden";
 export type OwnerPage = {
@@ -65,15 +73,16 @@ export type OwnerContent = {
   /** Optional creative settings: older saved drafts retain their original bytes and appearance. */
   design?: SiteDesign;
   chromeLayout?: CanvasLayout;
+  footerBlocks?: FooterBlock[];
   fonts?: OwnerFont[];
+  buttonDesigns?:ButtonDesign[];
+  gallerySettings?:{showNumbers:boolean};
   contentOverrides?: ContentOverrides;
   /** Form structure and wording only. Client answers and consent are never stored here. */
   commissionForm?: CommissionFormConfig;
   site: { socialLinks?: OwnerSocialLink[]; moreEnabled?: boolean; catalogMode?: boolean; additionalPartsQuantities?: boolean; name: string; commissionStatus: CommissionStatus; statusNote: string; showPremades: boolean; telegram: string; discord: string; email: string; tiktok: string; twitch: string };
   home: { eyebrow: string; title: string; description: string; image: { src: string; alt: string }; caption: string };
   prices: { intro: string; groups: PriceGroup[]; parts: PriceLine[]; extras: PriceLine[] };
-  /** Hub-owned display preference; omission keeps existing numbered galleries. */
-  gallerySettings?: { showNumbers: boolean };
   gallery: GalleryItem[];
   premades: OwnerPremade[];
   pages: OwnerPage[];
@@ -131,11 +140,15 @@ export function newOwnerId(prefix = "item"): string {
 }
 export function isSafeLink(href: string): boolean {
   if (!href || href.length > 2048 || /[\u0000-\u0020\u007f\\]/.test(href)) return false;
+  if (/^\/api\/cloud-documents(?:[/?#]|$)/i.test(href)) return isWebsiteDocumentHref(href);
+  if (/^\/api\/(?:cloud-files|owner-files|private-files)(?:[/?#]|$)/i.test(href)) return false;
   if (href.startsWith("/")) return !href.startsWith("//") && !/%(?:0[0-9a-f]|1[0-9a-f]|20|5c)/i.test(href);
   if (/^#[A-Za-z][A-Za-z0-9_-]*$/.test(href)) return true;
   if (href.startsWith("mailto:")) return EMAIL_PATTERN.test(href.slice(7));
   try { const url = new URL(href); return /^https:\/\//i.test(href) && url.protocol === "https:" && !url.username && !url.password; } catch { return false; }
 }
+export function isSafeButtonArtwork(src:string):boolean{return isSafeImageSource(src)&&(/^\/api\/(?:cloud-media|media)\/[0-9a-f-]+$/.test(src)||/^\/images\/[^?#%]+\.(?:png|jpe?g|webp|gif|avif)$/i.test(src)||/^data:image\/(?:png|jpeg|webp|gif|avif);base64,/.test(src));}
+export function isWebsiteDocumentHref(href:string):boolean{return /^\/api\/cloud-documents\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(href);}
 export function isSafeImageSource(src: string): boolean {
   if (!src || src.length > MAX_IMAGE_SOURCE_LENGTH) return false;
   if (/^data:image\/(?:png|jpeg|webp|gif|avif);base64,[A-Za-z0-9+/]+={0,2}$/.test(src)) return true;
@@ -207,8 +220,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (entry.fontId !== undefined && (typeof entry.fontId !== "string" || !Array.isArray(root.fonts) || !root.fonts.some(font => font && typeof font === "object" && font.id === entry.fontId))) issue(`${path}.fontId`, "Choose a font uploaded to this draft.");
   };
   const root = object(value, "content");
-  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm", "chromeLayout", "gallerySettings"], "content");
-  if (root.gallerySettings !== undefined) { const settings = object(root.gallerySettings, "gallerySettings"); exact(settings, ["showNumbers"], "gallerySettings"); bool(settings.showNumbers, "gallerySettings.showNumbers"); }
+  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm", "chromeLayout", "buttonDesigns", "gallerySettings", "footerBlocks"], "content");
   if (root.commissionForm !== undefined) issues.push(...validateCommissionFormConfig(root.commissionForm).issues);
   if (root.schemaVersion !== OWNER_SCHEMA_VERSION) issue("schemaVersion", "This content version is not supported.");
   if (root.fonts !== undefined) list(root.fonts, "fonts", MAX_CONTENT_BYTES).forEach((value, index) => {
@@ -232,9 +244,19 @@ function validateContent(value: unknown, published = false): ValidationResult {
     for (const field of DESIGN_SELECT_FIELDS) if (design[field.key] !== undefined && !field.options.some(option => option.value === design[field.key])) issue(`${path}.${field.key}`, "Choose one of the supported design options.");
   };
   if (root.design !== undefined) validateDesign(root.design, "design");
+  const buttonIds=new Set<string>();
+  const buttonAppearance=(value:unknown,path:string,reusable=false)=>{
+    const entry=object(value,path);exact(entry,[...(reusable?["id","name"]:[]),"preset","artwork","imported","hover","focus"],path);
+    if(!BUTTON_PRESETS.includes(entry.preset as ButtonAppearance["preset"]))issue(`${path}.preset`,"Choose a button preset.");
+    for(const state of ["imported","hover","focus"])if(entry[state]!==undefined&&!validateButtonStyle(entry[state]))issue(`${path}.${state}`,"Choose supported structured button styles.");
+    if(entry.artwork!==undefined){const artwork=object(entry.artwork,`${path}.artwork`);exact(artwork,["src"],`${path}.artwork`);if(typeof artwork.src!=="string"||!isSafeButtonArtwork(artwork.src))issue(`${path}.artwork.src`,"Choose an uploaded raster button image.");}
+  };
+  if(root.buttonDesigns!==undefined)list(root.buttonDesigns,"buttonDesigns",100).forEach((value,index)=>{const path=`buttonDesigns[${index}]`,entry=object(value,path);buttonAppearance(value,path,true);id(entry.id,`${path}.id`,"buttonDesigns");if(typeof entry.id==="string")buttonIds.add(entry.id);text(entry.name,`${path}.name`,100);});
+  if(root.gallerySettings!==undefined){const settings=object(root.gallerySettings,"gallerySettings");exact(settings,["showNumbers"],"gallerySettings");bool(settings.showNumbers,"gallerySettings.showNumbers");}
+  const buttonRef=(value:unknown,path:string)=>{if(value!==undefined&&(typeof value!=="string"||!buttonIds.has(value)))issue(path,"Choose an existing reusable button design.");};
   if (root.contentOverrides !== undefined) {
     const overrides = object(root.contentOverrides, "contentOverrides");
-    exact(overrides, ["text", "images", "links", "styles"], "contentOverrides");
+    exact(overrides, ["text", "images", "links", "styles", "inlineStyles", "elementLinks"], "contentOverrides");
     if (overrides.styles !== undefined) {
       const fields = object(overrides.styles, "contentOverrides.styles"); exact(fields, [...STYLE_FIELDS.map(field => field.key), ...Object.keys(fields).filter(isCanvasStyleKey)], "contentOverrides.styles");
       for (const [key, value] of Object.entries(fields)) appearance(value, `contentOverrides.styles.${key}`);
@@ -250,10 +272,14 @@ function validateContent(value: unknown, published = false): ValidationResult {
         image(entry.src, `${path}.src`); text(entry.alt, `${path}.alt`, 500, key !== "site.logo");
       }
     }
+    if (overrides.elementLinks !== undefined) {
+      const fields=object(overrides.elementLinks,"contentOverrides.elementLinks");
+      for(const [key,value] of Object.entries(fields)){countText(value);if(!isElementLinkKey(root as unknown as OwnerContent,key))issue(`contentOverrides.elementLinks.${key}`,"Choose an existing text or photo target.");if(typeof value!=="string"||!isSafeLink(value))issue(`contentOverrides.elementLinks.${key}`,"Use a safe website link.");}
+    }
     if (overrides.links !== undefined) {
       const fields = object(overrides.links, "contentOverrides.links"); exact(fields, LINK_FIELDS.map(field => field.key), "contentOverrides.links");
       for (const [key, value] of Object.entries(fields)) {
-        const path = `contentOverrides.links.${key}`; const entry = object(value, path); exact(entry, ["label", "href"], path); text(entry.label, `${path}.label`, 150);
+        const path = `contentOverrides.links.${key}`; const entry = object(value, path); exact(entry, ["label", "href", "buttonDesignId", "buttonAppearance"], path);buttonRef(entry.buttonDesignId,`${path}.buttonDesignId`);if(entry.buttonAppearance!==undefined)buttonAppearance(entry.buttonAppearance,`${path}.buttonAppearance`); text(entry.label, `${path}.label`, 150);
         countText(entry.href); if (typeof entry.href !== "string" || !isSafeLink(entry.href)) issue(`${path}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed.");
       }
     }
@@ -343,6 +369,14 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (item.imageFit !== undefined && item.imageFit !== "cover" && item.imageFit !== "contain") issue(`${p}.imageFit`, "Choose cover or contain.");
     for (const position of ["imagePositionX", "imagePositionY"]) if (item[position] !== undefined) number(item[position], `${p}.${position}`, 100);
   });
+  if(root.footerBlocks!==undefined)list(root.footerBlocks,"footerBlocks",100).forEach((value,index)=>{
+    const p=`footerBlocks[${index}]`,block=object(value,p);id(block.id,`${p}.id`,"footerBlocks");
+    if(block.appearance!==undefined)appearance(block.appearance,`${p}.appearance`);
+    if(block.type==="text"){exact(block,["id","type","heading","body","appearance"],p);text(block.heading,`${p}.heading`,200,false);text(block.body,`${p}.body`,20000,false);}
+    else if(block.type==="heading"){exact(block,["id","type","text","level","appearance"],p);text(block.text,`${p}.text`,200);if(block.level!==2&&block.level!==3)issue(`${p}.level`,"Choose heading level 2 or 3.");}
+    else if(block.type==="link"){exact(block,["id","type","label","href","buttonDesignId","buttonAppearance","appearance"],p);text(block.label,`${p}.label`,150);if(typeof block.href!=="string"||!isSafeLink(block.href))issue(`${p}.href`,"Use a safe website link.");buttonRef(block.buttonDesignId,`${p}.buttonDesignId`);if(block.buttonAppearance!==undefined)buttonAppearance(block.buttonAppearance,`${p}.buttonAppearance`);}
+    else issue(`${p}.type`,"Shared footer supports text, heading and button items only.");
+  });
   const pages = list(root.pages, "pages", 100);
   const seenSlugs = new Set<string>(); const seenBuiltins = new Set<string>(); const seenOrders = new Set<number>();
   pages.forEach((v, i) => {
@@ -351,6 +385,8 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (page.navPlacement !== undefined && !["main", "more", "unlisted"].includes(page.navPlacement as string)) issue(`${p}.navPlacement`, "Choose main navigation, More or unlisted.");
     if (page.availability !== undefined && !["public", "hidden"].includes(page.availability as string)) issue(`${p}.availability`, "Choose accessible or hidden (404).");
     if (page.titleAppearance !== undefined) appearance(page.titleAppearance, `${p}.titleAppearance`);
+    if(root.footerBlocks!==undefined&&page.id==="shared-footer")issue(`${p}.id`,"This identity is reserved for the shared footer.");
+    if(Array.isArray(root.footerBlocks)&&Array.isArray(page.blocks)&&page.blocks.some(b=>b&&typeof b==="object"&&root.footerBlocks instanceof Array&&root.footerBlocks.some(f=>f&&typeof f==="object"&&f.id===b.id)))issue(`${p}.blocks`,"Shared footer identities must not duplicate page items.");
     id(page.id, `${p}.id`, "pages"); text(page.title, `${p}.title`, 150); text(page.navLabel, `${p}.navLabel`, 80); bool(page.showInNav, `${p}.showInNav`); number(page.order, `${p}.order`, 10000, true);
     if (typeof page.order === "number") { if (seenOrders.has(page.order)) issue(`${p}.order`, "Page positions must be unique."); seenOrders.add(page.order); }
     if (page.trashedAt !== null && (typeof page.trashedAt !== "string" || !isIsoDate(page.trashedAt))) issue(`${p}.trashedAt`, "Use a valid timestamp or null.");
@@ -381,10 +417,11 @@ function validateContent(value: unknown, published = false): ValidationResult {
       if (block.appearance !== undefined) appearance(block.appearance, `${b}.appearance`);
       for (const key of ["parentId", "mobileParentId"]) if (block[key] !== undefined && !(key === "mobileParentId" && block[key] === null) && (typeof block[key] !== "string" || !ID_PATTERN.test(block[key] as string))) issue(`${b}.${key}`, "Choose a section in this page.");
       if (block.mobileOrder !== undefined && (typeof block.mobileOrder !== "number" || !Number.isSafeInteger(block.mobileOrder) || block.mobileOrder < 0)) issue(`${b}.mobileOrder`, "Use a nonnegative integer mobile order.");
-      if (block.type === "section") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); }
+      if(block.type==="commission-status"){exact(block,["parentId","mobileParentId","mobileOrder","id","type","label","note","actionLabel","appearance"],b);text(block.label,`${b}.label`,2000,false);text(block.note,`${b}.note`,20000,false);text(block.actionLabel,`${b}.actionLabel`,2000,false);}
+      else if (block.type === "section") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); }
       else if (block.type === "text") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "body", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); text(block.body, `${b}.body`, 20000, false); }
       else if (block.type === "image") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "src", "alt", "caption", "appearance"], b); image(block.src, `${b}.src`); text(block.alt, `${b}.alt`, 500); text(block.caption, `${b}.caption`, 1000, false); }
-      else if (block.type === "link") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "label", "href", "appearance"], b); text(block.label, `${b}.label`, 150); if (typeof block.href !== "string" || !isSafeLink(block.href)) issue(`${b}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed."); }
+      else if (block.type === "link") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "label", "href", "buttonDesignId", "buttonAppearance", "appearance"], b);buttonRef(block.buttonDesignId,`${b}.buttonDesignId`);if(block.buttonAppearance!==undefined)buttonAppearance(block.buttonAppearance,`${b}.buttonAppearance`); text(block.label, `${b}.label`, 150); if (typeof block.href !== "string" || !isSafeLink(block.href)) issue(`${b}.href`, "Use a site path, HTTPS address, email link or section anchor. Scripts are not allowed."); }
       else if (block.type === "heading") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "text", "level", "appearance"], b); text(block.text, `${b}.text`, 200); if (block.level !== 2 && block.level !== 3) issue(`${b}.level`, "Choose heading level 2 or 3."); }
       else if (block.type === "list") {
         exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "items", "style", "appearance"], b);
@@ -425,6 +462,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
   for (const key of published ? ["home"] : Object.keys(BUILTIN_ROUTES)) if (!seenBuiltins.has(key)) issue("pages", `The ${key} built-in page must be retained; use the trash instead of deleting it.`);
   if(issues.length===0){
     const content=value as OwnerContent;
+    issues.push(...validateInlineTextStyles(content));
     if(content.chromeLayout!==undefined)issues.push(...validateContentCanvasLayout(content,"chrome",content.chromeLayout,"chromeLayout"));
     for(const [index,page] of content.pages.entries())if(page.canvasLayout!==undefined)issues.push(...validateContentCanvasLayout(content,page,page.canvasLayout,`pages[${index}].canvasLayout`));
   }
@@ -565,7 +603,6 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
   const { site, home, prices } = content;
   const snapshot: PublicOwnerContent = {
     schemaVersion: 1,
-    ...(content.gallerySettings === undefined ? {} : { gallerySettings: { showNumbers: content.gallerySettings.showNumbers } }),
     site: { ...(site.socialLinks !== undefined ? { socialLinks: site.socialLinks.map(link => ({ id: link.id, label: link.label, value: link.value, ...(link.url !== undefined ? { url: link.url } : {}) })) } : {}), name: site.name, commissionStatus: site.commissionStatus, statusNote: site.statusNote, showPremades: site.showPremades, telegram: site.telegram, discord: site.discord, email: site.email, tiktok: site.tiktok, twitch: site.twitch, ...(site.moreEnabled !== undefined ? { moreEnabled: site.moreEnabled } : {}), ...(site.catalogMode !== undefined ? { catalogMode: site.catalogMode } : {}), ...(site.additionalPartsQuantities !== undefined ? { additionalPartsQuantities: site.additionalPartsQuantities } : {}) },
     home: { eyebrow: home.eyebrow, title: home.title, description: home.description, image: { src: publicImage(home.image.src, "home.image.src"), alt: home.image.alt }, caption: home.caption },
     prices: {
@@ -580,10 +617,11 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
       id: page.id, kind: page.kind, ...(page.builtinKey ? { builtinKey: page.builtinKey } : {}),
       slug: page.slug, title: page.title, navLabel: page.navLabel, showInNav: page.showInNav, order: page.order, ...(page.navPlacement !== undefined ? { navPlacement: page.navPlacement } : {}), ...(page.availability !== undefined ? { availability: page.availability } : {}), ...(page.titleAppearance !== undefined ? { titleAppearance: publicAppearance(page.titleAppearance) } : {}), ...(page.canvasLayout !== undefined ? {canvasLayout:structuredClone(page.canvasLayout)}:{}),
       blocks: page.blocks.map(block => {
+        if(block.type==="commission-status")return {...blockLayout(block),id:block.id,type:block.type,label:block.label,note:block.note,actionLabel:block.actionLabel};
         if (block.type === "section") return {...blockLayout(block),id:block.id,type:block.type,heading:block.heading};
         if (block.type === "text") return { ...blockLayout(block), id: block.id, type: block.type, heading: block.heading, body: block.body };
         if (block.type === "image") return { ...blockLayout(block), id: block.id, type: block.type, src: publicImage(block.src, `pages.${page.id}.${block.id}.src`), alt: block.alt, caption: block.caption };
-        if (block.type === "link") return { ...blockLayout(block), id: block.id, type: block.type, label: block.label, href: block.href };
+        if (block.type === "link") return { ...blockLayout(block), id: block.id, type: block.type, label: block.label, href: block.href, ...(block.buttonDesignId?{buttonDesignId:block.buttonDesignId}:{}),...(block.buttonAppearance?{buttonAppearance:copyButtonAppearance(block.buttonAppearance)}:{}) };
         if (block.type === "heading") return { ...blockLayout(block), id: block.id, type: block.type, text: block.text, level: block.level };
         if (block.type === "list") return { ...blockLayout(block), id: block.id, type: block.type, items: [...block.items], style: block.style };
         if (block.type === "divider") return { ...blockLayout(block), id: block.id, type: block.type };
@@ -594,6 +632,12 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
       }),
     })),
   };
+  if(content.footerBlocks!==undefined)snapshot.footerBlocks=content.footerBlocks.map(block=>{
+    const base={id:block.id,...(block.appearance!==undefined?{appearance:publicAppearance(block.appearance)}:{})};
+    if(block.type==="text")return {...base,type:block.type,heading:block.heading,body:block.body};
+    if(block.type==="heading")return {...base,type:block.type,text:block.text,level:block.level};
+    return {...base,type:block.type,label:block.label,href:block.href,...(block.buttonDesignId?{buttonDesignId:block.buttonDesignId}:{}),...(block.buttonAppearance?{buttonAppearance:copyButtonAppearance(block.buttonAppearance)}:{})};
+  });
   if(content.chromeLayout!==undefined)snapshot.chromeLayout=structuredClone(content.chromeLayout);
   if (content.commissionForm !== undefined && content.pages.some(page => page.builtinKey === "commissions" && isPageAvailable(content, page))) snapshot.commissionForm = projectCommissionFormConfig(content.commissionForm);
   if (content.fonts !== undefined) snapshot.fonts = content.fonts.map(font => ({ id: font.id, name: font.name, src: font.src, format: font.format }));
@@ -606,15 +650,20 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
   }
   if (content.contentOverrides !== undefined) {
     snapshot.contentOverrides = {};
+    if(content.contentOverrides.elementLinks!==undefined)snapshot.contentOverrides.elementLinks=Object.fromEntries(Object.entries(content.contentOverrides.elementLinks).filter(([key])=>elementLinkKeyIsPublic(snapshot,key)));
+    if(content.contentOverrides.inlineStyles!==undefined)snapshot.contentOverrides.inlineStyles=structuredClone(content.contentOverrides.inlineStyles);
     const isActive = (group: string) => group === "site" || content.pages.some(page => page.builtinKey === group && !page.trashedAt && page.availability !== "hidden");
     if (content.contentOverrides.styles !== undefined) snapshot.contentOverrides.styles = Object.fromEntries(Object.entries(content.contentOverrides.styles).filter(([key]) => STYLE_FIELDS.some(field => field.key === key && isActive(field.group)) || canvasStyleKeyIsPublic(key,snapshot)).map(([key,value]) => [key,publicAppearance(value)]));
     if (content.contentOverrides.text !== undefined) snapshot.contentOverrides.text = Object.fromEntries(TEXT_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.text!, field.key)).map(field => [field.key, content.contentOverrides!.text![field.key]]));
     if (content.contentOverrides.images !== undefined) snapshot.contentOverrides.images = Object.fromEntries(IMAGE_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.images!, field.key)).map(field => { const value = content.contentOverrides!.images![field.key]; return [field.key, { src: publicImage(value.src, `contentOverrides.images.${field.key}.src`), alt: value.alt }]; }));
-    if (content.contentOverrides.links !== undefined) snapshot.contentOverrides.links = Object.fromEntries(LINK_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.links!, field.key)).map(field => { const value = content.contentOverrides!.links![field.key]; return [field.key, { label: value.label, href: value.href }]; }));
+    if (content.contentOverrides.links !== undefined) snapshot.contentOverrides.links = Object.fromEntries(LINK_FIELDS.filter(field => isActive(field.group) && Object.hasOwn(content.contentOverrides!.links!, field.key)).map(field => { const value = content.contentOverrides!.links![field.key]; return [field.key, { label: value.label, href: value.href, ...(value.buttonDesignId?{buttonDesignId:value.buttonDesignId}:{}),...(value.buttonAppearance?{buttonAppearance:copyButtonAppearance(value.buttonAppearance)}:{}) }]; }));
   }
+  projectInlineTextStyles(snapshot);
+  if(content.gallerySettings!==undefined)snapshot.gallerySettings={showNumbers:content.gallerySettings.showNumbers};
+  if(content.buttonDesigns!==undefined){const used=new Set([...Object.values(snapshot.contentOverrides?.links??{}).map(link=>link.buttonDesignId),...[...snapshot.pages.flatMap(page=>page.blocks),...(snapshot.footerBlocks??[])].flatMap(block=>block.type==="link"?[block.buttonDesignId]:[])]);snapshot.buttonDesigns=content.buttonDesigns.filter(design=>used.has(design.id)).map(design=>({id:design.id,name:design.name,preset:design.preset,...(design.imported?{imported:{...design.imported}}:{}),...(design.hover?{hover:{...design.hover}}:{}),...(design.focus?{focus:{...design.focus}}:{}),...(design.artwork?{artwork:{src:publicImage(design.artwork.src,`buttonDesigns.${design.id}.artwork.src`)}}:{})}));}
   projectCanvasLayouts(snapshot);
   if (snapshot.fonts !== undefined) {
-    const used = new Set([snapshot.design?.bodyFontId, snapshot.design?.headingFontId, snapshot.design?.mobileDesign?.bodyFontId, snapshot.design?.mobileDesign?.headingFontId, ...Object.values(snapshot.contentOverrides?.styles ?? {}).flatMap(style => [style.fontId,style.mobile?.fontId]), ...snapshot.pages.flatMap(page => [page.titleAppearance?.fontId,page.titleAppearance?.mobile?.fontId, ...page.blocks.flatMap(block => [block.appearance?.fontId,block.appearance?.mobile?.fontId])])].filter(Boolean));
+    const used = new Set([...Object.values(snapshot.contentOverrides?.inlineStyles??{}).flatMap(record=>[...record.spans,...(record.mobile??[])].map(span=>span.style.fontId)), ...(snapshot.footerBlocks??[]).flatMap(block=>[block.appearance?.fontId,block.appearance?.mobile?.fontId]), snapshot.design?.bodyFontId, snapshot.design?.headingFontId, snapshot.design?.mobileDesign?.bodyFontId, snapshot.design?.mobileDesign?.headingFontId, ...Object.values(snapshot.contentOverrides?.styles ?? {}).flatMap(style => [style.fontId,style.mobile?.fontId]), ...snapshot.pages.flatMap(page => [page.titleAppearance?.fontId,page.titleAppearance?.mobile?.fontId, ...page.blocks.flatMap(block => [block.appearance?.fontId,block.appearance?.mobile?.fontId])])].filter(Boolean));
     snapshot.fonts = snapshot.fonts.filter(font => used.has(font.id));
   }
   if (new TextEncoder().encode(JSON.stringify(snapshot)).byteLength > 700_000) throw new OwnerValidationError([{ path: "content", message: "This public text document is too large. Reduce the text or number of blocks before publishing." }]);
@@ -652,7 +701,7 @@ export function assertPublicOwnerContent(value: unknown): asserts value is Publi
   const content = expanded as OwnerContent;
   // Turning the published shop off retains its already-public inventory so a
   // flag-only Update Live can turn it back on without publishing draft edits.
-  const imageSources = [...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(item => item.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
+  const imageSources = [...buttonAppearanceSources(content),...(content.buttonDesigns??[]).flatMap(design=>design.artwork?[design.artwork.src]:[]),...Object.values(content.contentOverrides?.images ?? {}).map(image => image.src), content.home.image.src, ...content.gallery.map(item => item.src), ...content.premades.flatMap(item => [item.image, ...(item.photos?.map(photo => photo.src) ?? [])]), ...content.pages.flatMap(page => page.blocks.flatMap(block => block.type === "image" || block.type === "feature" ? [block.src] : []))];
   if (imageSources.some(src => src.startsWith("data:"))) throw new OwnerValidationError([{ path: "content", message: "Published photos must use local site assets or secure HTTPS image storage, never browser data images." }]);
   if (new TextEncoder().encode(JSON.stringify(value)).byteLength > 700_000) throw new OwnerValidationError([{ path: "content", message: "The published content exceeds the 700 KB limit." }]);
 }

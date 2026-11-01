@@ -44,7 +44,7 @@ export function CanvasScene({content,scope,mobile=false,editable=false,markers,c
  // transplant wrappers or lift default children into absolute layers.
  const reordered=new Map<string,CompiledNode>();
  const groups=new Map<string|null,CompiledNode[]>();
- for(const node of compiled.nodes.values())if(!layout[node.id]?.removed&&!moved(node)&&inventory.get(node.id)?.movable!==false){const list=groups.get(node.parent)??[];list.push(node);groups.set(node.parent,list);}
+ for(const node of compiled.nodes.values())if(!layout[node.id]?.removed&&!moved(node)&&inventory.get(node.id)?.movable!==false&&!inventory.get(node.id)?.parentLocked){const list=groups.get(node.parent)??[];list.push(node);groups.set(node.parent,list);}
  for(const group of groups.values()){
   if(!(mobile?saved?.mobile:saved?.desktop)||group.every(node=>layout[node.id]?.order===inventory.get(node.id)?.defaultOrder))continue;
   const sorted=[...group].sort((a,b)=>(layout[a.id]?.order??inventory.get(a.id)?.defaultOrder??0)-(layout[b.id]?.order??inventory.get(b.id)?.defaultOrder??0));
@@ -62,11 +62,14 @@ export function CanvasScene({content,scope,mobile=false,editable=false,markers,c
    if(markers.some(marker=>marker.type===el.type))return cloneElement(el,{},standalone(el.props.children as ReactNode));
    return el;
   });
-  const rawAppearance=node.target==='page-title'&&scope!=='chrome'?(scope.titleAppearance??content.contentOverrides?.styles?.[`${scope.builtinKey}.title`]):node.target.startsWith('block:')&&scope!=='chrome'?scope.blocks.find(block=>`block:${block.id}`===node.target)?.appearance:content.contentOverrides?.styles?.[node.target==='home-image'?'home.image':node.target.slice(node.target.indexOf(':')+1)];
+  const rawAppearance=node.target==='page-title'&&scope!=='chrome'?(scope.titleAppearance??content.contentOverrides?.styles?.[`${scope.builtinKey}.title`]):node.target.startsWith('block:')?(scope==='chrome'?content.footerBlocks??[]:scope.blocks).find(block=>`block:${block.id}`===node.target)?.appearance:content.contentOverrides?.styles?.[node.target==='home-image'?'home.image':node.target.slice(node.target.indexOf(':')+1)];
   const semanticFrame=node.native&&!placement&&!validElementBox(resolveElementAppearance(rawAppearance,mobile)?.box);
-  const rawBody=renderTree(moved(node)?standalone(node.body):node.body,next),body=semanticFrame?mapNodes(rawBody,child=>isValidElement(child)?cloneElement(child as ReactElement<Record<string,unknown>>,attrs(node.id)):child):rawBody;
-  const context={id:node.id,scope:kind as 'page'|'chrome',styleTarget:node.target,placement,outerFrame:!!placement||semanticFrame,childSlot:!placement&&hasSlot?slot(node.id,next):undefined};
-  if(placement){const m=placement.matrix;return <CanvasSceneContext key={node.id} value={context}><div className={styles.placed} data-owner-layout-placed="true" {...attrs(node.id)} data-owner-edit={editable?node.target:undefined} tabIndex={editable?0:undefined} style={{width:placement.widthPx,height:placement.heightPx,transform:`matrix(${m.a},${m.b},${m.c},${m.d},${m.e},${m.f})`}}><div className={styles.placedBody} style={{width:placement.widthPx,minHeight:placement.heightPx}}>{body}</div>{slot(node.id,next)}</div></CanvasSceneContext>;}
+  const rawBody=renderTree(moved(node)?standalone(node.body):node.body,next);let footerSlot=false;
+  const insideFooter=(tree:ReactNode):ReactNode=>mapNodes(tree,child=>{if(!isValidElement(child))return child;const element=child as ReactElement<Record<string,unknown>>;if(element.type==='footer'){footerSlot=true;return cloneElement(element,{style:{...(element.props.style as Record<string,unknown>??{}),position:'relative'}},element.props.children as ReactNode,slot(node.id,next));}if(typeof element.type==='string'||element.type===Fragment||markers.some(marker=>marker.type===element.type))return cloneElement(element,{},insideFooter(element.props.children as ReactNode));return element;});
+  const slottedBody=node.id==='canvas:layout.site.footer'&&hasSlot?insideFooter(rawBody):rawBody;
+  const body=semanticFrame?mapNodes(slottedBody,child=>isValidElement(child)?cloneElement(child as ReactElement<Record<string,unknown>>,attrs(node.id)):child):slottedBody;
+  const context={id:node.id,scope:kind as 'page'|'chrome',styleTarget:node.target,placement,outerFrame:!!placement||semanticFrame,childSlot:!footerSlot&&!placement&&hasSlot?slot(node.id,next):undefined};
+  if(placement){const m=placement.matrix;return <CanvasSceneContext key={node.id} value={context}><div className={styles.placed} data-owner-layout-placed="true" {...attrs(node.id)} data-owner-edit={editable?node.target:undefined} tabIndex={editable?0:undefined} style={{width:placement.widthPx,height:placement.heightPx,transform:`matrix(${m.a},${m.b},${m.c},${m.d},${m.e},${m.f})`}}><div className={styles.placedBody} style={{width:placement.widthPx,minHeight:placement.heightPx}}>{body}</div>{!footerSlot&&slot(node.id,next)}</div></CanvasSceneContext>;}
 
   return <CanvasSceneContext key={node.id} value={context}>{body}</CanvasSceneContext>;
  };

@@ -1,7 +1,7 @@
 import type {OwnerContent,OwnerPage,PublicOwnerContent,ValidationIssue} from './model';
 import {getCanvasNodes} from './canvas-node-inventory';
 export {getCanvasNodes} from './canvas-node-inventory';
-export type CanvasNodeDescriptor={id:string;styleTarget:string;defaultParentId:string|null;defaultOrder:number;canContain:boolean;movable:boolean;label:string};
+export type CanvasNodeDescriptor={id:string;styleTarget:string;defaultParentId:string|null;defaultOrder:number;canContain:boolean;movable:boolean;parentLocked?:boolean;label:string};
 export type CanvasPlacement={matrix:{a:number;b:number;c:number;d:number;e:number;f:number};widthPx:number;heightPx:number;aspectLocked?:boolean;contentOffset?:{xPx:number;yPx:number}};
 export type CanvasNodeEntry={parentId:string|null;order:number;placement?:CanvasPlacement;label?:string;removed?:boolean};
 export type CanvasNodeMap=Record<string,CanvasNodeEntry>;
@@ -54,9 +54,11 @@ export function validateCanvasLayout(value:unknown,nodes:CanvasNodeDescriptor[],
    if(entry.parentId!==null&&(typeof entry.parentId!=='string'||!byId.has(entry.parentId)||!byId.get(entry.parentId)?.canContain&&entry.parentId!==node.defaultParentId)){issue(`${at}.parentId`,'Choose an existing box in this same scope, or the canvas.');continue;}
    if(entry.parentId===id){issue(`${at}.parentId`,'A box cannot contain itself.');continue;}
    if(!node.movable&&entry.removed===true&&(typeof entry.parentId!=='string'||!plain(map[entry.parentId])||(map[entry.parentId] as Record<string,unknown>).removed!==true))issue(`${at}.removed`,'This functional piece can only be removed with its containing unit.');
+   if(node.parentLocked&&entry.parentId!==node.defaultParentId){issue(`${at}.parentId`,'This functional piece stays with its containing unit.');continue;}
+   if(node.parentLocked&&entry.removed===true&&(typeof entry.parentId!=='string'||!plain(map[entry.parentId])||(map[entry.parentId] as Record<string,unknown>).removed!==true))issue(`${at}.removed`,'Remove this functional piece with its containing unit.');
    if(!node.movable&&entry.placement!==undefined)issue(`${at}.placement`,'This functional item must keep its original semantic slot; edit its appearance instead.');
    if(!node.movable&&entry.parentId!==node.defaultParentId){issue(`${at}.parentId`,'This functional item must stay in its semantic container.');continue;}
-   if(entry.placement!==undefined&&entry.parentId!==null&&typeof entry.parentId==='string'&&!byId.get(entry.parentId)?.canContain)issue(`${at}.placement`,'Move this item into a container or the canvas before using detached placement. Its original semantic slot must remain unplaced.');
+   if(entry.placement!==undefined&&entry.parentId!==null&&typeof entry.parentId==='string'&&!byId.get(entry.parentId)?.canContain&&!(node.parentLocked&&entry.parentId===node.defaultParentId))issue(`${at}.placement`,'Move this item into a container or the canvas before using detached placement. Its original semantic slot must remain unplaced.');
    if(entry.placement!==undefined&&!validCanvasPlacement(entry.placement))issue(`${at}.placement`,'Placement must contain finite, invertible two-dimensional geometry.');
    parents.set(id,entry.parentId as string|null);
   }
@@ -108,7 +110,7 @@ export function updateCanvasPlacement(content:OwnerContent,scope:OwnerPage|'chro
 export function stepCanvasNode(content:OwnerContent,scope:OwnerPage|'chrome',id:string,direction:-1|1,mobile=false):boolean{
  if(direction!==-1&&direction!==1)return false;
  const nodes=getCanvasNodes(content,scope),resolved=resolveCanvasLayout(content,scope,mobile),entry=resolved[id];if(!entry||entry.removed||!nodes.find(node=>node.id===id)?.movable)return false;
- const siblings=nodes.filter(node=>node.movable&&!resolved[node.id].removed&&resolved[node.id].parentId===entry.parentId).sort((a,b)=>resolved[a.id].order-resolved[b.id].order||a.defaultOrder-b.defaultOrder),index=siblings.findIndex(node=>node.id===id),to=index+direction;if(index<0||to<0||to>=siblings.length)return false;
+ const siblings=nodes.filter(node=>node.movable&&!node.parentLocked&&!resolved[node.id].removed&&resolved[node.id].parentId===entry.parentId).sort((a,b)=>resolved[a.id].order-resolved[b.id].order||a.defaultOrder-b.defaultOrder),index=siblings.findIndex(node=>node.id===id),to=index+direction;if(index<0||to<0||to>=siblings.length)return false;
  [siblings[index],siblings[to]]=[siblings[to],siblings[index]];const candidate=structuredClone(resolved);siblings.forEach((node,order)=>{candidate[node.id].order=order;});if(validateCanvasLayout({desktop:candidate},nodes).length)return false;
  const layout=materializeCanvasLayout(content,scope);
  if(mobile){layout.mobile=candidate;layout.mobileInitialized=true;}else{layout.desktop=candidate;if(!layout.mobileInitialized)layout.mobile=structuredClone(layout.desktop);}return true;

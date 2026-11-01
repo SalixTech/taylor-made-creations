@@ -58,7 +58,7 @@ type Props = {
   browsing: boolean;
   onBrowsingChange: (browsing: boolean) => void;
 };
-const blockLabels: Record<PageBlock["type"], string> = { text: "Text", image: "Photo", link: "Button", heading: "Heading", list: "List", divider: "Divider", spacer: "Space", faq: "Questions & answers", feature: "Photo + text", "canvas-space": "Add Canvas Space", section: "Section container" };
+const blockLabels: Record<PageBlock["type"], string> = { "commission-status":"Commission status", text: "Text", image: "Photo", link: "Button", heading: "Heading", list: "List", divider: "Divider", spacer: "Space", faq: "Questions & answers", feature: "Photo + text", "canvas-space": "Add Canvas Space", section: "Section container" };
 const selectionLabels: Record<string, string> = { site: "Header & footer", design: "Website design", "page-content": "Page content", "home-copy": "Welcome text", "home-image": "Main photo", status: "Commission availability", contact: "Contact details", page: "Page settings", sections: "Add a section", shop: "Premade shop", prices: "Prices & options" };
 function move<T extends { id: string }>(items: T[], id: string, direction: -1 | 1) { const from = items.findIndex(item => item.id === id); const to = from + direction; if (from >= 0 && to >= 0 && to < items.length) [items[from], items[to]] = [items[to], items[from]]; }
 

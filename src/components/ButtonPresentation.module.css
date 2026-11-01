@@ -1,0 +1,55 @@
+/* Scoped repeated class specificity beats themed .button:not(:disabled), without global rules. */
+.button.button.button.button.button.button {display:inline-flex;align-items:center;justify-content:center;gap:.5rem;box-sizing:border-box;border:1px solid transparent;border-radius:.5rem;padding:.7rem 1.2rem;font:inherit;font-weight:600;text-decoration:none;white-space:normal;max-width:100%;}
+.button.button.button.button.button.solid,.button.button.button.button.button.pill,.button.button.button.button.button.raised {background:var(--site-accent,#800014);color:var(--site-button-text,#fff);border-color:var(--site-accent,#800014);}
+.button.button.button.button.button.outline {background:transparent;color:var(--site-text,#302c2c);border-color:currentColor;}
+.button.button.button.button.button.plain {background:transparent;color:inherit;border:0;padding:0;text-decoration:underline;}
+.button.button.button.button.button.pill {border-radius:999px;}
+.button.button.button.button.button.raised {box-shadow:0 4px 0 #3e0010;transform:translateY(-2px);}
+.button:focus-visible {outline:2px solid currentColor;outline-offset:4px;}
+.artworkLabel {position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;}
+
+.button.button.button.button.button.button.import_color {color:var(--import-base-color);}
+.button.button.button.button.button.button.hover_color:hover {color:var(--import-hover-color);}
+.button.button.button.button.button.button.focus_color:focus-visible {color:var(--import-focus-color);}
+.button.button.button.button.button.button.import_backgroundColor {background-color:var(--import-base-backgroundColor);}
+.button.button.button.button.button.button.hover_backgroundColor:hover {background-color:var(--import-hover-backgroundColor);}
+.button.button.button.button.button.button.focus_backgroundColor:focus-visible {background-color:var(--import-focus-backgroundColor);}
+.button.button.button.button.button.button.import_backgroundImage {background-image:var(--import-base-backgroundImage);}
+.button.button.button.button.button.button.hover_backgroundImage:hover {background-image:var(--import-hover-backgroundImage);}
+.button.button.button.button.button.button.focus_backgroundImage:focus-visible {background-image:var(--import-focus-backgroundImage);}
+.button.button.button.button.button.button.import_borderColor {border-color:var(--import-base-borderColor);}
+.button.button.button.button.button.button.hover_borderColor:hover {border-color:var(--import-hover-borderColor);}
+.button.button.button.button.button.button.focus_borderColor:focus-visible {border-color:var(--import-focus-borderColor);}
+.button.button.button.button.button.button.import_borderWidth {border-width:var(--import-base-borderWidth);}
+.button.button.button.button.button.button.hover_borderWidth:hover {border-width:var(--import-hover-borderWidth);}
+.button.button.button.button.button.button.focus_borderWidth:focus-visible {border-width:var(--import-focus-borderWidth);}
+.button.button.button.button.button.button.import_borderStyle {border-style:var(--import-base-borderStyle);}
+.button.button.button.button.button.button.hover_borderStyle:hover {border-style:var(--import-hover-borderStyle);}
+.button.button.button.button.button.button.focus_borderStyle:focus-visible {border-style:var(--import-focus-borderStyle);}
+.button.button.button.button.button.button.import_borderRadius {border-radius:var(--import-base-borderRadius);}
+.button.button.button.button.button.button.hover_borderRadius:hover {border-radius:var(--import-hover-borderRadius);}
+.button.button.button.button.button.button.focus_borderRadius:focus-visible {border-radius:var(--import-focus-borderRadius);}
+.button.button.button.button.button.button.import_paddingInline {padding-inline:var(--import-base-paddingInline);}
+.button.button.button.button.button.button.hover_paddingInline:hover {padding-inline:var(--import-hover-paddingInline);}
+.button.button.button.button.button.button.focus_paddingInline:focus-visible {padding-inline:var(--import-focus-paddingInline);}
+.button.button.button.button.button.button.import_paddingBlock {padding-block:var(--import-base-paddingBlock);}
+.button.button.button.button.button.button.hover_paddingBlock:hover {padding-block:var(--import-hover-paddingBlock);}
+.button.button.button.button.button.button.focus_paddingBlock:focus-visible {padding-block:var(--import-focus-paddingBlock);}
+.button.button.button.button.button.button.import_fontSize {font-size:var(--import-base-fontSize);}
+.button.button.button.button.button.button.hover_fontSize:hover {font-size:var(--import-hover-fontSize);}
+.button.button.button.button.button.button.focus_fontSize:focus-visible {font-size:var(--import-focus-fontSize);}
+.button.button.button.button.button.button.import_fontWeight {font-weight:var(--import-base-fontWeight);}
+.button.button.button.button.button.button.hover_fontWeight:hover {font-weight:var(--import-hover-fontWeight);}
+.button.button.button.button.button.button.focus_fontWeight:focus-visible {font-weight:var(--import-focus-fontWeight);}
+.button.button.button.button.button.button.import_letterSpacing {letter-spacing:var(--import-base-letterSpacing);}
+.button.button.button.button.button.button.hover_letterSpacing:hover {letter-spacing:var(--import-hover-letterSpacing);}
+.button.button.button.button.button.button.focus_letterSpacing:focus-visible {letter-spacing:var(--import-focus-letterSpacing);}
+.button.button.button.button.button.button.import_textTransform {text-transform:var(--import-base-textTransform);}
+.button.button.button.button.button.button.hover_textTransform:hover {text-transform:var(--import-hover-textTransform);}
+.button.button.button.button.button.button.focus_textTransform:focus-visible {text-transform:var(--import-focus-textTransform);}
+.button.button.button.button.button.button.import_boxShadow {box-shadow:var(--import-base-boxShadow);}
+.button.button.button.button.button.button.hover_boxShadow:hover {box-shadow:var(--import-hover-boxShadow);}
+.button.button.button.button.button.button.focus_boxShadow:focus-visible {box-shadow:var(--import-focus-boxShadow);}
+.button.button.button.button.button.button.import_transition {transition:var(--import-base-transition);}
+.button.button.button.button.button.button.hover_transition:hover {transition:var(--import-hover-transition);}
+.button.button.button.button.button.button.focus_transition:focus-visible {transition:var(--import-focus-transition);}

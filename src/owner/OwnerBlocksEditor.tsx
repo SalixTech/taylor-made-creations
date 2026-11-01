@@ -9,12 +9,13 @@ import { OwnerAppearancePanel } from "./OwnerAppearancePanel";
 import { OwnerLinkedTextField } from "./OwnerLinkedTextField";
 import styles from "./OwnerPortal.module.css";
 
-const blockNames: Record<PageBlock["type"], string> = { text: "Text", image: "Photo", link: "Button", heading: "Heading", list: "List", divider: "Divider", spacer: "Space", faq: "FAQ", feature: "Photo + text", "canvas-space": "Canvas Space", section: "Section container" };
-const blockDescriptions: Record<PageBlock["type"], string> = { text: "A paragraph or story", image: "An image and caption", link: "A clear next step", heading: "A new section title", list: "Bullets or numbered steps", divider: "A subtle dividing line", spacer: "A little breathing room", faq: "Questions and answers", feature: "An image beside your words", "canvas-space": "An adjustable blank rectangle", section: "A container that holds other content" };
+const blockNames: Record<PageBlock["type"], string> = { "commission-status":"Commission status", text: "Text", image: "Photo", link: "Button", heading: "Heading", list: "List", divider: "Divider", spacer: "Space", faq: "FAQ", feature: "Photo + text", "canvas-space": "Canvas Space", section: "Section container" };
+const blockDescriptions: Record<PageBlock["type"], string> = { "commission-status":"Current commission availability and request action", text: "A paragraph or story", image: "An image and caption", link: "A clear next step", heading: "A new section title", list: "Bullets or numbered steps", divider: "A subtle dividing line", spacer: "A little breathing room", faq: "Questions and answers", feature: "An image beside your words", "canvas-space": "An adjustable blank rectangle", section: "A container that holds other content" };
 
 export function createBlock(type: PageBlock["type"]): PageBlock {
   const id = newOwnerId("block");
   switch (type) {
+    case "commission-status": return {id,type,label:"COMMISSION STATUS",note:"Ask about your next commission.",actionLabel:"Commission Me →"};
     case "canvas-space": return {id,type,widthPx:240,heightPx:160};
     case "section": return {id,type,heading:"New section"};
     case "text": return { id, type, heading: "", body: "Your text goes here." };
@@ -56,6 +57,6 @@ export function OwnerBlocksEditor({ layoutOrder, page, onEdit, onRemove, focused
       </div>}
       {block.type !== "spacer" && block.type !== "divider" && <OwnerAppearancePanel fonts={fonts} separateAlignment={block.type === "text" || block.type === "feature" || block.type === "faq"} label="Section appearance" kind={block.type === "link" ? "link" : block.type === "image" && !block.caption.trim() ? "image" : "section"} withImage={block.type === "image" || block.type === "feature"} value={block.appearance} onEdit={change => editBlock(block, item => { item.appearance ??= {}; change(item.appearance); })} onReset={() => editBlock(block, item => { delete item.appearance; })} />}
     </div>)}</div>
-    {!hideAddPalette && <div className={styles.blockPalette} aria-label="Add a section">{(Object.keys(blockNames) as PageBlock["type"][]).map(type => <button type="button" key={type} disabled={page.blocks.length >= 100} onClick={() => onEdit(target => { if (target.blocks.length < 100) target.blocks.push(createBlock(type)); })}><strong>＋ {blockNames[type]}</strong><small>{blockDescriptions[type]}</small></button>)}</div>}
+    {!hideAddPalette && <div className={styles.blockPalette} aria-label="Add a section">{(Object.keys(blockNames) as PageBlock["type"][]).filter(type=>type!=="commission-status").map(type => <button type="button" key={type} disabled={page.blocks.length >= 100} onClick={() => onEdit(target => { if (target.blocks.length < 100) target.blocks.push(createBlock(type)); })}><strong>＋ {blockNames[type]}</strong><small>{blockDescriptions[type]}</small></button>)}</div>}
   </Card>;
 }

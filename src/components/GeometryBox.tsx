@@ -90,7 +90,20 @@ export function GeometryBox({ box: rawBox, children: rawChildren, target, editab
     const slotWidthPercent = box.baseWidthPx / box.referenceParentPx * 100;
     const slotHeight = box.baseHeightPx * responsiveScale;
     const frameWidth = designWidth / box.baseWidthPx * 100, frameLeft = (box.xPercent-box.flow.xPercent)/slotWidthPercent*100;
-    return <Tag className={`${styles.flowSlot} ${inline ? styles.inline : ""}`} data-owner-flow-slot="true" style={{ width: `${slotWidthPercent}%`, height: Number.isFinite(slotHeight) ? slotHeight : undefined, marginTop:box.flow.marginTopPx, marginRight:box.flow.marginRightPx, marginBottom:box.flow.marginBottomPx, marginLeft:box.flow.marginLeftPx, ...margins }}>
+    // The native home photo starts centered with margin:auto. Computed-style
+    // capture stores those resolved margins in pixels; replaying them unchanged
+    // at a narrower viewport shifts the entire photo to the right. Recognize
+    // only that native centered flow signature, never arbitrary authored boxes.
+    const nativePhoto = isValidElement(rawChildren) && rawChildren.type === "section" && (rawChildren.props as {className?:string}).className === "home-art";
+    const centeredMargin = (box.referenceParentPx-box.baseWidthPx)/2;
+    const near = (a:number,b:number) => Math.abs(a-b) <= 0.05;
+    const responsiveNativeMargins = !placement && !inline && target === "home-image" && contentMode === "image" && nativePhoto
+      && appearance?.marginLeftPx === undefined && appearance?.marginRightPx === undefined
+      && centeredMargin >= 0 && near(box.flow.marginLeftPx,centeredMargin) && near(box.flow.marginRightPx,centeredMargin)
+      && near(box.flow.xPercent/100*box.referenceParentPx,centeredMargin);
+    const flowMarginLeft = responsiveNativeMargins ? `${box.flow.marginLeftPx/box.referenceParentPx*100}%` : box.flow.marginLeftPx;
+    const flowMarginRight = responsiveNativeMargins ? `${box.flow.marginRightPx/box.referenceParentPx*100}%` : box.flow.marginRightPx;
+    return <Tag className={`${styles.flowSlot} ${inline ? styles.inline : ""}`} data-owner-flow-slot="true" style={{ width: `${slotWidthPercent}%`, height: Number.isFinite(slotHeight) ? slotHeight : undefined, marginTop:box.flow.marginTopPx, marginRight:flowMarginRight, marginBottom:box.flow.marginBottomPx, marginLeft:flowMarginLeft, ...margins }}>
       <Tag ref={node => { ref.current = node; }} className={`${styles.frame} ${styles.flowFrame}`} {...sceneAttrs} data-owner-geometry="true" data-owner-layout="reflow" data-owner-edit={editable ? target : undefined} tabIndex={editable ? 0 : undefined} aria-label={editable ? "Edit content box" : undefined} style={{ ...frameStyle, width: Number.isFinite(frameWidth) ? `${frameWidth}%` : undefined, left: Number.isFinite(frameLeft) ? `${frameLeft}%` : undefined }}>{childSlot?<>{frameContents}{childSlot}</>:frameContents}</Tag>
     </Tag>;
   }
