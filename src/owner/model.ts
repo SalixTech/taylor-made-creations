@@ -72,6 +72,8 @@ export type OwnerContent = {
   site: { socialLinks?: OwnerSocialLink[]; moreEnabled?: boolean; catalogMode?: boolean; additionalPartsQuantities?: boolean; name: string; commissionStatus: CommissionStatus; statusNote: string; showPremades: boolean; telegram: string; discord: string; email: string; tiktok: string; twitch: string };
   home: { eyebrow: string; title: string; description: string; image: { src: string; alt: string }; caption: string };
   prices: { intro: string; groups: PriceGroup[]; parts: PriceLine[]; extras: PriceLine[] };
+  /** Hub-owned display preference; omission keeps existing numbered galleries. */
+  gallerySettings?: { showNumbers: boolean };
   gallery: GalleryItem[];
   premades: OwnerPremade[];
   pages: OwnerPage[];
@@ -205,7 +207,8 @@ function validateContent(value: unknown, published = false): ValidationResult {
     if (entry.fontId !== undefined && (typeof entry.fontId !== "string" || !Array.isArray(root.fonts) || !root.fonts.some(font => font && typeof font === "object" && font.id === entry.fontId))) issue(`${path}.fontId`, "Choose a font uploaded to this draft.");
   };
   const root = object(value, "content");
-  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm", "chromeLayout"], "content");
+  exact(root, ["schemaVersion", "site", "home", "prices", "gallery", "premades", "pages", "design", "contentOverrides", "fonts", "commissionForm", "chromeLayout", "gallerySettings"], "content");
+  if (root.gallerySettings !== undefined) { const settings = object(root.gallerySettings, "gallerySettings"); exact(settings, ["showNumbers"], "gallerySettings"); bool(settings.showNumbers, "gallerySettings.showNumbers"); }
   if (root.commissionForm !== undefined) issues.push(...validateCommissionFormConfig(root.commissionForm).issues);
   if (root.schemaVersion !== OWNER_SCHEMA_VERSION) issue("schemaVersion", "This content version is not supported.");
   if (root.fonts !== undefined) list(root.fonts, "fonts", MAX_CONTENT_BYTES).forEach((value, index) => {
@@ -562,6 +565,7 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
   const { site, home, prices } = content;
   const snapshot: PublicOwnerContent = {
     schemaVersion: 1,
+    ...(content.gallerySettings === undefined ? {} : { gallerySettings: { showNumbers: content.gallerySettings.showNumbers } }),
     site: { ...(site.socialLinks !== undefined ? { socialLinks: site.socialLinks.map(link => ({ id: link.id, label: link.label, value: link.value, ...(link.url !== undefined ? { url: link.url } : {}) })) } : {}), name: site.name, commissionStatus: site.commissionStatus, statusNote: site.statusNote, showPremades: site.showPremades, telegram: site.telegram, discord: site.discord, email: site.email, tiktok: site.tiktok, twitch: site.twitch, ...(site.moreEnabled !== undefined ? { moreEnabled: site.moreEnabled } : {}), ...(site.catalogMode !== undefined ? { catalogMode: site.catalogMode } : {}), ...(site.additionalPartsQuantities !== undefined ? { additionalPartsQuantities: site.additionalPartsQuantities } : {}) },
     home: { eyebrow: home.eyebrow, title: home.title, description: home.description, image: { src: publicImage(home.image.src, "home.image.src"), alt: home.image.alt }, caption: home.caption },
     prices: {

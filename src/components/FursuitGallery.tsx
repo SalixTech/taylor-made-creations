@@ -21,7 +21,7 @@ function GalleryImage({ photo, expanded = false, unoptimized = false, privateMed
       className={expanded ? styles.expandedImage : styles.thumbnail} onError={() => setFailed(true)} />;
 }
 
-export function useFursuitGalleryView({ photos = fursuitGallery, unoptimized = false, compact = false, editor = false, privateMedia = false, decorate }: { decorate?: (photo: GalleryPhoto, part: "card"|"photo"|"caption", element: ReactElement) => ReactNode; photos?: readonly GalleryPhoto[]; unoptimized?: boolean; compact?: boolean; editor?: boolean; privateMedia?: boolean } = {}) {
+export function useFursuitGalleryView({ photos = fursuitGallery, unoptimized = false, compact = false, editor = false, privateMedia = false, showNumbers = true, decorate }: { showNumbers?: boolean; decorate?: (photo: GalleryPhoto, part: "card"|"photo"|"caption", element: ReactElement) => ReactNode; photos?: readonly GalleryPhoto[]; unoptimized?: boolean; compact?: boolean; editor?: boolean; privateMedia?: boolean } = {}) {
   const wrap = (photo:GalleryPhoto, part:"card"|"photo"|"caption", element:ReactElement) => decorate && photo.id ? decorate(photo,part,element) : element;
   const [active, setActive] = useState<number | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -55,7 +55,7 @@ export function useFursuitGalleryView({ photos = fursuitGallery, unoptimized = f
           onClick={event => { trigger.current = event.currentTarget; setActive(index); }}>
           <GalleryImage key={`${privateMedia}-${item.src}`} photo={item} unoptimized={unoptimized} privateMedia={privateMedia} />
         </button>)}
-        {wrap(item,"caption",<figcaption className={styles.caption}><span>{item.displayNumber?.trim() || String(count - index).padStart(2, "0")}</span></figcaption>)}
+        {showNumbers&&wrap(item,"caption",<figcaption className={styles.caption}><span>{item.displayNumber?.trim() || String(count - index).padStart(2, "0")}</span></figcaption>)}
       </figure>))}
     </div>
     <dialog ref={dialog} className={styles.dialog} aria-labelledby="fursuit-photo-title" aria-describedby="fursuit-photo-help"
