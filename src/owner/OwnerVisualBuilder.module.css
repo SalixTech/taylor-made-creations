@@ -326,3 +326,14 @@
 /* Compact canvas menu; keep every action keyboard reachable. */
 .canvasContextMenu{min-width:150px;padding:5px;}
 .canvasContextMenu button{padding:6px 10px;}
+/* Full-page editing: controls scroll normally; only the low-profile formatting
+   row stays beside the working canvas. No wheel interception or scroll snapping. */
+.toolbar{position:relative;top:auto;flex-wrap:wrap;gap:8px;padding:7px 10px;}
+.toolbar .pagePicker{flex:0 1 210px;min-width:160px;max-width:210px;transform:none;text-align:left;}
+.toolbar .pagePicker label{font-size:10px;margin:0;text-align:left;}
+.toolbar .pagePicker [role="combobox"]{min-height:30px;padding-block:3px;}
+.moreControls{padding:0 10px;}.moreControls>summary{padding:5px 0;}
+.textToolbarDock{position:sticky;top:var(--owner-toolbar-height,0px);z-index:24;min-width:0;background:var(--owner-surface,#292929);border-bottom:1px solid var(--owner-line,#555);}
+.textToolbarDock:empty{display:none;}.layoutIndicator{padding:3px 10px;font-size:10px;}
+.stage{overflow-anchor:none;}.canvas{scroll-margin-top:calc(var(--owner-toolbar-height,0px) + var(--builder-toolbar-height,36px) + 8px);}
+@media(max-width:650px){.toolbar .pagePicker{min-width:160px;width:210px;}.toolbar .viewTools{width:auto;}.toolbar .viewToolsGroup{min-width:0;}.textToolbarDock{max-width:100%;}}

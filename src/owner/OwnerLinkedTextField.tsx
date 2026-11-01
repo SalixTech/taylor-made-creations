@@ -69,7 +69,7 @@ export function OwnerLinkedTextField({ label, value, onChange, hint, multiline =
     {!open&&error&&<p role="alert">{error}</p>}
     {open && <div className={controls.linkEditor} id={`${id}-links`} aria-busy={busy}>
       <p>{editing ? "Edit existing hyperlink" : "Link highlighted text"}</p>
-      {selection&&<p><mark>{plain.slice(selection.start,selection.end)}</mark></p>}
+      {selection&&<p><mark className={controls.selectionPreview}>{plain.slice(selection.start,selection.end)}</mark></p>}
       <label>Link text<input value={name} disabled={busy} onChange={event => setName(event.target.value)} /></label>
       <label>Link destination<input value={href} disabled={busy} placeholder="https://example.com or /contact" onChange={event => setHref(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); insert(); } }} /></label>
       {error && <p role="alert">{error}</p>}

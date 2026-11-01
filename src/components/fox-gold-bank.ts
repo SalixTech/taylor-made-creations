@@ -1,6 +1,8 @@
 /** Shared safe bank shape; anonymous rolls live only in component memory. */
 export type FoxBank={schemaVersion:1;balance:number;revision:number};
-export type FoxRoll={bank:FoxBank;delta:number};
+export const FOX_EVENTS=['ordinary','pocket-inspector','bubble-enthusiast','management','keeper','trustworthy-thief','bubbles-wipe'] as const;
+export type FoxEvent=typeof FOX_EVENTS[number];
+export type FoxRoll={bank:FoxBank;delta:number;gameVersion?:2;event?:FoxEvent};
 export function decodeFoxBank(raw:string|null):FoxBank{
  if(raw===null)return{schemaVersion:1,balance:0,revision:0};
  let value:unknown;try{value=JSON.parse(raw);}catch{throw Error('Saved fox gold could not be read.');}
@@ -26,3 +28,19 @@ export type FoxOpening={id:string;operation:(scope:string,pending:string|null)=>
 export function createFoxOpening(id:string):FoxOpening{let pinnedScope:string|undefined,operationId:string|undefined,rareChoice:boolean|undefined;return{id,rare(random=Math.random){if(rareChoice===undefined){const draw=random();rareChoice=Number.isFinite(draw)&&draw>=0&&draw<.01;}return rareChoice;},operation(scope,pending){if(pinnedScope!==undefined&&pinnedScope!==scope)throw Error('The account changed during this visit.');if(operationId!==undefined&&pending!==null&&pending!==operationId)throw Error('Another roll is pending.');pinnedScope=scope;operationId??=pending??id;return operationId;}};}
 
 export const FOX_RARE_LINE="Name’s Bubbles. Professional pocket inspector. Unlicensed bubble enthusiast. You’ve met the management.";
+
+/** v2: server-equivalent integer draws, 65/35 ordinary odds, boundary direction.
+ * Rare event is 1/100; each of six rare titles is equiprobable (wipe1/600). */
+export function nextFoxRollV2(bank:FoxBank,random:()=>number=Math.random):FoxRoll{
+ decodeFoxBank(JSON.stringify(bank));if(bank.revision>=Number.MAX_SAFE_INTEGER-1)throw Error('Saved fox gold needs attention.');
+ const limits=[100,6,100,640],draws=limits.map(limit=>{const value=random();if(!Number.isFinite(value)||value<0||value>=1)throw Error('The fox could not roll this time.');return Math.floor(value*limit);});
+ const event:FoxEvent=draws[0]===0?FOX_EVENTS[draws[1]+1]:'ordinary';
+ const win=bank.balance===0?true:bank.balance===999?false:draws[2]<65;
+ const requested=event==='bubbles-wipe'?-bank.balance:win?1+draws[3]%20:-(3+draws[3]%32);
+ const balance=Math.max(0,Math.min(999,bank.balance+requested));
+ return{bank:{schemaVersion:1,balance,revision:bank.revision+1},delta:balance-bank.balance,gameVersion:2,event};
+}
+export function foxRareLine(event:FoxEvent):string{
+ const titles:Record<FoxEvent,string>={ordinary:'', 'pocket-inspector':'Professional pocket inspector.', 'bubble-enthusiast':'Unlicensed bubble enthusiast.',management:'You’ve met the management.',keeper:'Keeper of da bubblz.','trustworthy-thief':'This face is trustworthy as a thief.','bubbles-wipe':'You touched my bubbles.'};
+ return `Name’s Bubbles. ${titles[event]}`;
+}

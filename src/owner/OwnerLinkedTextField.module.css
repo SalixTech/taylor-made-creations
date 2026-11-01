@@ -11,3 +11,6 @@
 
 .contextMenu button { appearance:none; border:1px solid var(--owner-button-secondary-line,#96888d); border-radius:6px; padding:8px 12px; background:var(--owner-button-secondary-bg,#fff); color:var(--owner-button-secondary-ink,#302c2c); font:inherit; font-size:13px; cursor:pointer; }
 .contextMenu button:focus-visible { outline:2px solid var(--owner-ink,#302c2c); outline-offset:2px; }
+
+/* This is a link preview, not the browser's default yellow search highlight. */
+.linkEditor .selectionPreview{background:var(--owner-raised,#f5f4f3);color:var(--owner-ink,#302c2c);border:1px solid var(--owner-line,#ded6d9);border-radius:3px;padding:1px 4px;box-decoration-break:clone;overflow-wrap:anywhere;}

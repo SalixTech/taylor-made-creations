@@ -484,6 +484,9 @@
 .fullPageBuilder .builderSignOut{margin-left:8px;}
 .builderMore{position:relative;}
 .builderMore>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+/* Summary is not :enabled/:disabled, unlike its neighboring buttons. */
+.portal:global([data-owner-portal][data-color-mode="dark"]) .builderMore>summary.secondary{background-color:var(--owner-raised)!important;border-color:var(--owner-control-line)!important;color:var(--owner-ink)!important;}
+.portal:global([data-owner-portal][data-color-mode="dark"]) .builderMore>summary.secondary:hover{background-color:#48313e!important;border-color:#7f0011!important;}
 .builderMore>summary::-webkit-details-marker{display:none;}
 .builderMore>summary:focus-visible{outline:2px solid currentColor;outline-offset:3px;}
 .builderMore>div{position:absolute;right:0;top:calc(100% + 6px);z-index:65;min-width:210px;padding:10px;display:grid;gap:8px;border:1px solid #777;border-radius:10px;background:var(--owner-panel,#292929);box-shadow:0 8px 30px #0005;}
