@@ -88,7 +88,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   function closePriceColors(){priceColorsLive.current=null;setPriceColors(null);}
   const [computedText,setComputedText]=useState<{key:string;appearance:ComputedTextAppearance|null}|null>(null);
   const [parentChoice,setParentChoice]=useState<{id:string;value:string}|null>(null);
-  useLayoutEffect(()=>{const root=builderRef.current,bar=toolbarRef.current;if(!root||!bar)return;return trackToolbarViewport(root,bar);},[browsing]);
+  useLayoutEffect(()=>{const root=builderRef.current,bar=toolbarRef.current;if(!root||!bar)return;return trackToolbarViewport(root,bar,canvasRef.current);},[browsing]);
   const navigationTarget = useRef<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [inlineTarget,setInlineTarget]=useState<string|null>(null);
