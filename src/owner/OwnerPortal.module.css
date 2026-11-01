@@ -503,3 +503,11 @@
 .portal[data-color-mode="dark"] .publishCheck{color:#4ade80}
 
 .historyFeedback{display:inline-block;padding:4px 8px;color:var(--owner-muted,#706a67);font-size:12px;line-height:1.4;}
+
+/* Save-only action groups: draft choices together, publication destinations together. */
+.saveChoiceActions{display:grid;gap:12px;width:100%;min-width:0;}
+.saveDraftActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.savePublishActions{display:flex;flex-wrap:wrap;gap:10px;min-width:0;}
+.savePublishActions>button{flex:1 1 150px;}
+.saveChoiceActions button{min-width:0;max-width:100%;white-space:normal;text-align:center;}
+@media(max-width:420px){.saveDraftActions{grid-template-columns:minmax(0,1fr);}.savePublishActions{display:grid;grid-template-columns:minmax(0,1fr);}}
