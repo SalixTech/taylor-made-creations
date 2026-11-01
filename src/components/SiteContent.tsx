@@ -81,9 +81,11 @@ function ContentLink({ content, href, children, className, editTarget, appearanc
 
 function InlineLinkedText({ content, text, fieldId, offset=0, links=true }: { content: OwnerContent; text: string;fieldId?:string;offset?:number;links?:boolean }) {
   const {mobileLayout}=useContext(RenderContext);
-  const length=Array.from(links?parseInlineLinks(text).map(p=>p.text).join(''):text).length;
-  const styled=fieldId&&getInlineTextSource(content,fieldId)&&content.contentOverrides?.inlineStyles?.[fieldId];
-  const parts=styled?getInlineTextRuns(content,fieldId!,!!mobileLayout).filter(run=>run.end>offset&&run.start<offset+length).map(run=>({...run,text:Array.from(run.text).slice(Math.max(0,offset-run.start),Math.min(run.end,offset+length)-run.start).join('')})):(links?parseInlineLinks(text):[{text}]);
+  const source=fieldId?getInlineTextSource(content,fieldId):null;
+  const effectiveLinks=links&&source?.links!==false;
+  const length=Array.from(effectiveLinks?parseInlineLinks(text).map(p=>p.text).join(''):text).length;
+  const styled=fieldId&&source&&content.contentOverrides?.inlineStyles?.[fieldId];
+  const parts=styled?getInlineTextRuns(content,fieldId!,!!mobileLayout).filter(run=>run.end>offset&&run.start<offset+length).map(run=>({...run,text:Array.from(run.text).slice(Math.max(0,offset-run.start),Math.min(run.end,offset+length)-run.start).join('')})):(effectiveLinks?parseInlineLinks(text):[{text}]);
   return <>{groupInlineParts(parts).map((group,index)=>{const ownDecoration=!!group.href&&group.parts.some(part=>part.style?.underline!==undefined);const nodes=group.parts.map((part,partIndex)=>ownDecoration||part.style&&Object.keys(part.style).length?<span key={partIndex} data-inline-link-run={ownDecoration||undefined} {...inlineTextStyleAttributes(part.style)} style={inlineTextStyleCSS(part.style) as CSSProperties}>{part.text}</span>:<Fragment key={partIndex}>{part.text}</Fragment>);return group.href?<ContentLink key={index} content={content} href={group.href} className={`inline-content-link${ownDecoration?" inline-styled-link":""}`}>{nodes}</ContentLink>:<Fragment key={index}>{nodes}</Fragment>;})}</>;
 }
 /** Display-only separators never change canonical digit formatting offsets. */
@@ -135,7 +137,7 @@ function buildIntro({content,page,eyebrow,title,children,editTarget="page"}:Intr
   const appearance = resolveElementAppearance(page.titleAppearance ?? content.contentOverrides?.styles?.[`${page.builtinKey}.title`],!!mobileLayout);
   const boxed = validElementBox(appearance?.box);
   const titleAppearance = boxed ? { ...appearance, widthPercent: undefined, heightPercent: undefined } : appearance;
-  return <CanvasTarget content={content} styleKey={`layout.page:${page.id}:intro`}><div className="page-intro" data-owner-content-editor={editTarget}><p className="eyebrow">{eyebrow}</p><h1 {...appearanceProps(titleAppearance)}><GeometryBox inline appearance={appearance} box={appearance?.box} target="page-title" editable={mode === "editor" && editable}><span {...editorTarget(mode === "editor" && editable && !boxed, "page-title", "page title")}>{<InlineLinkedText content={content} text={title} fieldId={`page:${page.id}:title`} links={false}/>}</span></GeometryBox></h1>{children && <div className="intro-copy">{children}</div>}</div></CanvasTarget>;
+  return <CanvasTarget content={content} styleKey={`layout.page:${page.id}:intro`}><div className="page-intro" data-owner-content-editor={editTarget}><p className="eyebrow">{eyebrow}</p><h1 {...appearanceProps(titleAppearance)}><GeometryBox inline appearance={appearance} box={appearance?.box} target="page-title" editable={mode === "editor" && editable}><span {...editorTarget(mode === "editor" && editable && !boxed, "page-title", "page title")}>{<InlineLinkedText content={content} text={title} fieldId={`page:${page.id}:title`}/>}</span></GeometryBox></h1>{children && <div className="intro-copy">{children}</div>}</div></CanvasTarget>;
 }
 
 function PreviewImage({ src, alt, hero = false, imageStyle, appearance, layoutAppearance = true }: { src: string; alt: string; hero?: boolean; imageStyle?: CSSProperties; appearance?: ElementAppearance; layoutAppearance?: boolean }) {

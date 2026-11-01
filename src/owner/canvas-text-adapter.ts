@@ -1,6 +1,7 @@
 import type {OwnerContent,OwnerPage} from './model';
 import {TEXT_FIELDS,LINK_FIELDS,getTemplateText,getTemplateLink} from './site-design';
 import {templateSupportsInlineLinks} from './inline-links';
+import {getInlineTextSource} from './rich-text';
 export type CanvasTextField={inputKind?:'money';value:string;label:string;links:boolean;styleKey?:string;appearance:'style'|'page'|'block';blockId?:string;write:(draft:OwnerContent,value:string)=>boolean};
 /** Accept exact USD notation; never round invalid precision or coerce empty input. */
 export function parseCanvasPrice(value:string):number|null{const text=value.trim();if(!/^\$?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(text))return null;const amount=Number(text.replace(/[$,]/g,''));return Number.isFinite(amount)&&amount>=0&&amount<=1_000_000?amount:null;}
@@ -20,7 +21,7 @@ export function canvasTextField(content:OwnerContent,page:OwnerPage,target:strin
   const max=family==='group'?(property==='title'?120:500):property==='name'?150:1000,required=property==='title'||property==='name';
   return field(current,`Price ${property}`,false,(draft,value)=>{const record=locate(draft);if(!record||value.length>max||(required&&!value.trim()))return false;(record as unknown as Record<string,unknown>)[key]=value;return true;},target.slice(7));
  }
- if(target==='page-title')return field(page.title,'Page title',false,(draft,value)=>{const p=draft.pages.find(p=>p.id===page.id);if(!p)return false;p.title=value;return true;},undefined,'page');
+ if(target==='page-title')return field(page.title,'Page title',getInlineTextSource(content,`page:${page.id}:title`)?.links??true,(draft,value)=>{const p=draft.pages.find(p=>p.id===page.id);if(!p)return false;p.title=value;return true;},undefined,'page');
  if(target.startsWith('core-text:')){const key=target.slice(10);if(['home.title','home.eyebrow','home.description','home.caption'].includes(key)){const property=key.slice(5) as 'title'|'eyebrow'|'description'|'caption';return field(content.home[property],property,true,(draft,value)=>{draft.home[property]=value;return true;},key);}if(key==='prices.intro')return field(content.prices.intro,'Prices introduction',true,(draft,value)=>{draft.prices.intro=value;return true;},key);}
  if(target.startsWith('template-text:')){const key=target.slice(14),entry=TEXT_FIELDS.find(f=>f.key===key);if(!entry||/\{[^}]+\}/.test(getTemplateText(content,key)))return null;return field(getTemplateText(content,key),entry.label,templateSupportsInlineLinks(key),(draft,value)=>{draft.contentOverrides??={};draft.contentOverrides.text??={};draft.contentOverrides.text[key]=value;return true;},key);}
  const linkKey=target.startsWith('template-link:')?target.slice(14):target==='canvas:layout.home.pricesCardTitle'?'home.pricesCard':target==='canvas:layout.home.careCardTitle'?'home.careCard':null;

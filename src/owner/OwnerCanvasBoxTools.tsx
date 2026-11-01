@@ -6,6 +6,7 @@ import { measuredCanvasFrame, measureCanvasBox, type CanvasBoxBounds } from "./b
 import { firstBoxMaterializationError } from "./box-materialization";
 import { OwnerSelect } from "./OwnerFields";
 import { findCanvasBoxTarget } from "./box-targets";
+import {canvasTextExtent,canvasToolbarPosition,type CanvasVisualExtent} from "./canvas-toolbar-bounds";
 import { OwnerNumberInput } from "./OwnerDesignInputs";
 import styles from "./OwnerVisualBuilder.module.css";
 import { boxAlignmentGuides, type AlignmentRect, type AlignmentGuide } from "./box-alignment";
@@ -39,6 +40,7 @@ const matrixStyle = (m: Affine) => `matrix(${m.a}, ${m.b}, ${m.c}, ${m.d}, ${m.e
 export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCanvasMoveCommit,onCanvasMoveCancel, layoutIdentity, canvasRef, target, occurrence = 0, value, disabled, onChange, initialAspectLocked, onInitialAspectLockChange, onEditContent, onDelete, onCopyBox, onPasteBox, onSelectParent, selectBoxContents = true, onSelectBoxContents, sectionOrder, reparentId, renderVersion, placement, resolvePlacementDestination, onPlacementChange, onResetPlacement }: PlacementProps & CanvasMoveHooks & { selectBoxContents?:boolean; onSelectBoxContents?:(selected:boolean)=>void; onSelectParent?:()=>void; onCopyBox?:()=>void; onPasteBox?:()=>void; onDelete?:()=>void; reparentId?:string; sectionOrder?: { index: number; count: number; onMove: (direction: -1 | 1) => void }; onEditContent?: () => void; renderVersion?: object; initialAspectLocked?: boolean; onInitialAspectLockChange?: (locked: boolean) => void; occurrence?: number; canvasRef: RefObject<HTMLDivElement | null>; target: string; value?: ElementAppearance; disabled: boolean; onChange: (value: ElementAppearance) => void }) {
   const [bounds, setBounds] = useState<CanvasBoxBounds | null>(null), [preview, setPreview] = useState<{ box: ElementBox; appearance: ElementAppearance | undefined; target: string; guides?: AlignmentGuide[] } | null>(null), [notice, setNotice] = useState("");
   const [hasContents,setHasContents]=useState(false);
+  const [textExtent,setTextExtent]=useState<CanvasVisualExtent|null>(null);
   const [initialLocked, setInitialLocked] = useState(true), [unsupported, setUnsupported] = useState(false);
   const gesture = useRef<Gesture | null>(null);
   const moveHooks=useRef({onCanvasMoveStart,onCanvasMovePreview,onCanvasMoveCommit,onCanvasMoveCancel});useLayoutEffect(()=>{moveHooks.current={onCanvasMoveStart,onCanvasMovePreview,onCanvasMoveCommit,onCanvasMoveCancel};});
@@ -55,7 +57,7 @@ export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCa
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     const node = canvas && findCanvasBoxTarget(canvas, target, occurrence, layoutIdentity);
-    if (!canvas || !node) { setBounds(null); setUnsupported(false); return; }
+    if (!canvas || !node) { setBounds(null); setTextExtent(null); setUnsupported(false); return; }
     setHasContents(!!node.querySelector?.("[data-owner-edit]"));
     let active = true;
     const cancel = () => { const prior=releaseGesture(gesture);if(prior?.kind==="move")moveHooks.current.onCanvasMoveCancel?.(); setPreview(null); };
@@ -65,6 +67,7 @@ export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCa
       const next = placement ? (destination ? measurePlacementControls(canvas,destination,placement,value?.box)?.bounds ?? null : null) : measureCanvasBox(canvas, node, validElementBox(value?.box) ? value.box : undefined);
       if (gesture.current && (!next || next.signature !== gesture.current.bounds.signature)) cancel();
       markCanvasOutline(node, !!next && !next.materializationError);
+      const extent=canvasTextExtent(canvas,node);setTextExtent(current=>JSON.stringify(current)===JSON.stringify(extent)?current:extent);
       setUnsupported(!next);
       setBounds(current => current && next && JSON.stringify(current) === JSON.stringify(next) ? current : next);
     };
@@ -86,8 +89,7 @@ export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCa
   const ghost = preview?.appearance === value && preview?.target === target && !disabled ? preview.box : null;
   const baseFrame = measuredCanvasFrame(bounds);
   const frame = ghost ? frameGeometry(bounds, ghost, box) : baseFrame;
-  const toolbarLeft = Math.max(0, Math.min(bounds.left, bounds.canvasWidth - toolbarSize.width));
-  const toolbarTop = bounds.top >= toolbarSize.height + 44 ? bounds.top-toolbarSize.height-44 : Math.max(...[{x:0,y:0},{x:baseFrame.width,y:0},{x:0,y:baseFrame.height},{x:baseFrame.width,y:baseFrame.height}].map(p=>transformPoint(baseFrame.matrix,p).y))+44;
+  const {left:toolbarLeft,top:toolbarTop}=canvasToolbarPosition(baseFrame,textExtent,toolbarSize,bounds.canvasWidth);
   function save(next: ElementBox) {
     if (placement) {
       const canvas=canvasRef.current,destination=canvas&&resolvePlacementDestination?.(canvas);

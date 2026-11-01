@@ -17,7 +17,7 @@ export function getInlineTextSource(content:Content,id:string):{source:string;te
  if(id.startsWith('core:')){const key=id.slice(5);if(['home.title','home.eyebrow','home.description','home.caption'].includes(key))source=content.home[key.slice(5) as keyof typeof content.home];else if(key==='prices.intro')source=content.prices.intro;}
  else if(id.startsWith('template:')){const key=id.slice(9);if(TEXT_FIELDS.some(f=>f.key===key)){source=getTemplateText(content as OwnerContent,key);links=templateSupportsInlineLinks(key);if(typeof source==='string'&&/\{[^}]+\}/.test(source))return null;}}
  else if(id.startsWith('link:')){const key=id.slice(5);if(LINK_FIELDS.some(f=>f.key===key)){source=getTemplateLink(content as OwnerContent,key).label;links=false;}}
- else {const parts=id.split(':');if(parts[0]==='page'&&parts.length===3&&parts[2]==='title'&&idPattern.test(parts[1])){source=content.pages.find(p=>p.id===parts[1])?.title;links=false;}
+ else {const parts=id.split(':');if(parts[0]==='page'&&parts.length===3&&parts[2]==='title'&&idPattern.test(parts[1])){source=content.pages.find(p=>p.id===parts[1])?.title;if(typeof source==='string'&&content.contentOverrides?.inlineStyles?.[id]?.text===source&&plain(source,true)!==source)links=false;}
  else if(parts[0]==='block'&&parts.length===4&&idPattern.test(parts[1])&&idPattern.test(parts[2])){const b=(parts[1]==='shared-footer'?content.footerBlocks:content.pages.find(p=>p.id===parts[1])?.blocks)?.find(b=>b.id===parts[2]),key=parts[3];if(b&&['text','heading','body','caption','label','note','actionLabel'].includes(key)&&key in b){source=(b as unknown as Record<string,unknown>)[key];links=key!=='label'&&key!=='actionLabel';}}}
  return typeof source==='string'?{source,text:plain(source,links),links}:null;
 }

@@ -19,10 +19,12 @@ import ui from "./OwnerPortal.module.css";
 import styles from "./OwnerVisualBuilder.module.css";
 import buttons from "./OwnerButton.module.css";
 import { OwnerLinkedTextField } from "./OwnerLinkedTextField";
-import {OwnerCanvasTextEditor} from "./OwnerCanvasTextEditor";
+import {OwnerCanvasTextEditor,type CanvasTextEditMetadata} from "./OwnerCanvasTextEditor";
 import {OwnerTextFormattingBar} from "./OwnerTextFormattingBar";
-import {getInlineTextId,getInlineTextRuns,applyInlineTextStyle,resetInlineTextStyle,type InlineTextStyle} from "./rich-text";
+import {applyPendingInlineTextStyle,mergePendingInlineTextStyle,inlineTextStyleAtCaret} from "./typing-marks";
+import {getInlineTextId,getInlineTextRuns,applyInlineTextStyle,resetInlineTextStyle,reconcileInlineTextStyles,type InlineTextStyle} from "./rich-text";
 import {canvasTextField,changeCanvasText} from "./canvas-text-adapter";
+import {resolveCanvasClickTarget} from "./canvas-hit-target";
 import {inlinePlainText,type InlineSelection} from "./inline-text-editing";
 import {readComputedPriceAppearance,readComputedTextAppearance,type ComputedTextAppearance} from "./editable-text-dom";
 import { OwnerCanvasImageTools } from "./OwnerCanvasImageTools";
@@ -33,6 +35,7 @@ import type { Affine } from "./box-geometry";
 import { captureCanvasFrame, placeCapturedCanvasFrame, type CapturedCanvasFrame } from "./canvas-placement-geometry";
 import { transferPageBlockToFooter } from "./shared-footer";
 import {captureFrameClipboard,pasteFrameClipboard,type FrameClipboardSessionRef} from "./frame-clipboard";
+import {captureHorizontalGrowth,horizontalGrowthCaptureCurrent,measureHorizontalText,proposeHorizontalGrowth} from "./horizontal-text-growth";
 import { useMovablePanel } from "./use-movable-panel";
 
 type Props = {
@@ -82,6 +85,11 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const [inlineTarget,setInlineTarget]=useState<string|null>(null);
   const [inlineSelection,setInlineSelection]=useState<InlineSelection|null>(null);
   const inlineSelectionScope=useRef("");
+  type PendingTyping={key:string;value:string;start:number;end:number;style:InlineTextStyle;record:string};
+  const [pendingTyping,setPendingTyping]=useState<PendingTyping|null>(null),pendingTypingRef=useRef<PendingTyping|null>(null);
+  const [textFocusRequest,setTextFocusRequest]=useState(0);
+  function clearPendingTyping(){if(pendingTypingRef.current){pendingTypingRef.current=null;setPendingTyping(null);}}
+  function rememberPendingTyping(value:PendingTyping){pendingTypingRef.current=value;setPendingTyping(value);}
   const linkRequestSequence=useRef(0);
   const [linkRequest,setLinkRequest]=useState<(InlineSelection & {requestId:number;contextKey:string})|null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -105,6 +113,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [pricesOpen,setPricesOpen]=useState(false);
   const [announcement, setAnnouncement] = useState("");
+  const [textWidthWarning,setTextWidthWarning]=useState("");
   const localFrameClipboard=useRef<FrameClipboardSessionRef["current"]>(null),clipboardBusy=useRef(false),clipboardAbort=useRef<AbortController|null>(null);
   const frameClipboard=sharedFrameClipboard??localFrameClipboard;
   const clipboardScope=useRef(clipboardScopeKey);clipboardScope.current=clipboardScopeKey;
@@ -175,25 +184,70 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     });
   }
   const selectedText=canvasTextField(sourceContent,sourcePage,selected);
-  const textContextKey=`${sourcePage.id}:${selected}:${selectedLayout?.scope??"page"}:${selectedLayout?.id??selectedOccurrence}:${useMobile}`;
+  const horizontalText=!!selectedText&&selectedText.inputKind!=="money"&&!!selected&&!selected.startsWith("template-link:")&&(selected==="page-title"||selected.startsWith("core-text:")||selected.startsWith("block:")&&block?.type==="heading"||/^canvas:layout\.block:[^:]+:[^:]+:(heading|body|caption)$/.test(selected)||/^canvas:layout\.(?:price-(?:group|item|parts|extras):[^:]+:(?:title|note|name|detail)|gallery:[^:]+:caption)$/.test(selected)||selected.startsWith("template-text:")&&!/(?:Button|Label|Placeholder)$/i.test(selected));
+  const textContextKey=`${sourcePage.id}:${selected}:${selectedLayout?.scope??"page"}:${selectedLayout?.id??selectedOccurrence}:${useMobile}:${clipboardScopeKey??"owner-mounted"}`;
   function requestInlineHyperlink(selection:InlineSelection){const current=deleteContext.current;if(!deleteMounted.current||current.source!==sourceContent||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.target!==selected||current.uploadBusy||current.saveBusy||current.browsing)return;inlineSelectionScope.current=textContextKey;setInlineSelection(selection);setLinkRequest({...selection,requestId:++linkRequestSequence.current,contextKey:textContextKey});setInspectorOpen(true);}
-  function commitInlineText(expected:string,value:string){const current=deleteContext.current;if(!deleteMounted.current||!selected||current.source!==sourceContent||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.target!==selected||current.uploadBusy||current.saveBusy||current.browsing)return false;let changed=false;onContentEdit(draft=>{changed=changeCanvasText(draft,sourcePage.id,selected,expected,value);});return changed;}
+  function commitInlineText(expected:string,value:string,edit?:CanvasTextEditMetadata){const current=deleteContext.current;if(!deleteMounted.current||!selected||clipboardScope.current!==clipboardScopeKey||current.source!==sourceContent||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.target!==selected||current.uploadBusy||current.saveBusy||current.browsing)return false;
+    const pending=pendingTypingRef.current,typing=pending?.key===textContextKey&&pending.value===expected&&selectedText?.inputKind!=="money"?pending:null;
+    const growthContext=horizontalText&&edit&&selectedLayout?{source:sourceContent,pageId:sourcePage.id,target:selected,value:expected,mobile:useMobile,identity:selectedLayout}:null;
+    const growth=(()=>{try{return growthContext&&canvasRef.current?captureHorizontalGrowth(canvasRef.current,growthContext,boxAppearance,selectedPlacement):null;}catch{return null;}})();
+    let changed=false,nextRecord="",widthWarning="";onContentEdit(draft=>{const next=structuredClone(draft);if(!changeCanvasText(next,sourcePage.id,selected,expected,value))return;
+      if(edit?.inputType.startsWith("insert")){const inherited=edit.selection?inlineTextStyleAtCaret(draft,sourcePage.id,selected,edit.selection,useMobile):null,marks=typing?mergePendingInlineTextStyle(inherited??{},typing.style,draft.fonts):inherited;if(typing&&!edit.selection)return;if(marks&&Object.keys(marks).length&&(!edit.selection||!applyPendingInlineTextStyle(draft,next,sourcePage.id,selected,edit.selection,marks,useMobile)))return;}
+      reconcileInlineTextStyles(draft,next);
+      let resized=false;
+      if(growth&&growthContext&&edit?.node&&!growth.node.closest("a,button,label,input,textarea,select,[role=button]")){(()=>{try{
+        const fieldId=getInlineTextId(next,sourcePage.id,selected),runs=fieldId?getInlineTextRuns(next,fieldId,useMobile):[],plain=selectedText?.links?inlinePlainText(value):value;
+        const measurement=measureHorizontalText(edit.node,plain,runs);if(!measurement||!horizontalGrowthCaptureCurrent(growth,growthContext,boxAppearance,selectedPlacement))return;
+        const proposal=proposeHorizontalGrowth(growth,measurement);if(!proposal)return;
+        if(proposal.kind==="placement"){const scope=selectedLayout?.scope==="chrome"?"chrome":next.pages.find(item=>item.id===sourcePage.id);if(!scope||!selectedLayout)return;if(JSON.stringify(proposal.placement)!==JSON.stringify(selectedPlacement)&&!updateCanvasPlacement(next,scope,selectedLayout.id,useMobile,proposal.placement))return;}
+        else if(!proposal.materialized||measurement.widthPx>growth.frame.widthPx){
+          let applied=false;editContentForLayout(next,projected=>{const field=canvasTextField(projected,projected.pages.find(item=>item.id===sourcePage.id)!,selected);if(!field)return;
+            if(field.appearance==="block"){const target=projected.footerBlocks?.find(item=>item.id===field.blockId)??projected.pages.find(item=>item.id===sourcePage.id)?.blocks.find(item=>item.id===field.blockId);if(!target)return;target.appearance={...target.appearance,box:proposal.box};}
+            else if(field.appearance==="page"&&sourcePage.kind==="custom"){const target=projected.pages.find(item=>item.id===sourcePage.id);if(!target)return;target.titleAppearance={...target.titleAppearance,box:proposal.box};}
+            else{const key=field.styleKey??(selected==="page-title"?`${sourcePage.builtinKey}.title`:boxStyleKey);if(!key)return;projected.contentOverrides??={};projected.contentOverrides.styles??={};projected.contentOverrides.styles[key]={...projected.contentOverrides.styles[key],box:proposal.box};}applied=true;
+          },useMobile);if(!applied)return;
+        }
+        resized=true;
+      }catch{/* Keep valid text/marks when a transient DOM measurement is unavailable. */}})();}
+      if(horizontalText&&edit&&!resized)widthWarning="Text saved in your draft. Its width could not be measured safely right now; continue typing to retry when the layout or font is ready.";
+      nextRecord=JSON.stringify(next.contentOverrides?.inlineStyles?.[getInlineTextId(next,sourcePage.id,selected)??""]??null);Object.assign(draft,next);changed=true;
+    });if(changed){setTextWidthWarning(widthWarning);if(typing)rememberPendingTyping({...typing,value,record:nextRecord});}return changed;
+  }
+  function receiveInlineSelection(range:InlineSelection,origin?:"input"|"selection"){
+    const pending=pendingTypingRef.current;if(pending){if(origin==="input"&&pending.key===textContextKey&&pending.value===range.value)rememberPendingTyping({...pending,start:range.start,end:range.end});else if(pending.key!==textContextKey||pending.value!==range.value||pending.start!==range.start||pending.end!==range.end)clearPendingTyping();}
+    inlineSelectionScope.current=textContextKey;setInlineSelection(range);
+  }
+  useLayoutEffect(()=>{const pending=pendingTypingRef.current;if(pending&&(pending.key!==textContextKey||pending.value!==selectedText?.value||pending.record!==JSON.stringify(sourceContent.contentOverrides?.inlineStyles?.[selected?getInlineTextId(sourceContent,sourcePage.id,selected)??"":""]??null)||inlineTarget!==selected||browsing||uploadBusy||saveBusy))clearPendingTyping();},[textContextKey,sourceContent,sourcePage.id,selectedText?.value,inlineTarget,selected,browsing,uploadBusy,saveBusy]);
+
   const inlineTextId=selected?getInlineTextId(sourceContent,sourcePage.id,selected):null;
   const inlineRuns=useMemo(()=>inlineTextId?getInlineTextRuns(sourceContent,inlineTextId,useMobile):[],[sourceContent,inlineTextId,useMobile]);
-  const formattingSelection=inlineSelectionScope.current===textContextKey&&inlineSelection&&selectedText&&inlineSelection.value===selectedText.value&&inlineSelection.end>inlineSelection.start?inlineSelection:null;
+  const currentTextSelection=inlineSelectionScope.current===textContextKey&&inlineSelection&&selectedText&&inlineSelection.value===selectedText.value?inlineSelection:null;
+  const formattingSelection=currentTextSelection&&currentTextSelection.end>currentTextSelection.start?currentTextSelection:null;
+  const liveTextSelection=useRef<{key:string;range:InlineSelection|null}>({key:textContextKey,range:currentTextSelection});liveTextSelection.current={key:textContextKey,range:currentTextSelection};
+  const typingCaret=currentTextSelection&&currentTextSelection.start===currentTextSelection.end&&inlineTarget===selected&&selectedText?.inputKind!=="money"?currentTextSelection:null;
+  const explicitCaretStyle=typingCaret&&selected?inlineTextStyleAtCaret(sourceContent,sourcePage.id,selected,typingCaret,useMobile):null;
+  const pendingCaretStyle=typingCaret&&pendingTyping?.key===textContextKey&&pendingTyping.value===selectedText?.value?pendingTyping.style:null;
+  const activeTyping=pendingCaretStyle?mergePendingInlineTextStyle(explicitCaretStyle??{},pendingCaretStyle,sourceContent.fonts):explicitCaretStyle;
+
   const selectedRichRuns=(()=>{let offset=0;return inlineRuns.filter(run=>{const start=offset;offset+=run.text.length;return formattingSelection&&start<formattingSelection.end&&offset>formattingSelection.start;});})();
-  const formattingKey=`${textContextKey}:${formattingSelection?.start}:${formattingSelection?.end}:${selectedText?.value}`;
+  const formattingKey=`${textContextKey}:${currentTextSelection?.start}:${currentTextSelection?.end}:${selectedText?.value}`;
   useLayoutEffect(()=>{
     const canvas=canvasRef.current,frame=canvas&&selected?findCanvasBoxTarget(canvas,selected,selectedOccurrence,selectedLayout??undefined):null;
     if(!frame||!selectedText||browsing)return;
+    const computedSelection=formattingSelection??(typingCaret?{start:Math.max(0,typingCaret.start-1),end:typingCaret.start||Math.min(1,(selectedText.links?inlinePlainText(selectedText.value):selectedText.value).length)}:null);
     const nested=frame.querySelectorAll?Array.from(frame.querySelectorAll<HTMLElement>('[data-owner-edit]')).filter(node=>node.dataset.ownerEdit===selected):[];
     const node=nested.at(-1)??frame;let alive=true;
-    const measure=()=>{if(!alive)return;const appearance=selectedText.inputKind==="money"?readComputedPriceAppearance(node.querySelector<HTMLElement>("[data-owner-inline-value]")??node,selectedText.value,formattingSelection):readComputedTextAppearance(node,selectedText.links?inlinePlainText(selectedText.value):selectedText.value,formattingSelection);setComputedText(previous=>previous?.key===formattingKey&&JSON.stringify(previous.appearance)===JSON.stringify(appearance)?previous:{key:formattingKey,appearance});};
+    const measure=()=>{if(!alive)return;const appearance=selectedText.inputKind==="money"?readComputedPriceAppearance(node.querySelector<HTMLElement>("[data-owner-inline-value]")??node,selectedText.value,computedSelection):readComputedTextAppearance(node,selectedText.links?inlinePlainText(selectedText.value):selectedText.value,computedSelection);setComputedText(previous=>previous?.key===formattingKey&&JSON.stringify(previous.appearance)===JSON.stringify(appearance)?previous:{key:formattingKey,appearance});};
     measure();const observer=typeof ResizeObserver==='undefined'?null:new ResizeObserver(measure);observer?.observe(node);window.addEventListener('resize',measure);document.fonts?.addEventListener?.('loadingdone',measure);
     return()=>{alive=false;observer?.disconnect();window.removeEventListener('resize',measure);document.fonts?.removeEventListener?.('loadingdone',measure);};
-  },[formattingKey,sourceContent,selected,selectedOccurrence,selectedLayout,selectedText,formattingSelection,browsing]);
+  },[formattingKey,sourceContent,selected,selectedOccurrence,selectedLayout,selectedText,formattingSelection,typingCaret,browsing]);
   const textMarks={bold:!!selectedRichRuns.length&&selectedRichRuns.every(run=>run.style?.bold===true),italic:!!selectedRichRuns.length&&selectedRichRuns.every(run=>run.style?.italic===true),underline:!!selectedRichRuns.length&&selectedRichRuns.every(run=>run.style?.underline===true)};
-  function formatSelectedText(style:InlineTextStyle|null){const current=deleteContext.current,range=formattingSelection;if(!range||!selected||!deleteMounted.current||current.source!==sourceContent||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.target!==selected||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.uploadBusy||current.saveBusy||current.browsing)return;let changed=false;onContentEdit(draft=>{changed=style?applyInlineTextStyle(draft,sourcePage.id,selected,range,style,useMobile):resetInlineTextStyle(draft,sourcePage.id,selected,range,useMobile);});if(!changed)setAnnouncement("Select the current text again before changing its formatting.");}
+  const toolbarComputed=(()=>{const base=computedText?.key===formattingKey?computedText.appearance:null;if(!activeTyping)return base;const result:ComputedTextAppearance={fontFamily:null,fontSize:null,color:null,bold:null,italic:null,underline:null,...base};for(const mark of ["bold","italic","underline"] as const)if(activeTyping[mark]!==undefined)result[mark]=activeTyping[mark];if(activeTyping.fontSize!==undefined)result.fontSize=activeTyping.fontSize;if(activeTyping.color!==undefined)result.color=activeTyping.color;if(activeTyping.fontId)result.fontFamily=`TMCFont_${activeTyping.fontId}`;else if(activeTyping.font&&activeTyping.font!=="original")result.fontFamily={sans:"Arial, sans-serif",serif:"Georgia, serif",rounded:'"Trebuchet MS", sans-serif',mono:"monospace"}[activeTyping.font];return result;})();
+  function formatSelectedText(style:InlineTextStyle|null){const current=deleteContext.current,range=formattingSelection;if(!selected||!deleteMounted.current||clipboardScope.current!==clipboardScopeKey||current.source!==sourceContent||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.target!==selected||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.uploadBusy||current.saveBusy||current.browsing)return;
+    if(liveTextSelection.current.key!==textContextKey||JSON.stringify(liveTextSelection.current.range)!==JSON.stringify(currentTextSelection))return;
+    if(!range){if(!typingCaret||!style||!selectedText)return;const merged=mergePendingInlineTextStyle(pendingCaretStyle??{},style,sourceContent.fonts);if(!merged)return;rememberPendingTyping({key:textContextKey,value:selectedText.value,start:typingCaret.start,end:typingCaret.end,style:merged,record:JSON.stringify(sourceContent.contentOverrides?.inlineStyles?.[inlineTextId??""]??null)});setTextFocusRequest(value=>value+1);return;}
+    clearPendingTyping();let changed=false;onContentEdit(draft=>{changed=style?applyInlineTextStyle(draft,sourcePage.id,selected,range,style,useMobile):resetInlineTextStyle(draft,sourcePage.id,selected,range,useMobile);});if(!changed)setAnnouncement("Select the current text again before changing its formatting.");else setTextFocusRequest(value=>value+1);
+  }
   const selectedTitle = templateField?.label ?? (photo ? "Edit photo" : premade ? "Edit premade" : block ? blockLabels[block.type] : selectionLabels[selected ?? ""] ?? "Edit section");
 
   useEffect(() => {
@@ -309,7 +363,8 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     if ("key" in event && event.key !== "Enter" && event.key !== " ") return;
     const nav = event.target.closest<HTMLElement>("[data-owner-nav-page]");
     if (nav && canvasRef.current?.contains(nav)) { event.preventDefault(); event.stopPropagation(); choose(`nav:${nav.dataset.ownerNavPage}`, nav, true); return; }
-    const target = event.target.closest<HTMLElement>("[data-owner-edit]");
+    const nearest = event.target.closest<HTMLElement>("[data-owner-edit]");
+    const target=nearest&&canvasRef.current?resolveCanvasClickTarget(sourceContent,sourcePage,canvasRef.current,nearest):nearest;
     if (!target || !canvasRef.current?.contains(target)) { if (!("key" in event)) { setSelected(null); setSelectedLayout(null); setInspectorOpen(false); } return; }
     event.preventDefault(); event.stopPropagation();
     const text=canvasTextField(sourceContent,sourcePage,target.dataset.ownerEdit!);
@@ -615,14 +670,15 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     {!browsing && <OwnerHeaderEditor content={content} onEdit={onEdit} open={navigationOpen} onOpenChange={changeNavigationOpen} disabled={uploadBusy} />}
     </details>
     <div ref={toolbarRef} className={styles.textToolbarDock}>
-      {!browsing&&<OwnerTextFormattingBar computed={computedText?.key===formattingKey?computedText.appearance:null} selectionStyles={selectedRichRuns.map(run=>run.style??{})} marks={textMarks} selectionKey={formattingKey} active={!!selectedText} selected={!!formattingSelection} disabled={uploadBusy||saveBusy} fonts={sourceContent.fonts} onStyle={formatSelectedText} onReset={()=>formatSelectedText(null)} onLink={()=>{if(formattingSelection&&selectedText?.links)requestInlineHyperlink(formattingSelection);else setAnnouncement("This button label uses the containing button destination.");}} onEdit={()=>{if(selectedText)setInlineTarget(selected);}}/>}
+      {!browsing&&<OwnerTextFormattingBar computed={toolbarComputed} selectionStyles={selectedRichRuns.map(run=>run.style??{})} marks={textMarks} selectionKey={formattingKey} active={!!selectedText} selected={!!formattingSelection} caretActive={!!typingCaret} disabled={uploadBusy||saveBusy} fonts={sourceContent.fonts} onStyle={formatSelectedText} onReset={()=>formatSelectedText(null)} onLink={()=>{if(formattingSelection&&selectedText?.links)requestInlineHyperlink(formattingSelection);else setAnnouncement("This button label uses the containing button destination.");}} onEdit={()=>{if(selectedText)setInlineTarget(selected);}}/>}
     </div>
+    {textWidthWarning&&<p className={styles.help} role="status" data-owner-text-width-warning>{textWidthWarning}</p>}
     {clipboardNotice&&<p className={styles.help} role="status" data-owner-frame-clipboard-notice>{clipboardNotice}</p>}
     <div className={styles.layoutIndicator} role="status"><strong>{useMobile?"Editing independent mobile layout":device==="mobile"?"Mobile preview · editing shared layout":"Editing desktop layout"}</strong></div>
     <div className={`${styles.stage} ${workspaceMode&&!browsing?styles.workspaceStage:""}`} data-device={device}>
-      <div ref={canvasRef} tabIndex={-1} className={`${styles.canvas} ${!browsing ? styles.editing : ""}`} onContextMenu={event=>{if(browsing||uploadBusy||saveBusy)return;if(event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,[contenteditable]"))return;event.preventDefault();if(event.target instanceof HTMLElement){const target=event.target.closest<HTMLElement>("[data-owner-edit]");if(target?.dataset.ownerEdit)choose(target.dataset.ownerEdit,target,false);}setContextMenu({x:event.clientX,y:event.clientY});}} onPointerDownCapture={() => { dragClickGuard.current = false; }} onClickCapture={capture} onKeyDownCapture={capture} onDragStartCapture={beginBlockDrag} onDragOver={overBlock} onDrop={dropBlock} onDragEnd={endBlockDrag}>
+      <div ref={canvasRef} tabIndex={-1} className={`${styles.canvas} ${!browsing ? styles.editing : ""}`} onContextMenu={event=>{if(browsing||uploadBusy||saveBusy)return;if(event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,[contenteditable]"))return;event.preventDefault();if(event.target instanceof HTMLElement){const nearest=event.target.closest<HTMLElement>("[data-owner-edit]");const target=nearest&&canvasRef.current?resolveCanvasClickTarget(sourceContent,sourcePage,canvasRef.current,nearest):nearest;if(target?.dataset.ownerEdit)choose(target.dataset.ownerEdit,target,false);}setContextMenu({x:event.clientX,y:event.clientY});}} onPointerDownCapture={() => { dragClickGuard.current = false; }} onClickCapture={capture} onKeyDownCapture={capture} onDragStartCapture={beginBlockDrag} onDragOver={overBlock} onDrop={dropBlock} onDragEnd={endBlockDrag}>
         <SiteContentFrame forceCanvasSlots={footerTransfer?.phase==="measure"?{scope:"chrome",id:"canvas:layout.site.footer"}:drawingSpace?{scope:"page",id:"__root"}:deleteIntent?{scope:deleteIntent.scope,id:deleteIntent.parentId??"__root",omitNodeId:deleteIntent.id}:placementIntent?{scope:placementIntent.scope,id:placementIntent.parentId??"__root",omitNodeId:placementIntent.id}:undefined} content={footerTransfer?.phase==="measure"?footerTransfer.preview:sourceContent} page={footerTransfer?.phase==="measure"?footerTransfer.preview.pages.find(p=>p.id===sourcePage.id)??sourcePage:sourcePage} layoutViewport={device} mode="editor" editable={!browsing} onEditCommissionForm={workspaceMode ? undefined : onEditCommissionForm} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
-        {!browsing&&inlineTarget&&inlineTarget===selected&&selectedText&&<OwnerCanvasTextEditor key={`${sourcePage.id}:${inlineTarget}:${selectedLayout?.scope??"page"}:${selectedLayout?.id??selectedOccurrence}:${useMobile}`} canvasRef={canvasRef} target={inlineTarget} identity={selectedLayout??undefined} value={selectedText.value} inputKind={selectedText.inputKind} runs={inlineRuns} onUndo={onUndo} onRedo={onRedo} links={selectedText.links} disabled={uploadBusy||saveBusy} onCommit={commitInlineText} onCancel={()=>setInlineTarget(null)} onSelection={range=>{inlineSelectionScope.current=textContextKey;setInlineSelection(range);}} onHyperlink={requestInlineHyperlink}/> }
+        {!browsing&&inlineTarget&&inlineTarget===selected&&selectedText&&<OwnerCanvasTextEditor key={`${sourcePage.id}:${inlineTarget}:${selectedLayout?.scope??"page"}:${selectedLayout?.id??selectedOccurrence}:${useMobile}:${clipboardScopeKey??"owner-mounted"}`} canvasRef={canvasRef} target={inlineTarget} identity={selectedLayout??undefined} value={selectedText.value} inputKind={selectedText.inputKind} horizontalGrowth={horizontalText} runs={inlineRuns} focusRequest={textFocusRequest} onUndo={()=>{clearPendingTyping();onUndo?.();}} onRedo={()=>{clearPendingTyping();onRedo?.();}} links={selectedText.links} disabled={uploadBusy||saveBusy} onCommit={commitInlineText} onCancel={()=>{clearPendingTyping();setInlineTarget(null);}} onSelection={receiveInlineSelection} onHyperlink={requestInlineHyperlink}/> }
         {!browsing && selected && (imageStyleKey || imageBlock) && (imageStyleKey === "site.logo" || imageEditMode === "photo") && <OwnerCanvasImageTools key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={selectedImageAppearance} disabled={uploadBusy} onChange={changeImageAppearance} />}
         {drawingSpace&&!browsing&&<div className={styles.spaceDrawing} data-owner-canvas-controls data-owner-space-drawing tabIndex={0} role="region" aria-label="Draw Canvas Space in any direction; Escape cancels" onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();spaceDrag.current=null;setSpacePreview(null);setDrawingSpace(false);}}} onPointerDown={event=>{if(event.button!==0||uploadBusy||saveBusy)return;const parent=layoutDestination("page",null),map=parent?captureCanvasSpaceParent(parent):null;if(!map)return;event.preventDefault();event.stopPropagation();spaceDrag.current={pointer:event.pointerId,start:{x:event.clientX,y:event.clientY},map,source:sourceContent,pageId:sourcePage.id,mobile:useMobile};event.currentTarget.setPointerCapture?.(event.pointerId);}} onPointerMove={event=>{const drag=spaceDrag.current;if(!drag||drag.pointer!==event.pointerId)return;const rect=event.currentTarget.getBoundingClientRect();setSpacePreview({left:Math.min(drag.start.x,event.clientX)-rect.left,top:Math.min(drag.start.y,event.clientY)-rect.top,width:Math.abs(event.clientX-drag.start.x),height:Math.abs(event.clientY-drag.start.y)});}} onPointerUp={event=>finishSpace(event)} onPointerCancel={event=>finishSpace(event,true)} onLostPointerCapture={event=>{if(spaceDrag.current)finishSpace(event,true);}}>{spacePreview&&<div className={styles.spacePreview} style={spacePreview}/>}<span className={styles.spacePrompt}>Drag to draw Canvas Space · Escape cancels</span></div>}
         {!browsing && selected && (boxStyleKey || selected === "page-title" || boxEditableBlock) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box") && <OwnerCanvasBoxTools onCopyBox={clipboardScopeKey&&sharedFrameClipboard?copyBox:undefined} onPasteBox={hasFrameClipboard&&frameClipboard.current?.scopeKey===clipboardScopeKey?()=>void pasteBox():undefined} onCanvasMovePreview={point=>{if(!footerBlock&&block&&["text","heading","link"].includes(block.type)){const frame=footerFrame();if(frame){if(overFooter(point))frame.dataset.ownerFooterDrop="true";else delete frame.dataset.ownerFooterDrop;}}}} onCanvasMoveCancel={clearFooterHighlight} onCanvasMoveCommit={!footerBlock&&block&&["text","heading","link"].includes(block.type)?(capture,point)=>{clearFooterHighlight();return overFooter(point)?requestFooterTransfer(capture):false;}:undefined} layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={selectBoxContents} onSelectBoxContents={selected=>setContentsSelection(selected?null:contentsSelectionKey)} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} onEditContent={() => {setInspectorOpen(true);if(selectedText)setInlineTarget(selected);}} onDelete={selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable?()=>requestDelete():undefined} onSelectParent={selectedLayout&&selectedLayoutMap[selectedLayout.id]?.parentId?selectParent:undefined} reparentId={undefined} sectionOrder={layoutOrder} />}
