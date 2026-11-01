@@ -55,7 +55,7 @@ export function useFursuitGalleryView({ photos = fursuitGallery, unoptimized = f
           onClick={event => { trigger.current = event.currentTarget; setActive(index); }}>
           <GalleryImage key={`${privateMedia}-${item.src}`} photo={item} unoptimized={unoptimized} privateMedia={privateMedia} />
         </button>)}
-        {wrap(item,"caption",<figcaption className={styles.caption}><span>{item.name}</span><span>{item.displayNumber?.trim() || String(count - index).padStart(2, "0")}</span></figcaption>)}
+        {wrap(item,"caption",<figcaption className={styles.caption}><span>{item.displayNumber?.trim() || String(count - index).padStart(2, "0")}</span></figcaption>)}
       </figure>))}
     </div>
     <dialog ref={dialog} className={styles.dialog} aria-labelledby="fursuit-photo-title" aria-describedby="fursuit-photo-help"

@@ -19,5 +19,7 @@ export function decodeThemePreferences(value: unknown, defaults = false): ThemeP
 }
 export function resolveThemeMode(area: ThemeArea, defaults: ThemeDefaults, preference?: ThemeModes): ThemeMode {
   const own = preference?.[area]; if (own === "light" || own === "dark") return own;
+  // MAIN public visitors start light; explicit browser/account choices still win.
+  if (area === "public") return "light";
   const mode = defaults.modes[area]; return mode === "inherit" ? defaults.defaultMode : mode;
 }
