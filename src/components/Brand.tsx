@@ -1,5 +1,6 @@
 "use client";
 
+import {useWebsiteDocumentLink} from "./useWebsiteDocumentLink";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
@@ -16,15 +17,16 @@ function BrandLogo({ src, alt, privateMedia, appearance, editable = false }: { s
 }
 
 export function Brand({ footer = false, href = "/", name = "Taylor Made Creations", logo = { src: "/images/logo.png", alt: "" }, privateMedia = false, appearance, logoAppearance, editable = false }: { footer?: boolean; href?: string; name?: string; logo?: { src: string; alt: string }; privateMedia?: boolean; appearance?: ElementAppearance; logoAppearance?: ElementAppearance; editable?: boolean }) {
+  const {openDocument,documentError}=useWebsiteDocumentLink(editable?"editor":privateMedia?"private-preview":"public");
   // The supplied artwork includes the business name in both site locations.
   // Custom names/logos stay on their existing editable, media-aware path.
   const defaultWordmark = name === "Taylor Made Creations" && (logo.src === "/images/logo.png" || logo.src === "/images/tmc-wordmark.png");
-  if (defaultWordmark) return <Link {...getElementAppearanceAttributes(appearance)} style={getElementAppearanceStyle(appearance)} href={href} className={`brand${footer ? " footer-brand" : ""} ${styles.wordmarkBrand}`} aria-label={`${name} home`}>
+  if (defaultWordmark) return <><Link onClick={event=>openDocument(href,event)} {...getElementAppearanceAttributes(appearance)} style={getElementAppearanceStyle(appearance)} href={href} className={`brand${footer ? " footer-brand" : ""} ${styles.wordmarkBrand}`} aria-label={`${name} home`}>
     <div data-owner-image-frame className={styles.wordmarkPlate} {...(editable ? { "data-owner-edit": "template-image:site.logo", tabIndex: 0, "aria-label": "Edit site logo" } : {})} {...getElementAppearanceAttributes(logoAppearance)} style={{ ...getElementAppearanceStyle(logoAppearance), ...getImageFrameStyle(logoAppearance) }}>
       <Image className={styles.wordmarkImage} src="/images/tmc-wordmark.png" width={1835} height={512} alt={logo.alt} unoptimized style={{ ...getImageAppearanceStyle(logoAppearance), ...(logoAppearance?.imageHeightPx !== undefined ? { height: "100%" } : {}) }} />
     </div>
-  </Link>;
-  return <Link {...getElementAppearanceAttributes(appearance)} style={getElementAppearanceStyle(appearance)} href={href} className={`brand${footer ? " footer-brand" : ""}`} aria-label={`${name} home`}><BrandLogo key={`${logo.src}-${privateMedia}`} src={logo.src} alt={logo.alt} privateMedia={privateMedia} appearance={logoAppearance} editable={editable} /><span {...(editable ? { "data-owner-edit": "site", tabIndex: 0, "aria-label": "Edit business name" } : {})}>{name === "Taylor Made Creations" ? <>Taylor Made<br />Creations</> : name}</span></Link>;
+  </Link>{documentError&&<span role="alert">{documentError}</span>}</>;
+  return <><Link onClick={event=>openDocument(href,event)} {...getElementAppearanceAttributes(appearance)} style={getElementAppearanceStyle(appearance)} href={href} className={`brand${footer ? " footer-brand" : ""}`} aria-label={`${name} home`}><BrandLogo key={`${logo.src}-${privateMedia}`} src={logo.src} alt={logo.alt} privateMedia={privateMedia} appearance={logoAppearance} editable={editable} /><span {...(editable ? { "data-owner-edit": "site", tabIndex: 0, "aria-label": "Edit business name" } : {})}>{name === "Taylor Made Creations" ? <>Taylor Made<br />Creations</> : name}</span></Link>{documentError&&<span role="alert">{documentError}</span>}</>;
 }
 
 /** Reuse the actual brand artwork for empty storefronts, never a substitute star. */

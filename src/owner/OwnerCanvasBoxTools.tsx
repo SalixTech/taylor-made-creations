@@ -13,7 +13,7 @@ import { boxAlignmentGuides, type AlignmentRect, type AlignmentGuide } from "./b
 import { applyPlacementControl, measurePlacementControls, placementControlChart } from './canvas-placement-geometry';
 import {validCanvasPlacement, type CanvasPlacement} from './canvas-layout';
 import type {CapturedCanvasFrame} from './canvas-placement-geometry';
-type CanvasMoveHooks={onCanvasMoveStart?:()=>void;onCanvasMovePreview?:(point:{x:number;y:number})=>void;onCanvasMoveCommit?:(snapshot:CapturedCanvasFrame,point:{x:number;y:number})=>boolean|void;onCanvasMoveCancel?:()=>void};
+type CanvasMoveHooks={onCanvasMoveStart?:()=>void;onCanvasMovePreview?:(point:{x:number;y:number},snapshot?:CapturedCanvasFrame)=>void;onCanvasMoveCommit?:(snapshot:CapturedCanvasFrame,point:{x:number;y:number},next:{box:ElementBox;placement?:CanvasPlacement})=>boolean|void;onCanvasMoveCancel?:()=>void};
 type PlacementProps = { layoutIdentity?:{id:string;scope:"page"|"chrome"}; placement?:CanvasPlacement; resolvePlacementDestination?:(canvas:HTMLDivElement)=>HTMLElement|null; onPlacementChange?:(placement:CanvasPlacement,box:ElementBox)=>void; onResetPlacement?:()=>void };
 type Kind = "move" | "rotate" | BoxHandle;
 type Gesture = { pointer: number; x: number; y: number; kind: Kind; original: ElementBox; current: ElementBox; bounds: CanvasBoxBounds; lastX: number; lastY: number; button: HTMLButtonElement; alignments: AlignmentRect[]; preserveContents:boolean };
@@ -114,7 +114,7 @@ export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCa
       const f=frameGeometry(state.bounds,state.current,state.original),inverse=inverseAffine(state.bounds.parentToCanvas);
       const matrix=inverse?multiplyAffine(state.bounds.parentToScreen,multiplyAffine(inverse,f.matrix)):null,scale=state.bounds.parentWidth/state.current.referenceParentPx;
       const placement=matrix?{matrix,widthPx:f.width,heightPx:f.height,aspectLocked:state.current.aspectLocked,...(state.current.contentOffset?{contentOffset:{xPx:state.current.contentOffset.xPx*scale,yPx:state.current.contentOffset.yPx*scale}}:{})}:null;
-      if(placement&&validCanvasPlacement(placement)){const {matrix:screenMatrix,...rest}=placement;const consumed=moveHooks.current.onCanvasMoveCommit({screenMatrix,...rest},{x:state.lastX,y:state.lastY});if(consumed!==false)return;}else{moveHooks.current.onCanvasMoveCancel?.();setNotice("This move cannot be measured safely. Nothing changed.");return;}
+      if(placement&&validCanvasPlacement(placement)){const {matrix:screenMatrix,...rest}=placement;const consumed=moveHooks.current.onCanvasMoveCommit({screenMatrix,...rest},{x:state.lastX,y:state.lastY},{box:state.current,...(chart?{placement:applyPlacementControl(chart,state.current)??undefined}:{})});if(consumed!==false)return;}else{moveHooks.current.onCanvasMoveCancel?.();setNotice("This move cannot be measured safely. Nothing changed.");return;}
     }
     if(state.kind==="move")moveHooks.current.onCanvasMoveCancel?.();
     if (commit && !sameElementBox(state.original, state.current)) save(state.current);
@@ -142,7 +142,6 @@ export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCa
     if (disabled) { finish(false); return; }
     if (![event.clientX, event.clientY].every(Number.isFinite)) return;
     state.lastX = event.clientX; state.lastY = event.clientY;
-    if(state.kind==="move")moveHooks.current.onCanvasMovePreview?.({x:event.clientX,y:event.clientY});
     if (Math.hypot(event.clientX-state.x,event.clientY-state.y) < 2) { state.current=state.original; setPreview(null); return; }
     const b=state.bounds, start=transformPoint(b.screenToParent,{x:state.x,y:state.y}), end=transformPoint(b.screenToParent,{x:event.clientX,y:event.clientY});
     const scale=state.original.referenceParentPx/b.parentWidth, dx=(end.x-start.x)*scale, dy=(end.y-start.y)*scale;
@@ -164,6 +163,11 @@ export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCa
       const corners=[{x:0,y:0},{x:currentFrame.width,y:0},{x:0,y:currentFrame.height},{x:currentFrame.width,y:currentFrame.height}].map(p=>transformPoint(screenMatrix,p));
       const xs=corners.map(p=>p.x),ys=corners.map(p=>p.y),left=Math.min(...xs),top=Math.min(...ys);
       guides=boxAlignmentGuides({left,top,width:Math.max(...xs)-left,height:Math.max(...ys)-top},state.alignments);
+    }
+    if(state.kind==="move"){
+      const inverse=inverseAffine(b.parentToCanvas),matrix=inverse?multiplyAffine(b.parentToScreen,multiplyAffine(inverse,currentFrame.matrix)):null;
+      const scale=b.parentWidth/state.current.referenceParentPx;
+      moveHooks.current.onCanvasMovePreview?.({x:event.clientX,y:event.clientY},matrix?{screenMatrix:matrix,widthPx:currentFrame.width,heightPx:currentFrame.height,aspectLocked:state.current.aspectLocked,...(state.current.contentOffset?{contentOffset:{xPx:state.current.contentOffset.xPx*scale,yPx:state.current.contentOffset.yPx*scale}}:{})}:undefined);
     }
     setPreview({ box:state.current,appearance:value,target,guides });
   }

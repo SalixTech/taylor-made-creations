@@ -23,6 +23,5 @@ export function makeInlineLink(label: string, href: string): string | null {
 }
 /** Avoid offering a nested link inside an existing link's text. */
 export function templateSupportsInlineLinks(key: string): boolean {
-  return /(?:intro|body|description|note|message|copy|caption|photoCredit)$/i.test(key)
-    && !["home.pricesBody", "home.careBody"].includes(key);
+  return !["home.pricesEyebrow", "home.pricesBody", "home.careEyebrow", "home.careBody", "prices.exampleLabel", "commissions.requestButton", "commissions.formButton", "contact.telegramLabel", "contact.discordLabel", "contact.tiktokLabel", "contact.twitchLabel", "contact.emailLabel"].includes(key) && !key.endsWith("Placeholder");
 }

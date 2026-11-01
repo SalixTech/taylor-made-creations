@@ -5,7 +5,7 @@ import {createCommissionStatusBlock} from './commission-status-block';
 import type {InlineTextRecord} from './rich-text';
 
 /** In-memory, same-builder clipboard only. No OS clipboard, persistence or remote writes. */
-export type FrameClipboard={sourceBinding:string;pageId:string;rootId:string;blocks:PageBlock[];desktop:CanvasNodeMap;mobile:CanvasNodeMap;styles:Record<string,ElementAppearance>;inlineStyles:Record<string,InlineTextRecord>;buttonDesigns:NonNullable<OwnerContent['buttonDesigns']>;assets:string[]};
+export type FrameClipboard={sourceBinding:string;pageId:string;rootId:string;blocks:PageBlock[];desktop:CanvasNodeMap;mobile:CanvasNodeMap;styles:Record<string,ElementAppearance>;inlineStyles:Record<string,InlineTextRecord>;elementLinks?:Record<string,string>;buttonDesigns:NonNullable<OwnerContent['buttonDesigns']>;assets:string[]};
 export type FrameClipboardSessionRef={current:{scopeKey:string;value:FrameClipboard}|null};
 const binding=(content:OwnerContent)=>JSON.stringify(content);
 function fail(message:string):never{throw Error(message);}
@@ -26,11 +26,12 @@ export function captureFrameClipboard(content:OwnerContent,pageId:string,rootId:
  const pick=(map:CanvasNodeMap)=>Object.fromEntries([...nodes].map(id=>[id,structuredClone(map[id])])) as CanvasNodeMap;
  const styles=Object.fromEntries(Object.entries(content.contentOverrides?.styles??{}).filter(([key])=>ids.has(blockOwner(`canvas:${key}`,pageId)??'')));
  const inlineStyles=Object.fromEntries(Object.entries(content.contentOverrides?.inlineStyles??{}).filter(([key])=>key.startsWith(`block:${pageId}:`)&&ids.has(key.split(':')[2])));
+ const elementLinks=Object.fromEntries(Object.entries(content.contentOverrides?.elementLinks??{}).filter(([key])=>ids.has(blockOwner(`canvas:${key}`,pageId)??'')));
  const designIds=new Set(blocks.flatMap(block=>block.type==='link'&&block.buttonDesignId?[block.buttonDesignId]:[]));const buttonDesigns=(content.buttonDesigns??[]).filter(design=>designIds.has(design.id));if(buttonDesigns.length!==designIds.size)fail('A button design used by this box is no longer available.');
- const data={blocks,styles,inlineStyles,buttonDesigns};const assets=[...assetSources(data)];const text=JSON.stringify([data,content.design?.bodyFontId,content.design?.headingFontId,content.design?.mobileDesign?.bodyFontId,content.design?.mobileDesign?.headingFontId]);for(const font of content.fonts??[])if(text.includes(`"${font.id}"`))assets.push(font.src);
+ const data={blocks,styles,inlineStyles,elementLinks,buttonDesigns};const assets=[...assetSources(data)];const text=JSON.stringify([data,content.design?.bodyFontId,content.design?.headingFontId,content.design?.mobileDesign?.bodyFontId,content.design?.mobileDesign?.headingFontId]);for(const font of content.fonts??[])if(text.includes(`"${font.id}"`))assets.push(font.src);
  if(assets.length>100)fail('This box uses too many assets to verify in one paste. Copy a smaller box.');
  if(assets.some(src=>/^(?:data:|blob:)/.test(src)))fail('Upload the temporary artwork before copying this box.');
- return structuredClone({sourceBinding:binding(content),pageId,rootId,blocks,desktop:pick(desktop),mobile:pick(mobile),styles,inlineStyles,buttonDesigns,assets:[...new Set(assets)]});
+ return structuredClone({sourceBinding:binding(content),pageId,rootId,blocks,desktop:pick(desktop),mobile:pick(mobile),styles,inlineStyles,elementLinks,buttonDesigns,assets:[...new Set(assets)]});
 }
 export function frameClipboardIsCurrent(content:OwnerContent,clipboard:FrameClipboard){return binding(content)===clipboard.sourceBinding;}
 /** Builds and validates a new draft without mutating caller input. Caller commits once for Undo. */
@@ -48,6 +49,7 @@ export function pasteFrameClipboard(content:OwnerContent,pageId:string,clipboard
  for(const block of clipboard.blocks){const copy=structuredClone(block);copy.id=ids.get(block.id)!;delete copy.parentId;delete copy.mobileParentId;delete copy.mobileOrder;if(copy.type==='faq')copy.items=copy.items.map(item=>({...item,id:faqIds.get(`${block.id}:${item.id}`)!}));if(copy.type==='link'&&copy.buttonDesignId)copy.buttonDesignId=designs.get(copy.buttonDesignId)!;page.blocks.push(copy);}
  for(const mode of ['desktop','mobile'] as const){const target=mode==='desktop'?layout.desktop:layout.mobile!;const map=clipboard[mode];let order=Math.max(-1,...Object.values(target).filter(entry=>entry.parentId===null).map(entry=>entry.order))+1;for(const[id,entry]of Object.entries(map)){const copy=structuredClone(entry);if(copy.parentId&&Object.hasOwn(map,copy.parentId))copy.parentId=mapNode(copy.parentId);else{copy.parentId=null;copy.order=order++;if(copy.placement)copy.placement.matrix={...copy.placement.matrix,e:0,f:0};}target[mapNode(id)]=copy;}}
  draft.contentOverrides??={};draft.contentOverrides.styles??={};draft.contentOverrides.inlineStyles??={};for(const[key,value]of Object.entries(clipboard.styles))draft.contentOverrides.styles[mapStyle(key)]=structuredClone(value);for(const[key,value]of Object.entries(clipboard.inlineStyles))draft.contentOverrides.inlineStyles[mapRich(key)]=structuredClone(value);
+ if(clipboard.elementLinks){draft.contentOverrides.elementLinks??={};for(const[key,value]of Object.entries(clipboard.elementLinks))draft.contentOverrides.elementLinks[mapStyle(key)]=value;}
  if(clipboard.buttonDesigns.length){draft.buttonDesigns??=[];for(const design of clipboard.buttonDesigns)draft.buttonDesigns.push({...structuredClone(design),id:designs.get(design.id)!});}
  assertOwnerContent(draft);return {content:draft,clipboard:{...structuredClone(clipboard),sourceBinding:binding(draft)},rootId:mapNode(clipboard.rootId)};
 }
@@ -64,5 +66,6 @@ function captureCommissionClipboard(content:OwnerContent,pageId:string):FrameCli
   const members=descendants(original,root);for(const member of members){if(nodeMap.has(member))continue;if(!blockOwner(member,pageId))fail('This status box contains an unsupported built-in unit. Nothing was copied.');next[member]={...structuredClone(original[member]),parentId:original[member].parentId?(nodeMap.get(original[member].parentId!)??original[member].parentId):null};}}
  draft.contentOverrides??={};draft.contentOverrides.styles??={};draft.contentOverrides.inlineStyles??={};for(const[old,part,style]of pairs){void old;const value=content.contentOverrides?.styles?.[style];if(value)draft.contentOverrides.styles[`layout.block:${pageId}:${id}:${part}`]=structuredClone(value);}
  for(const[old,field]of [['template:commissions.statusLabel','label'],['template:commissions.requestButton','actionLabel']] as const){const record=content.contentOverrides?.inlineStyles?.[old];if(record)draft.contentOverrides.inlineStyles[`block:${pageId}:${id}:${field}`]=structuredClone(record);}
+ for(const[old,part]of pairs){const key=old.startsWith('template-text:')?'template:'+old.slice(14):old.slice(7),href=content.contentOverrides?.elementLinks?.[key];if(href){draft.contentOverrides.elementLinks??={};draft.contentOverrides.elementLinks[`layout.block:${pageId}:${id}:${part}`]=href;}}
  const clip=captureFrameClipboard(draft,pageId,newRoot);clip.sourceBinding=binding(content);return clip;
 }

@@ -1,4 +1,5 @@
 "use client";
+import {useWebsiteDocumentLink} from "./useWebsiteDocumentLink";
 import { PhotoLoading } from "./PhotoLoading";
 
 import Image from "next/image";
@@ -48,6 +49,7 @@ function ThumbnailImage({ photo, mode }: { photo: OwnerPremadePhoto; mode: Galle
 
 /** Listing-local image browsing only. This never changes cart or checkout state. */
 export function PremadeGallery({ item, mode = "public", listingHref, external = false }: { item: OwnerPremade; mode?: GalleryMode; listingHref?: string; external?: boolean }) {
+  const {openDocument,documentError}=useWebsiteDocumentLink(mode);
   const photos = getPremadePhotos(item);
   const cover = getPremadeCoverPhoto(item);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -80,7 +82,7 @@ export function PremadeGallery({ item, mode = "public", listingHref, external = 
 
   return <div className={styles.gallery}>
     {listingHref ? <>
-      {external ? <a className={styles.cover} href={listingHref} target="_blank" rel="noopener noreferrer" aria-label={`View ${item.name} third-party listing`}><PremadeImage key={`${mode}-${photo.src}`} photo={photo} mode={mode} fit={item.imageFit ?? "contain"} position={`${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%`} /><span className={styles.enlarge}>View listing ↗</span></a> : <Link className={styles.cover} href={listingHref} aria-label={`View ${item.name} details`}><PremadeImage key={`${mode}-${photo.src}`} photo={photo} mode={mode} fit={item.imageFit ?? "contain"} position={`${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%`} /><span className={styles.enlarge}>View details →</span></Link>}
+      {external ? <a onClick={event=>openDocument(listingHref,event)} className={styles.cover} href={listingHref} target="_blank" rel="noopener noreferrer" aria-label={`View ${item.name} third-party listing`}><PremadeImage key={`${mode}-${photo.src}`} photo={photo} mode={mode} fit={item.imageFit ?? "contain"} position={`${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%`} /><span className={styles.enlarge}>View listing ↗</span></a> : <Link onClick={event=>openDocument(listingHref,event)} className={styles.cover} href={listingHref} aria-label={`View ${item.name} details`}><PremadeImage key={`${mode}-${photo.src}`} photo={photo} mode={mode} fit={item.imageFit ?? "contain"} position={`${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%`} /><span className={styles.enlarge}>View details →</span></Link>}
       <button ref={trigger} type="button" className={styles.control} aria-label={`Enlarge photo ${index + 1} of ${photos.length} of ${item.name}`} aria-haspopup="dialog" onClick={() => setOpen(true)}>Enlarge photo ↗</button>
     </> : <button ref={trigger} type="button" className={styles.cover} aria-label={`Enlarge photo ${index + 1} of ${photos.length} of ${item.name}`} aria-haspopup="dialog" onClick={() => setOpen(true)}>
       <PremadeImage key={`${mode}-${photo.src}`} photo={photo} mode={mode} fit={item.imageFit ?? "contain"} position={`${item.imagePositionX ?? 50}% ${item.imagePositionY ?? 50}%`} />
@@ -93,6 +95,7 @@ export function PremadeGallery({ item, mode = "public", listingHref, external = 
       </button>)}
     </div>}
     {photos.length > 1 && <p className={styles.count} aria-live="polite">Photo {index + 1} of {photos.length}</p>}
+    {documentError&&<p role="alert">{documentError}</p>}
     <dialog ref={dialog} className={styles.dialog} aria-labelledby={titleId} aria-describedby={helpId}
       onCancel={event => { event.preventDefault(); setOpen(false); }}
       onClick={event => { if (event.target === event.currentTarget) setOpen(false); }}

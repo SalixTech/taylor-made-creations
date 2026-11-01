@@ -1,3 +1,4 @@
+import {elementLinkKeyIsPublic,pruneElementLinks} from "./canvas-hyperlinks";
 import {projectInlineTextStyles,reconcileInlineTextStyles,getInlineTextSource} from "./rich-text";
 import {projectCanvasLayouts} from "./canvas-layout";
 import { isCanvasStyleKey, canvasStyleKeyIsPublic } from "./canvas-target-registry";
@@ -80,6 +81,7 @@ export function selectPublication(draft: OwnerContent, live: PublicOwnerContent 
   // A website-only selection must not publish layout identities belonging to
   // unchecked new/private listings or photos. Resolve after all selected groups.
   if (output.contentOverrides?.styles) output.contentOverrides.styles = Object.fromEntries(Object.entries(output.contentOverrides.styles).filter(([key]) => !isCanvasStyleKey(key) || canvasStyleKeyIsPublic(key,output)));
+  if(output.contentOverrides?.elementLinks)output.contentOverrides.elementLinks=Object.fromEntries(Object.entries(output.contentOverrides.elementLinks).filter(([key])=>elementLinkKeyIsPublic(output,key)));
   if(live){
     reconcileInlineTextStyles(live,output);
     // A website-only formatting record may belong to unchecked new price text.
@@ -110,5 +112,6 @@ export function applyGallerySelectionToDraft(draft: OwnerContent, candidate: Own
   else {const predecessors=candidate.slice(0,candidate.findIndex(photo=>photo.id===id)).map(photo=>photo.id).reverse(),previousId=predecessors.find(id=>next.gallery.some(photo=>photo.id===id));next.gallery.splice(previousId?next.gallery.findIndex(photo=>photo.id===previousId)+1:0,0,structuredClone(item));}
  }
  if(selection.includes("gallery-order")){const rank=new Map(candidate.map((item,index)=>[item.id,index]));next.gallery.sort((a,b)=>(rank.get(a.id)??Number.MAX_SAFE_INTEGER)-(rank.get(b.id)??Number.MAX_SAFE_INTEGER));}
+ pruneElementLinks(next);
  return next;
 }

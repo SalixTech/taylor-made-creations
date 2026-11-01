@@ -19,6 +19,8 @@ export function getInlineTextSource(content:Content,id:string):{source:string;te
  else if(id.startsWith('link:')){const key=id.slice(5);if(LINK_FIELDS.some(f=>f.key===key)){source=getTemplateLink(content as OwnerContent,key).label;links=false;}}
  else {const parts=id.split(':');if(parts[0]==='page'&&parts.length===3&&parts[2]==='title'&&idPattern.test(parts[1])){source=content.pages.find(p=>p.id===parts[1])?.title;if(typeof source==='string'&&content.contentOverrides?.inlineStyles?.[id]?.text===source&&plain(source,true)!==source)links=false;}
  else if(parts[0]==='block'&&parts.length===4&&idPattern.test(parts[1])&&idPattern.test(parts[2])){const b=(parts[1]==='shared-footer'?content.footerBlocks:content.pages.find(p=>p.id===parts[1])?.blocks)?.find(b=>b.id===parts[2]),key=parts[3];if(b&&['text','heading','body','caption','label','note','actionLabel'].includes(key)&&key in b){source=(b as unknown as Record<string,unknown>)[key];links=key!=='label'&&key!=='actionLabel';}}}
+ // Preserve saved literal-bound styling when a formerly plain field gains link support.
+ if(links&&typeof source==='string'&&content.contentOverrides?.inlineStyles?.[id]?.text===source&&plain(source,true)!==source)links=false;
  return typeof source==='string'?{source,text:plain(source,links),links}:null;
 }
 export function getInlineTextId(content:Content,pageId:string,target:string):string|null{

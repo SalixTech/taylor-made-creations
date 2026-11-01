@@ -328,6 +328,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
         requireOwner();
         const receipt = "promotion" in result ? result.promotion : result;
         if (receipt.actorUid !== actorUid || receipt.operationId !== request.operationId) throw new Error("The live publication receipt belongs to another operation.");
+        if ("promotion" in result && request.promotionAction === "prepare" && (result.promotion.target ?? "live") !== (request.target ?? "live")) throw new Error("The publication receipt does not match the requested destinations.");
         // A main publication must never masquerade as a beta workspace save/event.
         return result;
       },

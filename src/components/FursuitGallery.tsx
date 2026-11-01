@@ -1,4 +1,5 @@
 "use client";
+import {useWebsiteDocumentLink} from "./useWebsiteDocumentLink";
 import { PhotoLoading } from "./PhotoLoading";
 
 import Image from "next/image";
@@ -6,7 +7,7 @@ import { lockPageScroll } from "./modal-scroll-lock";
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { fursuitGallery } from "@/content/fursuit-gallery";
 import { useOwnerMediaSource } from "@/owner/media-client";
-import { isSafeImageSource } from "@/owner/model";
+import { isSafeImageSource, isSafeLink } from "@/owner/model";
 import styles from "./FursuitGallery.module.css";
 
 export type GalleryPhoto = { id?: string; visible?: boolean; name: string; src: string; alt: string; width: number; height: number; displayNumber?: string };
@@ -21,7 +22,9 @@ function GalleryImage({ photo, expanded = false, unoptimized = false, privateMed
       className={expanded ? styles.expandedImage : styles.thumbnail} onError={() => setFailed(true)} />;
 }
 
-export function useFursuitGalleryView({ photos = fursuitGallery, unoptimized = false, compact = false, editor = false, privateMedia = false, showNumbers=true, decorate }: { showNumbers?:boolean; decorate?: (photo: GalleryPhoto, part: "card"|"photo"|"caption", element: ReactElement) => ReactNode; photos?: readonly GalleryPhoto[]; unoptimized?: boolean; compact?: boolean; editor?: boolean; privateMedia?: boolean } = {}) {
+export function useFursuitGalleryView({ photos = fursuitGallery, unoptimized = false, compact = false, editor = false, privateMedia = false, showNumbers=true, decorate, photoHref }: { photoHref?:(photo:GalleryPhoto)=>string|undefined; showNumbers?:boolean; decorate?: (photo: GalleryPhoto, part: "card"|"photo"|"caption", element: ReactElement) => ReactNode; photos?: readonly GalleryPhoto[]; unoptimized?: boolean; compact?: boolean; editor?: boolean; privateMedia?: boolean } = {}) {
+  const {openDocument,documentError}=useWebsiteDocumentLink(editor?"editor":privateMedia?"private-preview":"public");
+  const safePhotoHref=(photo:GalleryPhoto)=>{const href=photoHref?.(photo);return href&&isSafeLink(href)?href:undefined;};
   const wrap = (photo:GalleryPhoto, part:"card"|"photo"|"caption", element:ReactElement) => decorate && photo.id ? decorate(photo,part,element) : element;
   const [active, setActive] = useState<number | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -51,13 +54,14 @@ export function useFursuitGalleryView({ photos = fursuitGallery, unoptimized = f
     <div className={`${styles.grid} ${count % 2 === 1 ? styles.odd : ""} ${compact ? styles.compact : ""}`}>
       {photos.map((item, index) => wrap(item,"card",<figure className={styles.card} key={`${item.src}-${index}`} {...(editor && item.id ? { "data-owner-edit": `gallery:${item.id}`, tabIndex: 0, "aria-label": `Edit ${item.name} gallery photo` } : {})}>
         {editor && item.visible === false && <p className={styles.editorNotice}>Hidden photo · only visible while editing</p>}
-        {wrap(item,"photo",<button type="button" className={styles.open} aria-label={`Enlarge ${item.name} fursuit photos`} aria-haspopup="dialog"
+        {wrap(item,"photo",safePhotoHref(item) ? <a onClick={event=>openDocument(safePhotoHref(item),event)} href={safePhotoHref(item)} className={styles.open} aria-label={`Open link for ${item.name}`} target={safePhotoHref(item)?.startsWith("https:")?"_blank":undefined} rel={safePhotoHref(item)?.startsWith("https:")?"noopener noreferrer":undefined}><GalleryImage key={`${privateMedia}-${item.src}`} photo={item} unoptimized={unoptimized} privateMedia={privateMedia} /></a> : <button type="button" className={styles.open} aria-label={`Enlarge ${item.name} fursuit photos`} aria-haspopup="dialog"
           onClick={event => { trigger.current = event.currentTarget; setActive(index); }}>
           <GalleryImage key={`${privateMedia}-${item.src}`} photo={item} unoptimized={unoptimized} privateMedia={privateMedia} />
         </button>)}
         {wrap(item,"caption",<figcaption className={styles.caption} hidden={!showNumbers}>{showNumbers&&<span>{item.displayNumber?.trim() || String(count - index).padStart(2, "0")}</span>}</figcaption>)}
       </figure>))}
     </div>
+    {documentError&&<p role="alert">{documentError}</p>}
     <dialog ref={dialog} className={styles.dialog} aria-labelledby="fursuit-photo-title" aria-describedby="fursuit-photo-help"
       onCancel={event => { event.preventDefault(); setActive(null); }}
       onClick={event => { if (event.target === event.currentTarget) setActive(null); }}

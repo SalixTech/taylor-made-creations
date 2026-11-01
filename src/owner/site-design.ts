@@ -10,7 +10,7 @@ import type { BuiltinPageKey, OwnerContent } from "./model";
 export type TemplateGroup = "site" | BuiltinPageKey;
 export type TemplateImage = { src: string; alt: string };
 export type TemplateLink = { label: string; href: string; buttonDesignId?:string; buttonAppearance?:ButtonAppearance };
-export type ContentOverrides = { inlineStyles?:Record<string,InlineTextRecord>; text?: Record<string, string>; images?: Record<string, TemplateImage>; links?: Record<string, TemplateLink>; styles?: Record<string, ElementAppearance> };
+export type ContentOverrides = { elementLinks?:Record<string,string>; inlineStyles?:Record<string,InlineTextRecord>; text?: Record<string, string>; images?: Record<string, TemplateImage>; links?: Record<string, TemplateLink>; styles?: Record<string, ElementAppearance> };
 export const DESIGN_COLOR_FIELDS = [
   { key: "background", label: "Page background", defaultValue: "#ffffff" },
   { key: "text", label: "Main text", defaultValue: "#302c2c" },

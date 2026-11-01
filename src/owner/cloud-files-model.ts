@@ -1,3 +1,5 @@
+import {getInlineTextSource} from "./rich-text";
+import {TEXT_FIELDS} from "./site-design";
 /** IDs, not display names, form every Storage path. No paths or URLs are accepted as IDs. */
 export const CLOUD_FILE_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export const CLOUD_PHOTO_SOURCE = /^\/api\/cloud-media\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/;
@@ -90,10 +92,22 @@ export function isOriginalCloudPhoto(file: CloudFile): boolean { return file.kin
 /** Exact app-owned references only; never treat arbitrary URLs as storage paths. */
 export function cloudReferencedAssetIds(value: unknown): string[] {
   const ids = new Set<string>(); const seen = new Set<object>();
-  function visit(node: unknown, depth: number) {
+  const exact=(text:string)=>{const match=text.match(/^\/api\/(?:cloud-media|cloud-fonts|cloud-files|cloud-documents)\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:\?kind=(?:file|pdf))?$/);if(match)ids.add(match[1]);};
+  function visit(node: unknown, depth: number, semantic=false,key='',parentKey='') {
     if (depth > 100) throw new Error("Content is too deeply nested to check its file references.");
-    if (typeof node === "string") { const match = node.match(/^\/api\/(?:cloud-media|cloud-fonts|cloud-files|cloud-documents)\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})(?:\?kind=(?:file|pdf))?$/); if (match) ids.add(match[1]); for(const id of websitePdfTextIds(node))ids.add(id); }
-    else if (node && typeof node === "object") { if (seen.has(node)) throw new Error("Content contains a circular reference."); seen.add(node); for (const entry of Object.values(node)) visit(entry, depth + 1); seen.delete(node); }
+    if (typeof node === "string") {
+      // Within a website model, an exact URL display label is not an asset.
+      // Unknown non-website envelopes retain the older conservative scan.
+      if(!semantic||['src','href','image'].includes(key)||parentKey==='elementLinks')exact(node);
+      if(!semantic)for(const id of websitePdfTextIds(node))ids.add(id);
+    } else if (node && typeof node === "object") {
+      if (seen.has(node)) throw new Error("Content contains a circular reference."); seen.add(node);
+      const object=node as Record<string,unknown>;
+      const website=object.schemaVersion===1&&object.site&&object.home&&object.prices&&Array.isArray(object.pages)&&Array.isArray(object.gallery)&&Array.isArray(object.premades);
+      if(website){semantic=true;for(const id of publishedCloudDocumentIds(node as import("./model").PublicOwnerContent))ids.add(id);}
+      for(const [childKey,entry] of Object.entries(node))visit(entry,depth+1,semantic,childKey,key);
+      seen.delete(node);
+    }
   }
   visit(value, 0); return [...ids].sort();
 }
@@ -101,7 +115,8 @@ export function cloudReferencedAssetIds(value: unknown): string[] {
 export function cloudDocumentSource(id:string):string{assertCloudId(id);return `/api/cloud-documents/${id}`;}
 function websitePdfTextIds(text:string):string[]{return [...text.matchAll(/\[[^\]\r\n]{1,300}\]\((\/api\/cloud-documents\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\)/g)].flatMap(match=>match[1].match(CLOUD_DOCUMENT_SOURCE)?.[1]??[]);}
 export function publishedCloudDocumentIds(content:import("./model").PublicOwnerContent):string[]{
- const links=[...Object.values(content.contentOverrides?.links??{}).map(link=>link.href),...[...content.pages.flatMap(page=>page.blocks),...(content.footerBlocks??[])].flatMap(block=>block.type==="link"?[block.href]:[])];
- const text=[...(content.footerBlocks??[]).flatMap(block=>block.type==="text"?[block.heading,block.body]:block.type==="heading"?[block.text]:[]),content.home.eyebrow,content.home.title,content.home.description,content.home.caption,content.prices.intro,content.site.statusNote,...Object.entries(content.contentOverrides?.text??{}).filter(([key])=>/(?:intro|body|description|note|message|copy|caption|photoCredit)$/i.test(key)&&!["home.pricesBody","home.careBody"].includes(key)).map(([,value])=>value),...content.pages.flatMap(page=>page.blocks.flatMap(block=>block.type==="commission-status"?[block.note]:block.type==="text"||block.type==="feature"?[block.heading,block.body]:block.type==="heading"?[block.text]:block.type==="section"?[block.heading]:block.type==="image"?[block.caption]:block.type==="faq"?block.items.map(item=>item.answer):[]))];
+ const links=[...Object.values(content.contentOverrides?.elementLinks??{}),...Object.values(content.contentOverrides?.links??{}).map(link=>link.href),...[...content.pages.flatMap(page=>page.blocks),...(content.footerBlocks??[])].flatMap(block=>block.type==="link"?[block.href]:[])];
+ const ids=[...TEXT_FIELDS.map(f=>`template:${f.key}`),...['home.eyebrow','home.title','home.description','home.caption','prices.intro'].map(k=>`core:${k}`),...content.pages.map(p=>`page:${p.id}:title`),...content.pages.flatMap(p=>p.blocks.flatMap(b=>['text','heading','body','caption','note'].filter(k=>k in b).map(k=>`block:${p.id}:${b.id}:${k}`))),...(content.footerBlocks??[]).flatMap(b=>['text','heading','body'].filter(k=>k in b).map(k=>`block:shared-footer:${b.id}:${k}`))];
+ const text=[...ids.flatMap(id=>{const source=getInlineTextSource(content,id);return source?.links?[source.source]:[];}),content.site.statusNote,...content.pages.flatMap(p=>p.blocks.flatMap(b=>b.type==='faq'?b.items.map(i=>i.answer):[])),...content.premades.map(p=>p.description)];
  return [...new Set([...links.flatMap(href=>href.match(CLOUD_DOCUMENT_SOURCE)?.[1]??[]),...text.flatMap(websitePdfTextIds)])].sort();
 }

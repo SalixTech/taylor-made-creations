@@ -1,4 +1,9 @@
 "use client";
+import {Fragment} from "react";
+import {parseInlineLinks} from "@/owner/inline-links";
+import {useWebsiteDocumentLink} from "./useWebsiteDocumentLink";
+import { getElementHref } from "@/owner/canvas-hyperlinks";
+import { resolveSiteDestination } from "@/owner/preview-model";
 import Link from "next/link";
 import type { OwnerContent, OwnerPage, OwnerPremade } from "@/owner/model";
 import { getPremadeTags, pageHref } from "@/owner/model";
@@ -25,10 +30,30 @@ function AddPremadeToCart({ content, item }: { content: OwnerContent; item: Owne
   return <div className="premade-purchase">{canAdd ? <button className="button" type="button" onClick={() => inCart ? cart.open() : cart.add({ id: item.id, name: item.name, image: item.image, price: item.price! })}>{inCart ? "View cart →" : "Add to cart"}</button> : <p>A purchase price is not available. Contact Taylor for details.</p>}<p className="storefront-notice">PayPal and checkout are not connected. Adding to cart does not reserve this item, place an order or make a payment.</p></div>;
 }
 export function PremadeListingLink({ content, page, item, children }: { content: OwnerContent; page: OwnerPage; item: OwnerPremade; children?: React.ReactNode }) {
+  const {openDocument,documentError}=useWebsiteDocumentLink();
+  const override=getElementHref(content,`layout.premade:${item.id}:destination`);
+  const destination=override?resolveSiteDestination(content,override,"public"):null;
+  if(override)return destination?<><a onClick={event=>openDocument(destination.href,event)} className="text-link" href={destination.href} target={destination.kind==="external"&&destination.href.startsWith("https:")?"_blank":undefined} rel={destination.kind==="external"?"noopener noreferrer":undefined}>{children??"View premade →"}</a>{documentError&&<span role="alert">{documentError}</span>}</>:<>{children??"View premade →"}</>;
   const external = !content.site.catalogMode ? thirdPartyListingUrl(item) : null;
   if (external) return <a className="text-link" href={external} target="_blank" rel="noopener noreferrer">{children ?? "View third-party listing ↗"}</a>;
   return <Link className="text-link" href={premadeHref(page, item)}>{children ?? (content.site.catalogMode || item.soldChannel === "con" ? "Details & where to purchase →" : "View premade →")}</Link>;
 }
+function PremadeTextLink({content,item,part,children}:{content:OwnerContent;item:OwnerPremade;part:string;children:React.ReactNode}) {
+  const {openDocument,documentError}=useWebsiteDocumentLink();
+  const href=getElementHref(content,`layout.premade:${item.id}:${part}`),destination=href?resolveSiteDestination(content,href,"public"):null;
+  return destination?<><a onClick={event=>openDocument(destination.href,event)} className="inline-content-link" href={destination.href} target={destination.kind==="external"&&destination.href.startsWith("https:")?"_blank":undefined} rel={destination.kind==="external"?"noopener noreferrer":undefined}>{children}</a>{documentError&&<span role="alert">{documentError}</span>}</>:<>{children}</>;
+}
+/** Descriptions already accept inline link syntax in the owner inspector. A
+ * whole-description destination owns its children rather than nesting anchors. */
+function PremadeDescription({content,item}:{content:OwnerContent;item:OwnerPremade}) {
+ const {openDocument,documentError}=useWebsiteDocumentLink();
+ const href=getElementHref(content,`layout.premade:${item.id}:body`),whole=href?resolveSiteDestination(content,href,"public"):null;
+ return <><PremadeTextLink content={content} item={item} part="body">{parseInlineLinks(item.description).map((part,index)=>{
+  const destination=!whole&&part.href?resolveSiteDestination(content,part.href,"public"):null;
+  return destination?<a key={index} className="inline-content-link" href={destination.href} onClick={event=>openDocument(destination.href,event)} target={destination.kind==="external"&&destination.href.startsWith("https:")?"_blank":undefined} rel={destination.kind==="external"?"noopener noreferrer":undefined} download={destination.kind==="download"||undefined}>{part.text}</a>:<Fragment key={index}>{part.text}</Fragment>;
+ })}</PremadeTextLink>{documentError&&<span role="alert">{documentError}</span>}</>;
+}
 export function PremadeProduct({ content, page, item }: { content: OwnerContent; page: OwnerPage; item: OwnerPremade }) {
-  return <div className="page-shell"><p><Link className="text-link" href={pageHref(page)}>← {page.title}</Link></p><article className="premade-product"><PremadeGallery item={item} /><div><PremadeTags item={item} /><h1>{item.name}</h1><p className="premade-description">{item.description}</p>{item.price !== null && <p className="premade-price">${item.price.toLocaleString("en-US", { maximumFractionDigits: 2 })} USD</p>}<PremadePurchaseInfo content={content} item={item} /></div></article></div>;
+  const override=getElementHref(content,`layout.premade:${item.id}:destination`),destination=override?resolveSiteDestination(content,override,"public"):null;
+  return <div className="page-shell"><p><Link className="text-link" href={pageHref(page)}>← {page.title}</Link></p><article className="premade-product"><PremadeGallery item={item} listingHref={destination?.href} external={destination?.kind==="external"} /><div><PremadeTextLink content={content} item={item} part="tags"><PremadeTags item={item} /></PremadeTextLink><h1><PremadeTextLink content={content} item={item} part="destination">{item.name}</PremadeTextLink></h1><p className="premade-description"><PremadeDescription content={content} item={item}/></p>{item.price !== null && <p className="premade-price"><PremadeTextLink content={content} item={item} part="price">${item.price.toLocaleString("en-US", { maximumFractionDigits: 2 })} USD</PremadeTextLink></p>}<PremadePurchaseInfo content={content} item={item} /></div></article></div>;
 }

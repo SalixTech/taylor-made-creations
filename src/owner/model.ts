@@ -1,3 +1,4 @@
+import {isElementLinkKey,elementLinkKeyIsPublic} from "./canvas-hyperlinks";
 import { BUTTON_PRESETS, validateButtonStyle, type ButtonAppearance } from "./button-import";
 import {validateInlineTextStyles,projectInlineTextStyles} from "./rich-text";
 import { validateContentCanvasLayout, projectCanvasLayouts, type CanvasLayout } from "./canvas-layout";
@@ -255,7 +256,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
   const buttonRef=(value:unknown,path:string)=>{if(value!==undefined&&(typeof value!=="string"||!buttonIds.has(value)))issue(path,"Choose an existing reusable button design.");};
   if (root.contentOverrides !== undefined) {
     const overrides = object(root.contentOverrides, "contentOverrides");
-    exact(overrides, ["text", "images", "links", "styles", "inlineStyles"], "contentOverrides");
+    exact(overrides, ["text", "images", "links", "styles", "inlineStyles", "elementLinks"], "contentOverrides");
     if (overrides.styles !== undefined) {
       const fields = object(overrides.styles, "contentOverrides.styles"); exact(fields, [...STYLE_FIELDS.map(field => field.key), ...Object.keys(fields).filter(isCanvasStyleKey)], "contentOverrides.styles");
       for (const [key, value] of Object.entries(fields)) appearance(value, `contentOverrides.styles.${key}`);
@@ -270,6 +271,10 @@ function validateContent(value: unknown, published = false): ValidationResult {
         const path = `contentOverrides.images.${key}`; const entry = object(value, path); exact(entry, ["src", "alt"], path);
         image(entry.src, `${path}.src`); text(entry.alt, `${path}.alt`, 500, key !== "site.logo");
       }
+    }
+    if (overrides.elementLinks !== undefined) {
+      const fields=object(overrides.elementLinks,"contentOverrides.elementLinks");
+      for(const [key,value] of Object.entries(fields)){countText(value);if(!isElementLinkKey(root as unknown as OwnerContent,key))issue(`contentOverrides.elementLinks.${key}`,"Choose an existing text or photo target.");if(typeof value!=="string"||!isSafeLink(value))issue(`contentOverrides.elementLinks.${key}`,"Use a safe website link.");}
     }
     if (overrides.links !== undefined) {
       const fields = object(overrides.links, "contentOverrides.links"); exact(fields, LINK_FIELDS.map(field => field.key), "contentOverrides.links");
@@ -645,6 +650,7 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
   }
   if (content.contentOverrides !== undefined) {
     snapshot.contentOverrides = {};
+    if(content.contentOverrides.elementLinks!==undefined)snapshot.contentOverrides.elementLinks=Object.fromEntries(Object.entries(content.contentOverrides.elementLinks).filter(([key])=>elementLinkKeyIsPublic(snapshot,key)));
     if(content.contentOverrides.inlineStyles!==undefined)snapshot.contentOverrides.inlineStyles=structuredClone(content.contentOverrides.inlineStyles);
     const isActive = (group: string) => group === "site" || content.pages.some(page => page.builtinKey === group && !page.trashedAt && page.availability !== "hidden");
     if (content.contentOverrides.styles !== undefined) snapshot.contentOverrides.styles = Object.fromEntries(Object.entries(content.contentOverrides.styles).filter(([key]) => STYLE_FIELDS.some(field => field.key === key && isActive(field.group)) || canvasStyleKeyIsPublic(key,snapshot)).map(([key,value]) => [key,publicAppearance(value)]));

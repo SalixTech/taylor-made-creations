@@ -5,7 +5,7 @@ import type {InlineTextStyle} from './rich-text';
 import type {ComputedTextAppearance} from './editable-text-dom';
 import styles from './OwnerTextFormattingBar.module.css';
 type Font={id:string;name:string};
-export function OwnerTextFormattingBar({active,selected,caretActive=false,disabled,fonts,onStyle,onLink,marks={},selectionKey="",selectionStyles=[],computed}:{active:boolean;selected:boolean;caretActive?:boolean;disabled:boolean;fonts?:Font[];onStyle:(style:InlineTextStyle)=>void;onReset?:()=>void;onLink:()=>void;onEdit?:()=>void;marks?:Partial<Record<"bold"|"italic"|"underline",boolean>>;selectionKey?:string;selectionStyles?:InlineTextStyle[];computed?:ComputedTextAppearance|null}){
+export function OwnerTextFormattingBar({active,selected,caretActive=false,disabled,fonts,onStyle,onLink,marks={},selectionKey="",selectionStyles=[],computed,shove=false,onShoveChange,canHyperlink}:{canHyperlink?:boolean;shove?:boolean;onShoveChange?:(enabled:boolean)=>void;active:boolean;selected:boolean;caretActive?:boolean;disabled:boolean;fonts?:Font[];onStyle:(style:InlineTextStyle)=>void;onReset?:()=>void;onLink:()=>void;onEdit?:()=>void;marks?:Partial<Record<"bold"|"italic"|"underline",boolean>>;selectionKey?:string;selectionStyles?:InlineTextStyle[];computed?:ComputedTextAppearance|null}){
  const id=useId(),common=<T,>(read:(style:InlineTextStyle)=>T):T|null|undefined=>{if(!selectionStyles.length)return undefined;const first=read(selectionStyles[0]);return selectionStyles.every(style=>Object.is(read(style),first))?first:null;};
  const explicitFont=common(style=>style.fontId?`custom:${style.fontId}`:style.font),explicitSize=common(style=>style.fontSize),explicitColor=common(style=>style.color);
  const family=computed?.fontFamily,rawFamily=family?.split(',')[0]?.trim().replace(/^['"]|['"]$/g,'');
@@ -18,7 +18,7 @@ export function OwnerTextFormattingBar({active,selected,caretActive=false,disabl
  useLayoutEffect(()=>{currentKey.current=selectionKey;dirty.current=null;setDraft(null);},[selectionKey]);
  // The parent validates a text caret; range formatting and caret typing share
  // controls, but a caret never grants empty-link insertion.
- const available=active&&(selected||caretActive)&&!disabled,linkAvailable=active&&selected&&!disabled;
+ const available=active&&(selected||caretActive)&&!disabled,linkAvailable=(canHyperlink??(active&&selected))&&!disabled;
  const [hexDraft,setHexDraft]=useState<{key:string;value:string}|null>(null),hexDirty=useRef<string|null>(null),live=useRef({key:selectionKey,available,linkAvailable});
  useLayoutEffect(()=>{live.current={key:selectionKey,available,linkAvailable};if(!available){hexDirty.current=null;dirty.current=null;}return()=>{live.current={key:selectionKey,available:false,linkAvailable:false};};},[selectionKey,available,linkAvailable]);
  // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -34,5 +34,6 @@ export function OwnerTextFormattingBar({active,selected,caretActive=false,disabl
   <input className={styles.hexControl} type="text" aria-label="Text color HEX" title="Six-digit HEX color, for example #7f0011" placeholder={color===null?'Mixed':'#RRGGBB'} value={hexValue} maxLength={7} spellCheck={false} autoComplete="off" aria-invalid={hexValue!==''&&!validHex} disabled={!available} onChange={e=>{if(!available||!live.current.available||live.current.key!==selectionKey)return;hexDirty.current=selectionKey;setHexDraft({key:selectionKey,value:e.target.value});}} onBlur={commitHex} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();commitHex();}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();hexDirty.current=null;setHexDraft(null);}}}/>
   {(['bold','italic','underline']as const).map(mark=><button key={mark} type="button" title={mark[0].toUpperCase()+mark.slice(1)} disabled={!available} onMouseDown={e=>e.preventDefault()} aria-pressed={computed?.[mark]??!!marks[mark]} onClick={()=>{if(available&&live.current.available&&live.current.key===selectionKey)onStyle({[mark]:!(computed?.[mark]??marks[mark])});}}>{mark==='bold'?<b>B</b>:mark==='italic'?<i>I</i>:<u>U</u>}</button>)}
   <button type="button" disabled={!linkAvailable} onMouseDown={e=>e.preventDefault()} onClick={()=>{if(linkAvailable&&live.current.linkAvailable&&live.current.key===selectionKey)onLink();}}>Hyperlink</button>
+  {onShoveChange&&<button type="button" disabled={disabled} aria-pressed={shove} title="Shove: moving a box into a gap makes room below. Off keeps free placement." onMouseDown={e=>e.preventDefault()} onClick={()=>{if(!disabled)onShoveChange(!shove);}}>Shove</button>}
  </div>;
 }
