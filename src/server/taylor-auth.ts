@@ -1,9 +1,10 @@
+import { STUDIO_OWNER_UID, isStudioOwnerUid } from "@/owner/studio-owner-identity";
 import "server-only";
 import { importX509, jwtVerify, type JWTVerifyGetKey } from "jose";
 
 // Deliberately fixed server authorization. Browser configuration cannot grant access.
 export const TAYLOR_PROJECT_ID = "taylor-made-creations";
-export const TAYLOR_OWNER_UID = "a4ARjp0z8ZOByKlC2AfGzmMRj843";
+export const TAYLOR_OWNER_UID = STUDIO_OWNER_UID;
 // Firebase tokens are minted remotely; tolerate only small host clock drift.
 const CLOCK_TOLERANCE_SECONDS = 5;
 const CERTIFICATES_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
@@ -58,7 +59,7 @@ export async function verifyTaylorOwner(request: Request): Promise<{ uid: string
     if (payload.aud !== TAYLOR_PROJECT_ID || typeof payload.sub !== "string" || !payload.sub || payload.sub.length > 128
       || typeof payload.iat !== "number" || !Number.isFinite(payload.iat) || payload.iat > now + CLOCK_TOLERANCE_SECONDS
       || typeof payload.auth_time !== "number" || !Number.isFinite(payload.auth_time) || payload.auth_time > now + CLOCK_TOLERANCE_SECONDS || payload.auth_time < 0) throw new TaylorApiError(401, "The server could not validate this session. Check again or sign in again if the problem continues.", undefined, "session-invalid");
-    if (payload.sub !== TAYLOR_OWNER_UID) throw new TaylorApiError(403, "This account does not have owner access.", undefined, "owner-denied");
+    if (!isStudioOwnerUid(payload.sub)) throw new TaylorApiError(403, "This account does not have owner access.", undefined, "owner-denied");
     return { uid: payload.sub };
   } catch (error) {
     if (error instanceof TaylorApiError) throw error;

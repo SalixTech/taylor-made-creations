@@ -7,6 +7,8 @@ import {useMobileSiteLayout} from "@/owner/use-mobile-site-layout";
 import Link from "next/link";
 import {Brand} from "./Brand";
 import {CopyrightRange} from "./Copyright";
+import {ContentBlocks,siteContentCanvasMarkers,PublicSiteContentContext} from "./SiteContent";
+import type {OwnerContent} from "@/owner/model";
 import {FooterCredits} from "./FooterCredits";
 import {Nav} from "./Nav";
 import {useNavigationDisclosure} from "./use-navigation-disclosure";
@@ -42,7 +44,7 @@ function usePublicChromeTrees(){
  if(state.status==='error')return {content,mobile,header:<header className="site-header"><div className="header-inner"><span className="small-label">Website temporarily unavailable</span></div></header>,footer:null};
  const brand=(footer=false)=><Brand footer={footer} name={content?.site.name??site.name} logo={getTemplateImage(content,'site.logo')} appearance={appearance('site.brand')} logoAppearance={appearance('site.logo')}/>;
  const header=wrap('layout.site.header',<header className="site-header"><div className="header-inner">{wrap('layout.site.headerBrand',<div>{brand()}</div>)}<div className="header-right"><span className="small-label">{wrap('site.headerTagline',<span>{getTemplateText(content,'site.headerTagline')}</span>,true,'template-text:site.headerTagline')}</span>{nav}</div></div></header>);
- const footer=wrap('layout.site.footer',<footer><div className="footer-top">{wrap('layout.site.footerBrand',<div>{brand(true)}</div>)}<span>{wrap('site.footerTagline',<span>{getTemplateText(content,'site.footerTagline')}</span>,true,'template-text:site.footerTagline')}</span></div><div className="footer-bottom"><span><CopyrightRange/> {content?.site.name??site.name}. All rights reserved.</span><div>{footerLink('site.footerTerms')}{footerLink('site.footerContact')}</div></div><FooterCredits /></footer>);
+ const footer=wrap('layout.site.footer',<footer><div className="footer-top">{wrap('layout.site.footerBrand',<div>{brand(true)}</div>)}<span>{wrap('site.footerTagline',<span>{getTemplateText(content,'site.footerTagline')}</span>,true,'template-text:site.footerTagline')}</span></div><div className="footer-bottom"><span><CopyrightRange/> {content?.site.name??site.name}. All rights reserved.</span><div>{footerLink('site.footerTerms')}{footerLink('site.footerContact')}</div></div>{!!content?.footerBlocks?.length&&<ContentBlocks content={content as OwnerContent} blocks={content!.footerBlocks!}/>}<FooterCredits /></footer>);
  return {content,mobile,header,footer};
 }
 /** Kept for isolated callers; the app uses the unified scene below. */
@@ -52,5 +54,5 @@ function PublicChromeBody({children}:{children:ReactNode}){return <>{children}</
 export function PublicChromeLayout({children}:{children:ReactNode}){
  const {content,mobile,header,footer}=usePublicChromeTrees();
  const tree=<>{header}<PublicChromeBody>{children}</PublicChromeBody>{footer}</>;
- return content?<CanvasScene content={content} scope="chrome" mobile={mobile} markers={markers}>{tree}</CanvasScene>:tree;
+ return content?<PublicSiteContentContext mobile={mobile}><CanvasScene content={content} scope="chrome" mobile={mobile} markers={[...markers,...siteContentCanvasMarkers({mode:"public",mobileLayout:mobile})]}>{tree}</CanvasScene></PublicSiteContentContext>:tree;
 }

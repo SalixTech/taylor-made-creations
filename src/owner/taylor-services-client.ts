@@ -1,18 +1,20 @@
+import { STUDIO_OWNER_UID, isStudioOwnerUid } from "./studio-owner-identity";
 import { assertHubWindowSession } from "@/client-hub/window-session";
 import { getOwnerFirebaseClient, readOwnerFirebaseConfig, verifyOwnerSession } from "./firebase-client";
 
 /** Private tools reuse the existing browser-session-only Firebase connection. */
 export async function taylorOwnerSession() {
   const config = readOwnerFirebaseConfig();
-  if (config.status !== "ready" || config.options.projectId !== "taylor-made-creations" || config.ownerUid !== "a4ARjp0z8ZOByKlC2AfGzmMRj843") throw new Error("The private owner connection is not configured. Ask Salix to check the Firebase setup.");
+  if (config.status !== "ready" || config.options.projectId !== "taylor-made-creations" || config.ownerUid !== STUDIO_OWNER_UID) throw new Error("The private owner connection is not configured. Ask Salix to check the Firebase setup.");
   const client = getOwnerFirebaseClient(config);
   const user = client.auth.currentUser;
-  if (!user || user.uid !== config.ownerUid) throw new Error("Sign in with Taylor’s owner account to continue.");
+  const actorUid = user?.uid;
+  if (!user || !isStudioOwnerUid(actorUid)) throw new Error("Sign in with an authorized studio owner account to continue.");
   await verifyOwnerSession(client, user);
   const token = await user.getIdToken();
   const assertCurrent = () => {
     assertHubWindowSession("owner", user.uid);
-    if (client.auth.currentUser !== user || client.auth.currentUser?.uid !== config.ownerUid) throw new Error("Your owner session changed. Sign in again to continue.");
+    if (client.auth.currentUser !== user || client.auth.currentUser?.uid !== actorUid) throw new Error("Your owner session changed. Sign in again to continue.");
   };
   assertCurrent();
   return { ...client, token, assertCurrent };

@@ -17,7 +17,7 @@ const patterns = [
   new RegExp(`^layout\\.price-group:(${id})(?::(number|title|note|examples))?$`),
   new RegExp(`^layout\\.price-item:(${id})(?::(name|detail|amount))?$`),
   new RegExp(`^layout\\.price-(parts|extras):(${id})(?::(name|amount))?$`),
-  new RegExp(`^layout\\.block:(${id}):(${id}):(heading|body|photo|caption|link|list-\\d{1,3}|faq-${id}-(?:question|answer))$`),
+  new RegExp(`^layout\\.block:(${id}):(${id}):(heading|body|photo|caption|link|status-label|status-value|status-note|status-action|status-action-label|list-\\d{1,3}|faq-${id}-(?:question|answer))$`),
   new RegExp(`^layout\\.premade:(${id})(?::(photo|title|body|price|tags|purchase))?$`),
   new RegExp(`^layout\\.gallery:(${id})(?::(photo|caption))?$`),
   new RegExp(`^layout\\.contact-row:(${id})(?::(label|value))?$`),
@@ -40,7 +40,7 @@ export function canvasStyleKeyIsPublic(key: string, content: OwnerContent | Publ
   const fixed=/^layout\.([a-z]+)\./.exec(key);
   if(fixed)return active(fixed[1]);
   const page=/^layout\.page:([^:]+):/.exec(key);if(page)return pages.some(p=>p.id===page[1]);
-  const block=/^layout\.block:([^:]+):([^:]+):/.exec(key);if(block)return pages.some(p=>p.id===block[1]&&p.blocks.some(b=>b.id===block[2]));
+  const block=/^layout\.block:([^:]+):([^:]+):/.exec(key);if(block)return block[1]==="shared-footer"?!!content.footerBlocks?.some(b=>b.id===block[2]):pages.some(p=>p.id===block[1]&&p.blocks.some(b=>b.id===block[2]));
   const group=/^layout\.price-group:([^:]+)/.exec(key);if(group)return active("prices")&&content.prices.groups.some(g=>g.id===group[1]);
   const item=/^layout\.price-item:([^:]+)/.exec(key);if(item)return active("prices")&&content.prices.groups.some(g=>g.items.some(i=>i.id===item[1]));
   const part=/^layout\.price-(parts|extras):([^:]+)/.exec(key);if(part)return active("prices")&&content.prices[part[1] as "parts"|"extras"].some(i=>i.id===part[2]);

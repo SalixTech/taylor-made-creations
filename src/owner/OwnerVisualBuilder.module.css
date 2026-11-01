@@ -333,7 +333,10 @@
 .toolbar .pagePicker label{font-size:10px;margin:0;text-align:left;}
 .toolbar .pagePicker [role="combobox"]{min-height:30px;padding-block:3px;}
 .moreControls{padding:0 10px;}.moreControls>summary{padding:5px 0;}
-.textToolbarDock{position:sticky;top:var(--owner-toolbar-height,0px);z-index:24;min-width:0;background:var(--owner-surface,#292929);border-bottom:1px solid var(--owner-line,#555);}
+.textToolbarDock{position:sticky;top:var(--owner-toolbar-height,0px);z-index:24;min-width:0;background:transparent;border-bottom:0;}
 .textToolbarDock:empty{display:none;}.layoutIndicator{padding:3px 10px;font-size:10px;}
 .stage{overflow-anchor:none;}.canvas{scroll-margin-top:calc(var(--owner-toolbar-height,0px) + var(--builder-toolbar-height,36px) + 8px);}
 @media(max-width:650px){.toolbar .pagePicker{min-width:160px;width:210px;}.toolbar .viewTools{width:auto;}.toolbar .viewToolsGroup{min-width:0;}.textToolbarDock{max-width:100%;}}
+
+.quickTools{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;}
+.canvas [data-owner-footer-drop="true"]{outline:3px solid var(--owner-accent,#72a9e5)!important;outline-offset:4px;}

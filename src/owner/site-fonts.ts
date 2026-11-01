@@ -15,6 +15,7 @@ export function referencedSiteFonts(content: OwnerContent | PublicOwnerContent):
     ...Object.values(content.contentOverrides?.inlineStyles??{}).flatMap(record=>[...record.spans,...(record.mobile??[])].map(span=>span.style.fontId)),
     ...Object.values(content.contentOverrides?.styles ?? {}).flatMap(style => [style.fontId,style.mobile?.fontId]),
     ...content.pages.flatMap(page => [page.titleAppearance?.fontId,page.titleAppearance?.mobile?.fontId, ...page.blocks.flatMap(block => [block.appearance?.fontId,block.appearance?.mobile?.fontId])]),
+    ...(content.footerBlocks??[]).flatMap(block=>[block.appearance?.fontId,block.appearance?.mobile?.fontId]),
   ].filter(Boolean));
   return (content.fonts ?? []).filter(font => ids.has(font.id));
 }

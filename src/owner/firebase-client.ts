@@ -1,3 +1,4 @@
+import { STUDIO_OWNER_UID, isStudioOwnerUid } from "./studio-owner-identity";
 import { assertHubWindowSession, watchHubWindowSession } from "@/client-hub/window-session";
 import { getApps, initializeApp, type FirebaseOptions } from "firebase/app";
 import { browserSessionPersistence, initializeAuth, signOut, type Auth, type User } from "firebase/auth";
@@ -40,7 +41,7 @@ export function readOwnerFirebaseConfig(environment: OwnerFirebaseEnvironment = 
   if (!/^[a-z0-9][a-z0-9.-]+$/.test(environment.storageBucket!)) invalid.push("storageBucket");
   if (!/^\d+$/.test(environment.messagingSenderId!)) invalid.push("messagingSenderId");
   if (!/^1:\d+:web:[a-f0-9]+$/i.test(environment.appId!)) invalid.push("appId");
-  if (!/^[^\s/]{1,128}$/.test(environment.ownerUid!)) invalid.push("ownerUid");
+  if (environment.ownerUid !== STUDIO_OWNER_UID) invalid.push("ownerUid");
   if (invalid.length) return { status: "invalid", fields: [...new Set(invalid)].map(key => envNames[key]) };
   const { ownerUid, ...options } = environment;
   return { status: "ready", options, ownerUid: ownerUid! };
@@ -69,13 +70,14 @@ export class OwnerSessionError extends Error {
 
 /** Verify with Auth before exposing any private UI; stale async results fail closed. */
 export async function verifyOwnerSession(client: OwnerFirebaseClient, user: User): Promise<void> {
-  if (user.uid !== client.ownerUid) throw new OwnerSessionError("denied", "This account does not have owner access. Sign out and use Taylor’s owner account.");
+  const actorUid = user.uid;
+  if (client.ownerUid !== STUDIO_OWNER_UID || !isStudioOwnerUid(actorUid)) throw new OwnerSessionError("denied", "This account does not have owner access. Sign out and use an authorized studio owner account.");
   assertHubWindowSession("owner", user.uid);
-  watchHubWindowSession("owner", user.uid, () => { if (client.auth.currentUser?.uid === user.uid) void signOut(client.auth).catch(() => {}); });
+  watchHubWindowSession("owner", actorUid, () => { if (client.auth.currentUser?.uid === actorUid) void signOut(client.auth).catch(() => {}); });
   await user.reload();
   await user.getIdToken(true);
   assertHubWindowSession("owner", user.uid);
-  if (client.auth.currentUser !== user || client.auth.currentUser.uid !== client.ownerUid) {
+  if (client.auth.currentUser !== user || client.auth.currentUser.uid !== actorUid) {
     throw new OwnerSessionError("expired", "Your sign-in changed. Please sign in again.");
   }
 }

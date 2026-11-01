@@ -1,4 +1,6 @@
 "use client";
+import { STUDIO_OWNER_UID } from "@/owner/studio-owner-identity";
+
 
 import { hubWindowGeneration } from "./window-session";
 import { CHAT_DRAFT_PREFIX, type VerifiedChatDraftScope } from "./chat-text-drafts";
@@ -94,14 +96,14 @@ export async function loadProjectWorkspace(project: ClientHubProject, owner: boo
   const [messages, photos, requests, replies, notices, visibility, privateSnapshot] = await Promise.all([
     read("hubMessages"), readVisiblePhotos(session, project), read("hubSupportRequests"), read("hubSupportReplies"),
     getDocsFromServer(query(collection(session.db, "hubNotifications"), where("clientId", "==", project.clientId), where("projectId", "==", project.projectId))),
-    getDocsFromServer(query(collection(session.db, "hubConversationVisibility"), where("viewerUid", "==", session.auth.currentUser!.uid), where("clientId", "==", project.clientId), where("projectId", "==", project.projectId))),
+    getDocsFromServer(query(collection(session.db, "hubConversationVisibility"), where("viewerUid", "==", owner ? STUDIO_OWNER_UID : session.auth.currentUser!.uid), where("clientId", "==", project.clientId), where("projectId", "==", project.projectId))),
     owner ? getDocFromServer(doc(session.db, "hubProjectPrivate", project.projectId)) : Promise.resolve(null),
   ]);
   session.assertCurrent();
   const notifications = notices.docs.map(item => decodeHubNotification(item.data(), item.id, project));
   return {
     requestReplies: replies.docs.map(item => decodeHubSupportReply(item.data(), item.id, project)).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.replyId.localeCompare(b.replyId)),
-    visibility: visibility.docs.map(item => decodeHubConversationVisibility(item.data(), project, session.auth.currentUser!.uid, owner, item.id)),
+    visibility: visibility.docs.map(item => decodeHubConversationVisibility(item.data(), project, owner ? STUDIO_OWNER_UID : session.auth.currentUser!.uid, owner, item.id)),
     notifications, receipts: notifications,
     messages: messages.docs.map(item => decodeHubMessage(item.data(), item.id, project)).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.messageId.localeCompare(b.messageId)),
     photos: photos.photos.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.photoId.localeCompare(b.photoId)),
@@ -332,7 +334,7 @@ export function subscribeProjectWorkspace(project: ClientHubProject, owner: bool
       if (!active || !ownsSession() || snapshot.metadata.fromCache) return;
       try {
         session.assertCurrent(); const value = snapshot.exists() ? snapshot.data() : null, revision = value?.revision ?? 0;
-        if (!Number.isSafeInteger(revision) || revision < 0 || value && (value.projectId !== project.projectId || value.clientId !== project.clientId || value.viewerUid !== session.auth.currentUser?.uid || value.viewerRole !== (owner ? "owner" : "client"))) throw new ClientHubDataError("The file-copy visibility update could not be verified.");
+        if (!Number.isSafeInteger(revision) || revision < 0 || value && (value.projectId !== project.projectId || value.clientId !== project.clientId || value.viewerUid !== (owner ? STUDIO_OWNER_UID : session.auth.currentUser?.uid) || value.viewerRole !== (owner ? "owner" : "client"))) throw new ClientHubDataError("The file-copy visibility update could not be verified.");
         if (revision !== copyRevision) {
           if (copyRevision !== undefined) {
             clearHubPhotoCache(); workspace.photos = []; emit("photos");
@@ -355,7 +357,7 @@ export function subscribeProjectWorkspace(project: ClientHubProject, owner: bool
         photoNoticeVersion = version; emit("notifications");
       } catch (error) { fail(error); }
     }, fail));
-    const viewerUid = session.auth.currentUser!.uid;
+    const viewerUid = owner ? STUDIO_OWNER_UID : session.auth.currentUser!.uid;
     stops.push(onSnapshot(query(collection(session.db, "hubConversationVisibility"), where("viewerUid", "==", viewerUid), where("clientId", "==", project.clientId), where("projectId", "==", project.projectId)), { includeMetadataChanges: true }, snapshot => {
       if (!active || !ownsSession()) return;
       reportConnection("visibility", snapshot.metadata.fromCache);

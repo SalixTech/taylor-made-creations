@@ -9,7 +9,13 @@ export function renderEditableRuns(root:HTMLElement,runs:InlineTextRun[],highlig
 /** Read-only browser appearance of the current source DOM; never persist these
  * inherited values merely because the toolbar displays them. */
 export type ComputedTextAppearance={fontFamily:string|null;fontSize:number|null;color:string|null;bold:boolean|null;italic:boolean|null;underline:boolean|null};
-export function readComputedTextAppearance(root:HTMLElement,expectedText:string,range?:{start:number;end:number}|null):ComputedTextAppearance|null {
+export function readComputedTextAppearance(root:HTMLElement,expectedText:string,range?:{start:number;end:number}|null):ComputedTextAppearance|null {return readComputedAppearance(root,expectedText,range,false);}
+/** Source numeric span only: skip explicitly marked grouping commas, never arbitrary punctuation. */
+export function readComputedPriceAppearance(root:HTMLElement,expectedText:string,range?:{start:number;end:number}|null):ComputedTextAppearance|null {
+ if(root.getAttribute('data-owner-inline-value')!=='true'||root.closest?.('[data-owner-inline-text-editor]')||!/^\d+(?:\.\d{1,2})?$/.test(expectedText)||String(Number(expectedText))!==expectedText||Number(expectedText)>1_000_000||range&&(!Number.isSafeInteger(range.start)||!Number.isSafeInteger(range.end)||range.start<0||range.end<range.start||range.end>expectedText.length))return null;
+ return readComputedAppearance(root,expectedText,range,true);
+}
+function readComputedAppearance(root:HTMLElement,expectedText:string,range:{start:number;end:number}|null|undefined,price:boolean):ComputedTextAppearance|null {
  const view=root.ownerDocument?.defaultView;if(!view?.getComputedStyle)return null;
  const paintedUnderline=(node:Element)=>{let current:Element|null=node,depth=0;while(current&&depth++<32){if(view.getComputedStyle(current).textDecorationLine?.includes('underline'))return true;if(current.hasAttribute?.('data-site-render-mode'))break;current=current.parentElement;}return false;};
  const read=(node:Element):ComputedTextAppearance=>{const css=view.getComputedStyle(node),size=Number.parseFloat(css.fontSize);const rgb=css.color.match(/^rgba?\(\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)\s*[, ]\s*(\d+(?:\.\d+)?)(?:\s*[,/]\s*(?:1|1\.0+))?\s*\)$/i);return {fontFamily:css.fontFamily?.trim()||null,fontSize:Number.isFinite(size)&&size>0?Math.round(size*100)/100:null,color:rgb?'#'+rgb.slice(1,4).map(n=>Math.round(Math.min(255,Number(n))).toString(16).padStart(2,'0')).join(''):/^#[a-f0-9]{6}$/i.test(css.color)?css.color.toLowerCase():null,bold:css.fontWeight==='bold'||Number(css.fontWeight)>=600,italic:css.fontStyle==='italic'||css.fontStyle==='oblique',underline:paintedUnderline(node)};};
@@ -17,7 +23,8 @@ export function readComputedTextAppearance(root:HTMLElement,expectedText:string,
  // text nodes. Align each exact node string while allowing only those missing
  // whitespace separators; any unexplained words/markup mismatch fails closed.
  const walker=root.ownerDocument.createTreeWalker(root,4),pieces:Array<{node:Element;start:number;end:number}>=[];let node:Node|null,offset=0;
- while((node=walker.nextNode())){const text=node.textContent??'';if(!text)continue;const start=expectedText.indexOf(text,offset);if(start<0||/\S/.test(expectedText.slice(offset,start))||!node.parentElement)return null;const end=start+text.length;pieces.push({node:node.parentElement,start,end});offset=end;}
+ const separators=new Set<number>(),integerLength=expectedText.split('.')[0].length;
+ while((node=walker.nextNode())){const text=node.textContent??'';if(!text)continue;if(price&&node.parentElement?.getAttribute('data-owner-price-separator')==='true'){if(text!==','||node.parentElement.textContent!==','||offset<=0||offset>=integerLength||(integerLength-offset)%3!==0||separators.has(offset))return null;separators.add(offset);continue;}const start=expectedText.indexOf(text,offset);if(start<0||/\S/.test(expectedText.slice(offset,start))||!node.parentElement)return null;const end=start+text.length;pieces.push({node:node.parentElement,start,end});offset=end;}
  if(/\S/.test(expectedText.slice(offset)))return null;
  if(!range||range.start===range.end)return read(root);
  const values=pieces.filter(piece=>piece.start<range.end&&piece.end>range.start).map(piece=>read(piece.node));

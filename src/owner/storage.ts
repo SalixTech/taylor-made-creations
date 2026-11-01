@@ -39,6 +39,8 @@ export interface OwnerStorageAdapter {
   subscribe?(callback: () => void): () => void;
 }
 export interface OwnerStore {
+  /** Explicit beta-to-main publication protocol; never supplied by local/main adapters. */
+  websitePromotion?(request: import("./website-promotion-client").WebsitePromotionRequest): Promise<import("./website-promotion-client").WebsitePromotionResponse>;
   /** Private immutable recovery only; never a workspace save or publication. */
   recovery?: import("./cloud-recovery").CloudRecoveryPort;
   load(): Promise<OwnerWorkspace>;

@@ -12,7 +12,7 @@ import { boxAlignmentGuides, type AlignmentRect, type AlignmentGuide } from "./b
 import { applyPlacementControl, measurePlacementControls, placementControlChart } from './canvas-placement-geometry';
 import {validCanvasPlacement, type CanvasPlacement} from './canvas-layout';
 import type {CapturedCanvasFrame} from './canvas-placement-geometry';
-type CanvasMoveHooks={onCanvasMoveStart?:()=>void;onCanvasMovePreview?:(point:{x:number;y:number})=>void;onCanvasMoveCommit?:(snapshot:CapturedCanvasFrame,point:{x:number;y:number})=>void;onCanvasMoveCancel?:()=>void};
+type CanvasMoveHooks={onCanvasMoveStart?:()=>void;onCanvasMovePreview?:(point:{x:number;y:number})=>void;onCanvasMoveCommit?:(snapshot:CapturedCanvasFrame,point:{x:number;y:number})=>boolean|void;onCanvasMoveCancel?:()=>void};
 type PlacementProps = { layoutIdentity?:{id:string;scope:"page"|"chrome"}; placement?:CanvasPlacement; resolvePlacementDestination?:(canvas:HTMLDivElement)=>HTMLElement|null; onPlacementChange?:(placement:CanvasPlacement,box:ElementBox)=>void; onResetPlacement?:()=>void };
 type Kind = "move" | "rotate" | BoxHandle;
 type Gesture = { pointer: number; x: number; y: number; kind: Kind; original: ElementBox; current: ElementBox; bounds: CanvasBoxBounds; lastX: number; lastY: number; button: HTMLButtonElement; alignments: AlignmentRect[]; preserveContents:boolean };
@@ -36,7 +36,7 @@ function frameGeometry(bounds: CanvasBoxBounds, box: ElementBox, original: Eleme
   return {width,height,matrix:multiplyAffine(bounds.parentToCanvas,rotation)};
 }
 const matrixStyle = (m: Affine) => `matrix(${m.a}, ${m.b}, ${m.c}, ${m.d}, ${m.e}, ${m.f})`;
-export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCanvasMoveCommit,onCanvasMoveCancel, layoutIdentity, canvasRef, target, occurrence = 0, value, disabled, onChange, initialAspectLocked, onInitialAspectLockChange, onEditContent, onDelete, onSelectParent, selectBoxContents = true, onSelectBoxContents, sectionOrder, reparentId, renderVersion, placement, resolvePlacementDestination, onPlacementChange, onResetPlacement }: PlacementProps & CanvasMoveHooks & { selectBoxContents?:boolean; onSelectBoxContents?:(selected:boolean)=>void; onSelectParent?:()=>void; onDelete?:()=>void; reparentId?:string; sectionOrder?: { index: number; count: number; onMove: (direction: -1 | 1) => void }; onEditContent?: () => void; renderVersion?: object; initialAspectLocked?: boolean; onInitialAspectLockChange?: (locked: boolean) => void; occurrence?: number; canvasRef: RefObject<HTMLDivElement | null>; target: string; value?: ElementAppearance; disabled: boolean; onChange: (value: ElementAppearance) => void }) {
+export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCanvasMoveCommit,onCanvasMoveCancel, layoutIdentity, canvasRef, target, occurrence = 0, value, disabled, onChange, initialAspectLocked, onInitialAspectLockChange, onEditContent, onDelete, onCopyBox, onPasteBox, onSelectParent, selectBoxContents = true, onSelectBoxContents, sectionOrder, reparentId, renderVersion, placement, resolvePlacementDestination, onPlacementChange, onResetPlacement }: PlacementProps & CanvasMoveHooks & { selectBoxContents?:boolean; onSelectBoxContents?:(selected:boolean)=>void; onSelectParent?:()=>void; onCopyBox?:()=>void; onPasteBox?:()=>void; onDelete?:()=>void; reparentId?:string; sectionOrder?: { index: number; count: number; onMove: (direction: -1 | 1) => void }; onEditContent?: () => void; renderVersion?: object; initialAspectLocked?: boolean; onInitialAspectLockChange?: (locked: boolean) => void; occurrence?: number; canvasRef: RefObject<HTMLDivElement | null>; target: string; value?: ElementAppearance; disabled: boolean; onChange: (value: ElementAppearance) => void }) {
   const [bounds, setBounds] = useState<CanvasBoxBounds | null>(null), [preview, setPreview] = useState<{ box: ElementBox; appearance: ElementAppearance | undefined; target: string; guides?: AlignmentGuide[] } | null>(null), [notice, setNotice] = useState("");
   const [hasContents,setHasContents]=useState(false);
   const [initialLocked, setInitialLocked] = useState(true), [unsupported, setUnsupported] = useState(false);
@@ -112,7 +112,7 @@ export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCa
       const f=frameGeometry(state.bounds,state.current,state.original),inverse=inverseAffine(state.bounds.parentToCanvas);
       const matrix=inverse?multiplyAffine(state.bounds.parentToScreen,multiplyAffine(inverse,f.matrix)):null,scale=state.bounds.parentWidth/state.current.referenceParentPx;
       const placement=matrix?{matrix,widthPx:f.width,heightPx:f.height,aspectLocked:state.current.aspectLocked,...(state.current.contentOffset?{contentOffset:{xPx:state.current.contentOffset.xPx*scale,yPx:state.current.contentOffset.yPx*scale}}:{})}:null;
-      if(placement&&validCanvasPlacement(placement)){const {matrix:screenMatrix,...rest}=placement;moveHooks.current.onCanvasMoveCommit({screenMatrix,...rest},{x:state.lastX,y:state.lastY});}else{moveHooks.current.onCanvasMoveCancel?.();setNotice("This move cannot be measured safely. Nothing changed.");}return;
+      if(placement&&validCanvasPlacement(placement)){const {matrix:screenMatrix,...rest}=placement;const consumed=moveHooks.current.onCanvasMoveCommit({screenMatrix,...rest},{x:state.lastX,y:state.lastY});if(consumed!==false)return;}else{moveHooks.current.onCanvasMoveCancel?.();setNotice("This move cannot be measured safely. Nothing changed.");return;}
     }
     if(state.kind==="move")moveHooks.current.onCanvasMoveCancel?.();
     if (commit && !sameElementBox(state.original, state.current)) save(state.current);
@@ -188,6 +188,8 @@ export function OwnerCanvasBoxTools({ onCanvasMoveStart,onCanvasMovePreview,onCa
     <div aria-hidden="true" className={ghost ? styles.boxGhost : styles.boxOutline} style={{left:0,top:0,width:frame.width,height:frame.height,transform:matrixStyle(frame.matrix),transformOrigin:"0 0"}} />
     <div ref={toolbarRef} className={styles.boxToolbar} data-moving={!!preview && gesture.current?.kind==="move" || undefined} style={{left:toolbarLeft,top:toolbarTop,maxWidth:`calc(100% - ${toolbarLeft}px)`}}>
       <div className={styles.boxToolbarButtons}>
+      {onCopyBox&&<button data-owner-button type="button" disabled={disabled} onClick={onCopyBox}>Copy box</button>}
+      {onPasteBox&&<button data-owner-button type="button" disabled={disabled} onClick={onPasteBox}>Paste box</button>}
       {onEditContent && <button data-owner-button type="button" disabled={disabled} onClick={onEditContent}>Edit content</button>}
       <button data-owner-button type="button" disabled={disabled} {...events("move")} aria-label="Move content box. Drag or use arrow keys; Shift moves faster; Escape cancels.">Move box</button>
 

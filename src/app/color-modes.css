@@ -236,3 +236,13 @@ input:not([data-element-text-color="true"])::placeholder, textarea:not([data-ele
 /* The same blue focus family needs a darker shade against light surfaces. */
 [data-owner-portal][data-color-mode="light"] :is(input,textarea,select,[role="combobox"]):focus-visible:not(:where([data-site-render-mode] *,[data-hub-notifications] *)),
 [data-owner-portal][data-color-mode="light"] [class*="numberEntry"]:focus-within:not(:where([data-site-render-mode] *,[data-hub-notifications] *)){outline-color:#2563eb!important;}
+
+/* Full-page builder viewport only: visible neutral thumb; no overflow/position change. */
+html:has([data-full-page-builder]){--builder-scroll-thumb:#75757d;--builder-scroll-track:#efeff1;}
+html:has([data-full-page-builder][data-color-mode="dark"]){--builder-scroll-thumb:#9a9aa2;--builder-scroll-track:#202024;}
+html:has([data-full-page-builder]),html:has([data-full-page-builder]) body{scrollbar-width:auto!important;scrollbar-color:var(--builder-scroll-thumb) var(--builder-scroll-track)!important;scrollbar-gutter:stable;}
+html:has([data-full-page-builder])::-webkit-scrollbar,html:has([data-full-page-builder]) body::-webkit-scrollbar{width:10px;height:10px;}
+html:has([data-full-page-builder])::-webkit-scrollbar-track,html:has([data-full-page-builder]) body::-webkit-scrollbar-track{background:var(--builder-scroll-track);}
+html:has([data-full-page-builder])::-webkit-scrollbar-thumb,html:has([data-full-page-builder]) body::-webkit-scrollbar-thumb{background:var(--builder-scroll-thumb);border:2px solid var(--builder-scroll-track);border-radius:10px;min-height:44px;}
+html:has([data-full-page-builder])::-webkit-scrollbar-thumb:hover,html:has([data-full-page-builder]) body::-webkit-scrollbar-thumb:hover{background:var(--builder-scroll-thumb);}
+@media(forced-colors:active){html:has([data-full-page-builder]),html:has([data-full-page-builder]) body{scrollbar-color:auto!important;}html:has([data-full-page-builder])::-webkit-scrollbar-thumb,html:has([data-full-page-builder]) body::-webkit-scrollbar-thumb{background:CanvasText;border-color:Canvas;}}

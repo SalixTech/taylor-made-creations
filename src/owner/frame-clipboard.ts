@@ -1,0 +1,68 @@
+import {assertOwnerContent,type OwnerContent,type PageBlock} from './model';
+import {getCanvasNodes,resolveCanvasLayout,type CanvasNodeMap} from './canvas-layout';
+import type {ElementAppearance} from './site-design';
+import {createCommissionStatusBlock} from './commission-status-block';
+import type {InlineTextRecord} from './rich-text';
+
+/** In-memory, same-builder clipboard only. No OS clipboard, persistence or remote writes. */
+export type FrameClipboard={sourceBinding:string;pageId:string;rootId:string;blocks:PageBlock[];desktop:CanvasNodeMap;mobile:CanvasNodeMap;styles:Record<string,ElementAppearance>;inlineStyles:Record<string,InlineTextRecord>;buttonDesigns:NonNullable<OwnerContent['buttonDesigns']>;assets:string[]};
+export type FrameClipboardSessionRef={current:{scopeKey:string;value:FrameClipboard}|null};
+const binding=(content:OwnerContent)=>JSON.stringify(content);
+function fail(message:string):never{throw Error(message);}
+function descendants(map:CanvasNodeMap,id:string){const found=new Set([id]);let more=true;while(more){more=false;for(const[key,entry]of Object.entries(map))if(entry.parentId&&found.has(entry.parentId)&&!found.has(key)){found.add(key);more=true;}}return found;}
+function blockOwner(node:string,pageId:string):string|null{if(node.startsWith('block:'))return node.slice(6);const prefix=`canvas:layout.block:${pageId}:`;if(node.startsWith(prefix))return node.slice(prefix.length).split(':')[0];return null;}
+function assetSources(value:unknown,output=new Set<string>()):Set<string>{if(typeof value==='string'){for(const match of value.matchAll(/\/api\/(?:cloud-)?(?:media|fonts|documents)\/[a-f0-9-]{36}/g))output.add(match[0]);return output;}if(Array.isArray(value)){value.forEach(item=>assetSources(item,output));return output;}if(value&&typeof value==='object')for(const[key,item]of Object.entries(value)){if((key==='src'||key==='href')&&typeof item==='string'&&(/^(?:data:|blob:|\/api\/(?:cloud-)?(?:media|fonts|documents)\/)/.test(item)))output.add(item);else assetSources(item,output);}return output;}
+export function captureFrameClipboard(content:OwnerContent,pageId:string,rootId:string):FrameClipboard{
+ assertOwnerContent(content);const page=content.pages.find(p=>p.id===pageId&&!p.trashedAt);if(!page)fail('This source page is no longer available.');
+ if(rootId==='canvas:layout.commissions.status')return captureCommissionClipboard(content,pageId);
+ if(!rootId.startsWith('block:'))fail('This built-in functional unit cannot be copied as a custom box. Nothing was changed.');
+ const desktop=resolveCanvasLayout(content,page,false),mobile=resolveCanvasLayout(content,page,true);if(!desktop[rootId]||desktop[rootId].removed&&mobile[rootId]?.removed)fail('Select an available box before copying.');
+ const nodes=new Set<string>(),ids=new Set<string>(),children=new Map<string,string[]>(),units=new Map<string,string[]>();
+ for(const map of [desktop,mobile])for(const[id,entry]of Object.entries(map))if(entry.parentId){const list=children.get(entry.parentId)??[];list.push(id);children.set(entry.parentId,list);}
+ for(const node of getCanvasNodes(content,page)){const owner=blockOwner(node.id,pageId);if(owner){const list=units.get(owner)??[];list.push(node.id);units.set(owner,list);}}
+ // One visited queue closes over data units AND both viewport graphs without repeated whole-graph scans.
+ const queue=[rootId];for(let cursor=0;cursor<queue.length;cursor++){const node=queue[cursor];if(nodes.has(node))continue;nodes.add(node);const owner=blockOwner(node,pageId);if(!owner)fail('This box contains a built-in functional unit that cannot be copied independently. Nothing was changed.');if(!ids.has(owner)){ids.add(owner);queue.push(...(units.get(owner)??[]));}queue.push(...(children.get(node)??[]));}
+ const blocks=page.blocks.filter(block=>ids.has(block.id));if(!blocks.some(block=>`block:${block.id}`===rootId))fail('The selected custom box no longer exists.');
+ const pick=(map:CanvasNodeMap)=>Object.fromEntries([...nodes].map(id=>[id,structuredClone(map[id])])) as CanvasNodeMap;
+ const styles=Object.fromEntries(Object.entries(content.contentOverrides?.styles??{}).filter(([key])=>ids.has(blockOwner(`canvas:${key}`,pageId)??'')));
+ const inlineStyles=Object.fromEntries(Object.entries(content.contentOverrides?.inlineStyles??{}).filter(([key])=>key.startsWith(`block:${pageId}:`)&&ids.has(key.split(':')[2])));
+ const designIds=new Set(blocks.flatMap(block=>block.type==='link'&&block.buttonDesignId?[block.buttonDesignId]:[]));const buttonDesigns=(content.buttonDesigns??[]).filter(design=>designIds.has(design.id));if(buttonDesigns.length!==designIds.size)fail('A button design used by this box is no longer available.');
+ const data={blocks,styles,inlineStyles,buttonDesigns};const assets=[...assetSources(data)];const text=JSON.stringify([data,content.design?.bodyFontId,content.design?.headingFontId,content.design?.mobileDesign?.bodyFontId,content.design?.mobileDesign?.headingFontId]);for(const font of content.fonts??[])if(text.includes(`"${font.id}"`))assets.push(font.src);
+ if(assets.length>100)fail('This box uses too many assets to verify in one paste. Copy a smaller box.');
+ if(assets.some(src=>/^(?:data:|blob:)/.test(src)))fail('Upload the temporary artwork before copying this box.');
+ return structuredClone({sourceBinding:binding(content),pageId,rootId,blocks,desktop:pick(desktop),mobile:pick(mobile),styles,inlineStyles,buttonDesigns,assets:[...new Set(assets)]});
+}
+export function frameClipboardIsCurrent(content:OwnerContent,clipboard:FrameClipboard){return binding(content)===clipboard.sourceBinding;}
+/** Builds and validates a new draft without mutating caller input. Caller commits once for Undo. */
+export function pasteFrameClipboard(content:OwnerContent,pageId:string,clipboard:FrameClipboard,options:{newId:()=>string;verifiedAssets:ReadonlySet<string>}):{content:OwnerContent;clipboard:FrameClipboard;rootId:string}{
+ if(!frameClipboardIsCurrent(content,clipboard))fail('The draft changed after Copy box. Copy the box again before pasting.');
+ if(clipboard.assets.some(src=>!options.verifiedAssets.has(src)))fail('A required photo, font or document has not been verified as available. Nothing was pasted.');
+ const draft=structuredClone(content),page=draft.pages.find(p=>p.id===pageId&&!p.trashedAt);if(!page)fail('Choose an available destination page.');
+ const occupied=new Set<string>();const collectIds=(value:unknown)=>{if(Array.isArray(value))value.forEach(collectIds);else if(value&&typeof value==='object')for(const[key,item]of Object.entries(value)){if(key==='id'&&typeof item==='string')occupied.add(item);else collectIds(item);}};collectIds(draft);const fresh=()=>{const id=options.newId();if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(id)||occupied.has(id))fail('A fresh box identity could not be created. Nothing was pasted.');occupied.add(id);return id;};
+ const ids=new Map(clipboard.blocks.map(block=>[block.id,fresh()]));const faqIds=new Map<string,string>();for(const block of clipboard.blocks)if(block.type==='faq')for(const item of block.items)faqIds.set(`${block.id}:${item.id}`,fresh());
+ const designs=new Map(clipboard.buttonDesigns.map(design=>[design.id,fresh()]));
+ const mapNode=(id:string):string=>{if(id.startsWith('block:'))return ids.has(id.slice(6))?`block:${ids.get(id.slice(6))}`:id;const prefix=`canvas:layout.block:${clipboard.pageId}:`;if(!id.startsWith(prefix))return id;const[old,...parts]=id.slice(prefix.length).split(':');if(!ids.has(old))return id;let suffix=parts.join(':');for(const[key,value]of faqIds)if(key.startsWith(`${old}:`)){const original=key.slice(old.length+1);if(suffix===`faq-${original}-question`)suffix=`faq-${value}-question`;else if(suffix===`faq-${original}-answer`)suffix=`faq-${value}-answer`;}return `canvas:layout.block:${pageId}:${ids.get(old)}${suffix?`:${suffix}`:''}`;};
+ const mapStyle=(key:string)=>mapNode(`canvas:${key}`).slice(7);
+ const mapRich=(key:string)=>{const parts=key.split(':');return `block:${pageId}:${ids.get(parts[2])}:${parts.slice(3).join(':')}`;};
+ const layout={desktop:resolveCanvasLayout(draft,page,false),mobile:resolveCanvasLayout(draft,page,true),mobileInitialized:true};page.canvasLayout=layout;
+ for(const block of clipboard.blocks){const copy=structuredClone(block);copy.id=ids.get(block.id)!;delete copy.parentId;delete copy.mobileParentId;delete copy.mobileOrder;if(copy.type==='faq')copy.items=copy.items.map(item=>({...item,id:faqIds.get(`${block.id}:${item.id}`)!}));if(copy.type==='link'&&copy.buttonDesignId)copy.buttonDesignId=designs.get(copy.buttonDesignId)!;page.blocks.push(copy);}
+ for(const mode of ['desktop','mobile'] as const){const target=mode==='desktop'?layout.desktop:layout.mobile!;const map=clipboard[mode];let order=Math.max(-1,...Object.values(target).filter(entry=>entry.parentId===null).map(entry=>entry.order))+1;for(const[id,entry]of Object.entries(map)){const copy=structuredClone(entry);if(copy.parentId&&Object.hasOwn(map,copy.parentId))copy.parentId=mapNode(copy.parentId);else{copy.parentId=null;copy.order=order++;if(copy.placement)copy.placement.matrix={...copy.placement.matrix,e:0,f:0};}target[mapNode(id)]=copy;}}
+ draft.contentOverrides??={};draft.contentOverrides.styles??={};draft.contentOverrides.inlineStyles??={};for(const[key,value]of Object.entries(clipboard.styles))draft.contentOverrides.styles[mapStyle(key)]=structuredClone(value);for(const[key,value]of Object.entries(clipboard.inlineStyles))draft.contentOverrides.inlineStyles[mapRich(key)]=structuredClone(value);
+ if(clipboard.buttonDesigns.length){draft.buttonDesigns??=[];for(const design of clipboard.buttonDesigns)draft.buttonDesigns.push({...structuredClone(design),id:designs.get(design.id)!});}
+ assertOwnerContent(draft);return {content:draft,clipboard:{...structuredClone(clipboard),sourceBinding:binding(draft)},rootId:mapNode(clipboard.rootId)};
+}
+
+function captureCommissionClipboard(content:OwnerContent,pageId:string):FrameClipboard{
+ const sourcePage=content.pages.find(p=>p.id===pageId&&!p.trashedAt);if(!sourcePage||sourcePage.builtinKey!=='commissions')fail('Select the complete commission status box on the Commissions page.');
+ const draft=structuredClone(content),page=draft.pages.find(p=>p.id===pageId)!;let suffix=0,id='copied-commission-status';while(page.blocks.some(block=>block.id===id))id=`copied-commission-status-${++suffix}`;
+ const root='canvas:layout.commissions.status',newRoot=`block:${id}`;
+ const pairs=[['template-text:commissions.statusLabel','status-label','commissions.statusLabel'],['canvas:layout.commissions.statusValue','status-value','layout.commissions.statusValue'],['canvas:layout.commissions.statusNote','status-note','layout.commissions.statusNote'],['canvas:layout.commissions.requestButton','status-action','layout.commissions.requestButton'],['template-text:commissions.requestButton','status-action-label','commissions.requestButton']] as const;
+ const oldNodes=getCanvasNodes(content,sourcePage);const block:PageBlock={...createCommissionStatusBlock(content,id),...(content.contentOverrides?.styles?.['layout.commissions.status']?{appearance:structuredClone(content.contentOverrides.styles['layout.commissions.status'])}:{})};page.blocks.push(block);
+ const nodeMap=new Map<string,string>([[root,newRoot],...pairs.map(([old,part])=>[old,`canvas:layout.block:${pageId}:${id}:${part}`] as [string,string])]);
+ const maps={desktop:resolveCanvasLayout(content,sourcePage,false),mobile:resolveCanvasLayout(content,sourcePage,true)};page.canvasLayout={desktop:resolveCanvasLayout(draft,page,false),mobile:resolveCanvasLayout(draft,page,true),mobileInitialized:true};
+ for(const mode of ['desktop','mobile'] as const){const original=maps[mode],next=page.canvasLayout[mode]!;if(original[root]?.removed)fail('Restore the complete commission status unit before copying it.');for(const[old,newId]of nodeMap){const entry=original[old];if(!entry)continue;const descriptor=oldNodes.find(node=>node.id===old);if(old!==root&&(entry.removed||entry.parentId!==descriptor?.defaultParentId||entry.order!==descriptor?.defaultOrder))fail('This commission status unit has separately moved or removed pieces. Restore its complete structure before copying.');next[newId]={...structuredClone(entry),parentId:entry.parentId?(nodeMap.get(entry.parentId)??entry.parentId):null};}
+  const members=descendants(original,root);for(const member of members){if(nodeMap.has(member))continue;if(!blockOwner(member,pageId))fail('This status box contains an unsupported built-in unit. Nothing was copied.');next[member]={...structuredClone(original[member]),parentId:original[member].parentId?(nodeMap.get(original[member].parentId!)??original[member].parentId):null};}}
+ draft.contentOverrides??={};draft.contentOverrides.styles??={};draft.contentOverrides.inlineStyles??={};for(const[old,part,style]of pairs){void old;const value=content.contentOverrides?.styles?.[style];if(value)draft.contentOverrides.styles[`layout.block:${pageId}:${id}:${part}`]=structuredClone(value);}
+ for(const[old,field]of [['template:commissions.statusLabel','label'],['template:commissions.requestButton','actionLabel']] as const){const record=content.contentOverrides?.inlineStyles?.[old];if(record)draft.contentOverrides.inlineStyles[`block:${pageId}:${id}:${field}`]=structuredClone(record);}
+ const clip=captureFrameClipboard(draft,pageId,newRoot);clip.sourceBinding=binding(content);return clip;
+}

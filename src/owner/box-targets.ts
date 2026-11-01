@@ -3,7 +3,7 @@ import { isCanvasStyleKey, canvasTargetLabel } from "./canvas-target-registry";
 import { TEXT_FIELDS, IMAGE_FIELDS, LINK_FIELDS } from "./site-design";
 
 /** Explicit renderer contract, not a promise to transform arbitrary DOM. */
-export const BOX_BLOCK_TYPES: readonly PageBlock["type"][] = ["section", "text", "heading", "image", "list", "link", "feature", "faq", "divider", "spacer", "canvas-space"];
+export const BOX_BLOCK_TYPES: readonly PageBlock["type"][] = ["commission-status", "section", "text", "heading", "image", "list", "link", "feature", "faq", "divider", "spacer", "canvas-space"];
 export const BOX_CORE_KEYS = ["home.eyebrow", "home.title", "home.description", "home.caption", "prices.intro"] as const;
 export const NON_BOX_TEMPLATE_TEXT_KEYS = ["contact.namePlaceholder", "contact.emailPlaceholder", "contact.messagePlaceholder"];
 export function boxStyleKeyForTarget(target: string | null): string | null {
