@@ -6,10 +6,11 @@ import {decodeCloudFile,type CloudFile} from './cloud-files-model';
 import {WEBSITE_WORKSPACE} from './website-workspace-config';
 import {requestWebsiteAsset} from './beta-assets-client';
 import {prepareWebsiteImport,remapWebsiteImport} from './website-transfer';
+import {galleryTransferAssetIds,remapGalleryTransfer,galleryTransferContent} from './gallery-transfer';
 import type {OwnerContent} from './model';
 
 type Asset={file:CloudFile;generation:string;publicationRevision:number;destinationId:string};
-export type WebsiteImportReview={revision:number;assetCount:number;totalBytes:number;pageCount:number;complete:(signal?:AbortSignal)=>Promise<OwnerContent>};
+export type WebsiteImportReview={noPublication?:true;revision:number;assetCount:number;totalBytes:number;pageCount:number;complete:(signal?:AbortSignal)=>Promise<OwnerContent|null>};
 const limit=12*1024*1024;
 function decodeAsset(raw:unknown,id:string):{file:CloudFile;generation:string}{
  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('Website asset metadata could not be read.');
@@ -20,14 +21,18 @@ function decodeAsset(raw:unknown,id:string):{file:CloudFile;generation:string}{
  return{file,generation:result.generation};
 }
 /** No read occurs until the owner explicitly requests the main website review. */
-export async function reviewMainWebsiteImport(signal?:AbortSignal):Promise<WebsiteImportReview>{
+export async function reviewMainWebsiteImport(signal?:AbortSignal,scope:'design'|'gallery'='design'):Promise<WebsiteImportReview>{
  if(WEBSITE_WORKSPACE!=='beta')throw Error('Design import is only available in the isolated beta builder.');
  const session=await taylorOwnerSession();const current=()=>{signal?.throwIfAborted();session.assertCurrent();};current();
- const sourceRef=doc(session.db,'site/published');const source=await getDoc(sourceRef);current();if(!source.exists())throw Error('The main website has no published design to copy.');
- const published=decodePublishedOwnerSnapshot(source.data());const prepared=prepareWebsiteImport(published.content);
+ const sourceRef=doc(session.db,'site/published');const source=await getDoc(sourceRef);current();if(!source.exists()){
+  if(scope!=='gallery')throw Error('The main website has no published design to copy.');
+  return {noPublication:true,revision:0,assetCount:0,totalBytes:0,pageCount:0,async complete(nextSignal){nextSignal?.throwIfAborted();current();const latest=await getDoc(sourceRef);nextSignal?.throwIfAborted();current();if(latest.exists())throw Error('A Live publication now exists. Start a new gallery review.');return null;}};
+ }
+ const published=decodePublishedOwnerSnapshot(source.data());const prepared=scope==='gallery'?{content:galleryTransferContent(published.content),assetIds:[] as string[]}:prepareWebsiteImport(published.content);
+ if(scope==='gallery')prepared.assetIds=galleryTransferAssetIds(prepared.content);
  const assets:Asset[]=[];
  // Preflight EVERY asset before creating any destination bytes. Never silently omit one.
- for(const id of prepared.assetIds){current();const raw=await requestWebsiteAsset({action:'inspectMain',fileId:id},signal,session) as {publicationRevision?:number};const asset=decodeAsset(raw,id);current();if(raw.publicationRevision!==published.revision)throw Error('The main publication changed during asset review. Start a new review.');assets.push({...asset,publicationRevision:published.revision,destinationId:crypto.randomUUID()});}
+ for(const id of prepared.assetIds){current();const raw=await requestWebsiteAsset({action:'inspectMain',fileId:id},signal,session) as {publicationRevision?:number};const asset=decodeAsset(raw,id);current();if(scope==='gallery'&&asset.file.kind!=='photo')throw Error('A gallery image is not a ready photo. No gallery was replaced.');if(raw.publicationRevision!==published.revision)throw Error('The main publication changed during asset review. Start a new review.');assets.push({...asset,publicationRevision:published.revision,destinationId:crypto.randomUUID()});}
  const sourcePayload=JSON.stringify(source.data());
  const sourceUnchanged=async()=>{current();const latest=await getDoc(sourceRef);current();if(!latest.exists()||JSON.stringify(latest.data())!==sourcePayload)throw Error('The main published design changed. Start a new review; no beta draft has been replaced.');};
  return{revision:published.revision,assetCount:assets.length,totalBytes:assets.reduce((n,a)=>n+a.file.bytes,0),pageCount:prepared.content.pages.length,async complete(nextSignal){
@@ -35,6 +40,6 @@ export async function reviewMainWebsiteImport(signal?:AbortSignal):Promise<Websi
   for(const asset of assets){nextSignal?.throwIfAborted();current();const copied=decodeAsset(await requestWebsiteAsset({action:'copyFromMain',sourceId:asset.file.id,destinationId:asset.destinationId,sourceRevision:asset.file.revision,generation:asset.generation,publicationRevision:asset.publicationRevision},nextSignal??signal,session),asset.destinationId);current();
    if(copied.file.kind!==asset.file.kind||copied.file.bytes!==asset.file.bytes||copied.file.contentType!==asset.file.contentType||copied.file.width!==asset.file.width||copied.file.height!==asset.file.height)throw Error('A copied asset did not match the reviewed design. No beta draft was replaced.');mapping.set(asset.file.id,asset.destinationId);
   }
-  await sourceUnchanged();nextSignal?.throwIfAborted();return remapWebsiteImport(prepared.content,mapping);
+  await sourceUnchanged();nextSignal?.throwIfAborted();return scope==='gallery'?remapGalleryTransfer(prepared.content,mapping):remapWebsiteImport(prepared.content,mapping);
  }};
 }
