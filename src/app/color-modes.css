@@ -210,11 +210,11 @@ html[data-tmc-theme-pending="light"] { background:#fff; color-scheme:light; }
 /* Distinct accessible action variants within the four-color dark palette. */
 [data-owner-portal][data-color-mode="dark"] {
   --owner-button-primary-line:#7f0011;
-  --owner-button-danger-bg:#d0d0d0;
-  --owner-button-danger-ink:#7f0011;
-  --owner-button-danger-line:#d0d0d0;
-  --owner-button-danger-hover:#d0d0d0;
-  --owner-button-danger-active:#d0d0d0;
+  --owner-button-danger-bg:#a42532;
+  --owner-button-danger-ink:#fff;
+  --owner-button-danger-line:#a42532;
+  --owner-button-danger-hover:#831b25;
+  --owner-button-danger-active:#6e1620;
   --owner-button-selected-line:#00b1f5;
 }
 
