@@ -1,3 +1,4 @@
+import { STUDIO_OWNER_UID, isStudioOwnerUid } from "./studio-owner-identity";
 import { CONSTRUCTION_WHIMSY_DOCUMENT, decodeConstructionWhimsy, defaultConstructionWhimsy, type ConstructionWhimsy } from "./construction-whimsy";
 import { decodePrivateGallery } from "./private-gallery";
 import { decodeCloudFile, cloudReferencedAssetIds } from "./cloud-files-model";
@@ -128,10 +129,11 @@ function cloudError(error: unknown, operation: "read" | "write"): Error {
 export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore; auth: Auth; ownerUid: string }): FirebaseOwnerStore {
   let disposed = false;
   const sessionUser = auth.currentUser;
+  const actorUid = sessionUser?.uid;
   const cleanups = new Set<() => void>();
   const reference = doc(db, OWNER_CLOUD_DOCUMENT);
   const requireOwner = () => {
-    if (disposed || !ownerUid || !auth.currentUser || auth.currentUser !== sessionUser || auth.currentUser.uid !== ownerUid) throw new OwnerStorageError("unavailable", "Your owner session ended. Sign in again to open the private cloud workspace.");
+    if (disposed || ownerUid !== STUDIO_OWNER_UID || !isStudioOwnerUid(actorUid) || !auth.currentUser || auth.currentUser !== sessionUser || auth.currentUser.uid !== actorUid) throw new OwnerStorageError("unavailable", "Your owner session ended. Sign in again to open the private cloud workspace.");
   };
   const confirmOwner = async () => {
     requireOwner();
@@ -298,7 +300,7 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
     subscribe(callback) {
       requireOwner();
       if (typeof window === "undefined") return () => {};
-      const changed = () => { if (!disposed && auth.currentUser === sessionUser && auth.currentUser?.uid === ownerUid) callback(); };
+      const changed = () => { if (!disposed && auth.currentUser === sessionUser && auth.currentUser?.uid === actorUid) callback(); };
       window.addEventListener(CLOUD_CHANGED, changed);
       window.addEventListener("focus", changed);
       let channel: BroadcastChannel | undefined;

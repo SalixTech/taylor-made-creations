@@ -1,4 +1,5 @@
 "use client";
+import { isStudioOwnerUid } from "./studio-owner-identity";
 
 import { AccountThemeSync } from "@/components/AccountThemeSync";
 import { acceptHubWindowSignIn, revokeHubWindows, assertHubWindowSession } from "@/client-hub/window-session";
@@ -62,6 +63,7 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
           if (!user) { setPassword(""); setState({ status: "signed-out" }); return; }
           setState({ status: "checking" });
           const transition = signInTransition.current;
+          const actorUid = user.uid;
           const verification = (async () => { if (transition) { await transition.settled; if (!transition.accepted) throw new Error("Sign-in was not accepted."); } if (!active || request !== generation.current || signingOut.current) return; await verifyOwnerSession(client, user); })();
           void verification.then(() => {
             if (!active || request !== generation.current || signingOut.current) return;
@@ -69,7 +71,7 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
             storeRef.current = store;
             setPassword("");
             setMessage(null);
-            setState({ status: "ready", store, userEmail: user.email ?? "Owner account", recoveryIdentity: { projectId: config.options.projectId!, ownerUid: client.ownerUid, assertCurrent: () => { assertHubWindowSession("owner", user.uid); if (!active || request !== generation.current || signingOut.current || client.auth.currentUser !== user || user.uid !== client.ownerUid) throw new Error("Your owner session changed. Sign in again."); } }, sessionKey: request });
+            setState({ status: "ready", store, userEmail: user.email ?? "Owner account", recoveryIdentity: { projectId: config.options.projectId!, ownerUid: user.uid, assertCurrent: () => { assertHubWindowSession("owner", user.uid); if (!active || request !== generation.current || signingOut.current || client.auth.currentUser !== user || user.uid !== actorUid) throw new Error("Your owner session changed. Sign in again."); } }, sessionKey: request });
           }).catch(error => {
             if (!active || request !== generation.current || signingOut.current) return;
             clearWorkspace();
@@ -90,7 +92,7 @@ export function FirebaseOwnerGate({ children }: { children: (session: FirebaseOw
   }, [clearWorkspace]);
 
   useEffect(() => {
-    const lock = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.role !== "owner" || detail.uid !== clientRef.current?.ownerUid) return; ++authIntent.current; ++generation.current; clearWorkspace(); setPassword(""); setState({ status: "session-error", message: "Signed out in another window. Your private workspace is locked.", canSignOut: true }); };
+    const lock = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.role !== "owner") return; const currentUid = clientRef.current?.auth.currentUser?.uid; if (currentUid ? detail.uid !== currentUid : !(loginPending.current || signInTransition.current) || !isStudioOwnerUid(detail.uid)) return; if (signingOut.current) return; if (!clientRef.current?.auth.currentUser && !loginPending.current && !signInTransition.current) return; ++authIntent.current; ++generation.current; clearWorkspace(); setPassword(""); setState({ status: "session-error", message: "Signed out in another window. Your private workspace is locked.", canSignOut: true }); };
     window.addEventListener("tmc-hub-session-lock", lock); return () => window.removeEventListener("tmc-hub-session-lock", lock);
   }, [clearWorkspace]);
 

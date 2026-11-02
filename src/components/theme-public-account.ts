@@ -1,4 +1,6 @@
 "use client";
+import { STUDIO_OWNER_UID, isStudioOwnerUid } from "@/owner/studio-owner-identity";
+
 import type { Auth, User } from "firebase/auth";
 import type { ThemeAccountRole } from "./theme-settings-client";
 import { THEME_AREAS, type ThemeModes } from "./theme-settings";
@@ -44,9 +46,10 @@ export function watchPublicThemeAccount(pathname: string, receive: (account: Pub
       const config = owner.readOwnerFirebaseConfig(); if (config.status !== "ready") throw new Error("Owner theme is unavailable.");
       const connection = owner.getOwnerFirebaseClient(config); auth = connection.auth;
       verify = async user => {
-        if (user.uid !== config.ownerUid) throw new Error("Owner identity changed.");
+        const actorUid = user.uid;
+        if (config.ownerUid !== STUDIO_OWNER_UID || !isStudioOwnerUid(actorUid)) throw new Error("Owner identity changed.");
         const { assertHubWindowSession } = await import("@/client-hub/window-session");
-        const assertCurrent = () => { if (auth.currentUser !== user || user.uid !== config.ownerUid) throw new Error("Owner identity changed."); assertHubWindowSession("owner", user.uid); };
+        const assertCurrent = () => { if (auth.currentUser !== user || user.uid !== actorUid) throw new Error("Owner identity changed."); assertHubWindowSession("owner", user.uid); };
         assertCurrent(); await user.reload(); assertCurrent(); await user.getIdToken(true); assertCurrent();
         return { account: { role, accountKey: user.uid, uid: user.uid, assertCurrent } };
       };

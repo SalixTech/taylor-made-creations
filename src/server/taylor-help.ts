@@ -1,5 +1,6 @@
+import { isStudioOwnerUid } from "@/owner/studio-owner-identity";
 import "server-only";
-import { TaylorApiError, TAYLOR_OWNER_UID } from "./taylor-auth";
+import { TaylorApiError } from "./taylor-auth";
 
 // Confirmed by the user. Never accept a recipient from a request or browser setting.
 export const TAYLOR_HELP_RECIPIENT: string | null = "tobias.wolf@salixtechnologies.com";
@@ -53,15 +54,16 @@ let latestAttemptAt = 0;
 
 /** One fixed-purpose email, only after the route has cryptographically verified Taylor. */
 export async function sendTaylorHelp(uid: string, requestId: string): Promise<Accepted> {
-  if (uid !== TAYLOR_OWNER_UID) throw new TaylorApiError(403, "This account does not have owner access.");
+  if (!isStudioOwnerUid(uid)) throw new TaylorApiError(403, "This account does not have owner access.");
   if (!UUID.test(requestId)) throw new TaylorApiError(400, "A valid help request identifier is required.");
   const env = environment();
   if (!helpConfiguration(env).configured) throw new TaylorApiError(503, "Help email is not connected yet. No email has been sent. Salix needs to finish the email setup.");
   const now = Date.now();
   for (const [key, value] of recent) if (now - value.acceptedAt > 86_400_000) recent.delete(key);
-  const previous = recent.get(requestId);
+  const receiptKey = `${uid}:${requestId}`;
+  const previous = recent.get(receiptKey);
   if (previous) return previous.result;
-  const existing = pending.get(requestId);
+  const existing = pending.get(receiptKey);
   if (existing) return existing;
   if (now - latestAcceptedAt < 60_000) throw new TaylorApiError(429, "A help email was just accepted. Please wait one minute before sending another.", Math.ceil((60_000 - (now - latestAcceptedAt)) / 1000));
   if (pending.size || now - latestAttemptAt < 5_000) throw new TaylorApiError(429, "A help request is already being checked. Please wait a few seconds and try again.", 5);
@@ -80,9 +82,9 @@ export async function sendTaylorHelp(uid: string, requestId: string): Promise<Ac
     try { result = await response.json(); } catch { /* An invalid receipt is not success. */ }
     if (!result || typeof result !== "object" || !("id" in result) || typeof result.id !== "string" || !result.id.trim()) throw new TaylorApiError(502, "We could not confirm whether the email was accepted. Try again here to safely retry the same help request.");
     latestAcceptedAt = Date.now();
-    recent.set(requestId, { acceptedAt: latestAcceptedAt, result: accepted });
+    recent.set(receiptKey, { acceptedAt: latestAcceptedAt, result: accepted });
     return accepted;
   })();
-  pending.set(requestId, operation);
-  try { return await operation; } finally { pending.delete(requestId); }
+  pending.set(receiptKey, operation);
+  try { return await operation; } finally { pending.delete(receiptKey); }
 }
