@@ -8,7 +8,8 @@ import {commissionStatusRequestHref} from "@/owner/commission-status-block";
 import {ButtonPresentation,buttonPresentationProps} from "./ButtonPresentation";
 import type {ButtonAppearance} from "@/owner/button-import";
 import { useCanvasSceneNode, canvasNodeAttributes } from "./CanvasSceneContext";
-import {CanvasScene,type CanvasMarker,type ForceCanvasSlot} from "./CanvasScene";
+import {resolveCanvasLayout} from "@/owner/canvas-layout";
+import {CanvasScene,CanvasFlowSlot,type CanvasMarker,type ForceCanvasSlot} from "./CanvasScene";
 import { PhotoLoading } from "./PhotoLoading";
 
 import {LayoutAppearance} from "./LayoutAppearance";
@@ -38,6 +39,7 @@ import { DropdownChevron } from "./DropdownChevron";
 import { getHeaderNavigation } from "@/owner/header-navigation";
 import { getPreviewPage, OWNER_PREVIEW_ROOT, resolveSiteDestination } from "@/owner/preview-model";
 import styles from "@/owner/OwnerSitePreview.module.css";
+import flowStyles from "./SiteContent.module.css";
 import { getTemplateText, getTemplateImage, getTemplateLink, getSiteThemeStyle, getSiteThemeAttributes, resolveSiteDesign, getElementAppearanceStyle, getElementAppearanceAttributes, getImageAppearanceStyle, getImageFrameStyle, type ElementAppearance } from "@/owner/site-design";
 
 import {useMobileSiteLayout} from "@/owner/use-mobile-site-layout";
@@ -73,12 +75,15 @@ function useDestination(content: OwnerContent, href: string) {
 }
 /** Hub availability is not editable text. Existing typography remains usable,
  * while an item-level color wins over older nested template/run colors. */
-function CommissionStatusValue({content,styleKey}:{content:OwnerContent;styleKey:string}) {
+function CommissionStatusValue({content,styleKey,perCopyAlignment=false}:{content:OwnerContent;styleKey:string;perCopyAlignment?:boolean}) {
   const {mobileLayout}=useContext(RenderContext),mobile=!!mobileLayout;
   const field=commissionStatusTemplateKey(content.site.commissionStatus),value=content.site.commissionStatus;
   const sourceAppearance=resolveElementAppearance(content.contentOverrides?.styles?.[field],mobile);
-  const color=resolveElementAppearance(content.contentOverrides?.styles?.[styleKey],mobile)?.textColor;
-  const appearance=color?{...sourceAppearance,textColor:undefined}:sourceAppearance;
+  const ownAppearance=resolveElementAppearance(content.contentOverrides?.styles?.[styleKey],mobile),color=ownAppearance?.textColor;
+  // Only an explicit per-copy alignment overrides nested template alignment.
+  // Original banners and copies without an override retain their exact style.
+  const align=perCopyAlignment?ownAppearance?.align:undefined;
+  const appearance=color||align?{...sourceAppearance,...(color?{textColor:undefined}:{}),...(align?{align:undefined}:{})}:sourceAppearance;
   const savedRuns=getInlineTextRuns(content,`template:${field}`,mobile);
   const runs=savedRuns.map(run=>run.text).join("")===value?savedRuns:[{text:value,style:undefined}];
   return <LayoutAppearance appearance={appearance} inline><span data-owner-status-value="true">{runs.map((run,index)=>{
@@ -173,7 +178,9 @@ function buildIntro({content,page,eyebrow,title,children,editTarget="page"}:Intr
   const appearance = resolveElementAppearance(page.titleAppearance ?? content.contentOverrides?.styles?.[`${page.builtinKey}.title`],!!mobileLayout);
   const boxed = validElementBox(appearance?.box);
   const titleAppearance = boxed ? { ...appearance, widthPercent: undefined, heightPercent: undefined } : appearance;
-  return <CanvasTarget content={content} styleKey={`layout.page:${page.id}:intro`}><div className="page-intro" data-owner-content-editor={editTarget}><p className="eyebrow">{eyebrow}</p><h1 {...appearanceProps(titleAppearance)}><GeometryBox inline appearance={appearance} box={appearance?.box} target="page-title" editable={mode === "editor" && editable}><span {...editorTarget(mode === "editor" && editable && !boxed, "page-title", "page title")}>{<InlineLinkedText content={content} text={title} fieldId={`page:${page.id}:title`}/>}</span></GeometryBox></h1>{children && <div className="intro-copy">{children}</div>}</div></CanvasTarget>;
+  const followsTitle=Object.values(resolveCanvasLayout(content,page,!!mobileLayout)).some(entry=>!entry.removed&&entry.flowAttachment==="after-page-title");
+  const titleNode=<h1 {...appearanceProps(titleAppearance)}><GeometryBox inline appearance={appearance} box={appearance?.box} target="page-title" editable={mode === "editor" && editable}><span {...editorTarget(mode === "editor" && editable && !boxed, "page-title", "page title")}><InlineLinkedText content={content} text={title} fieldId={`page:${page.id}:title`}/></span></GeometryBox></h1>;
+  return <CanvasTarget content={content} styleKey={`layout.page:${page.id}:intro`}><div className="page-intro" style={followsTitle?{maxWidth:"none"}:undefined} data-owner-content-editor={editTarget}><p className="eyebrow">{eyebrow}</p>{followsTitle?<div className={flowStyles.titleStatusRow}>{titleNode}<CanvasFlowSlot/></div>:titleNode}{children && <div className="intro-copy" style={followsTitle?{maxWidth:750}:undefined}>{children}</div>}</div></CanvasTarget>;
 }
 
 function PreviewImage({ content, src, alt, hero = false, imageStyle, appearance, layoutAppearance = true }: { content:OwnerContent; src: string; alt: string; hero?: boolean; imageStyle?: CSSProperties; appearance?: ElementAppearance; layoutAppearance?: boolean }) {
@@ -221,7 +228,7 @@ function buildContentBlocks({blocks,content,presentation}:BlocksProps,{mode,edit
     const element=(()=>{
       if(block.type==="commission-status"){
        const labelId=`commission-status-${pageId}-${block.id}`,field=(key:string)=>`block:${pageId}:${block.id}:${key}`;
-       if(block.textOnly)return <div {...edit} className={styles.block}>{<CanvasTarget content={content} styleKey={`layout.block:${pageId}:${block.id}:status-value`} textDefaultsFrom="layout.commissions.statusValue"><h2 className={`status-text-value ${content.site.commissionStatus==='Closed'?'status-closed':content.site.commissionStatus==='Waitlist'?styles.waitlist:'status-available'}`} style={{margin:0}}><CommissionStatusValue content={content} styleKey={`layout.block:${pageId}:${block.id}:status-value`}/></h2></CanvasTarget>}</div>;
+       if(block.textOnly)return <div {...edit} className={styles.block}>{<CanvasTarget content={content} styleKey={`layout.block:${pageId}:${block.id}:status-value`} textDefaultsFrom="layout.commissions.statusValue"><h2 className={`status-text-value ${content.site.commissionStatus==='Closed'?'status-closed':content.site.commissionStatus==='Waitlist'?styles.waitlist:'status-available'}`} style={{margin:0}}><CommissionStatusValue perCopyAlignment content={content} styleKey={`layout.block:${pageId}:${block.id}:status-value`}/></h2></CanvasTarget>}</div>;
        return <section {...edit} className="status-panel" aria-labelledby={labelId}><div className="status-summary">{child(block,'status-label',<span id={labelId} className="status-label"><InlineLinkedText content={content} text={block.label} fieldId={field('label')} links={false}/></span>)}{child(block,'status-value',<h2 className={content.site.commissionStatus==='Closed'?'status-closed':content.site.commissionStatus==='Waitlist'?styles.waitlist:'status-available'}><TemplateLeaf content={content} field={content.site.commissionStatus==='Closed'?'commissions.statusClosed':content.site.commissionStatus==='Waitlist'?'commissions.statusWaitlist':content.site.commissionStatus==='Open!'?'commissions.statusOpen':'commissions.statusOpeningSoon'}/></h2>)}</div>{child(block,'status-note',<p className="status-copy"><InlineLinkedText content={content} text={block.note} fieldId={field('note')}/></p>)}<CommissionStatusAction content={content} accessibleLabel={block.actionLabel} target={`canvas:layout.block:${pageId}:${block.id}:status-action`}>{child(block,'status-action-label',<span><InlineLinkedText content={content} text={block.actionLabel} fieldId={field('actionLabel')} links={false}/></span>)}</CommissionStatusAction></section>;
       }
       if(block.type==="section")return <section {...edit} className={styles.block} data-owner-section-frame={block.id}>{block.heading&&child(block,"heading",<h2><InlineLinkedText content={content} text={block.heading} fieldId={`block:${pageId}:${block.id}:heading`}/></h2>)}<div data-owner-section-id={mode==="editor"&&editable?block.id:undefined} style={{minHeight:mode==="editor"&&editable?64:undefined}}>{render(block.id,new Set([...ancestors,block.id]))}</div></section>;

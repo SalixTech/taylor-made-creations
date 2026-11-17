@@ -1,0 +1,3 @@
+/* Applied only when a status explicitly follows the page title. */
+.titleStatusRow{display:flex;align-items:baseline;flex-wrap:wrap;gap:12px 24px;margin-bottom:24px;}
+.titleStatusRow>h1{flex:0 1 auto;min-width:0;max-width:100%;margin-bottom:0!important;overflow-wrap:anywhere;}

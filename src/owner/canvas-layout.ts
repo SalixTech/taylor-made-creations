@@ -1,9 +1,11 @@
 import type {OwnerContent,OwnerPage,PublicOwnerContent,ValidationIssue} from './model';
+import {resolveElementAppearance} from './appearance';
+import {validElementBox} from './box-geometry';
 import {getCanvasNodes} from './canvas-node-inventory';
 export {getCanvasNodes} from './canvas-node-inventory';
-export type CanvasNodeDescriptor={id:string;styleTarget:string;defaultParentId:string|null;defaultOrder:number;canContain:boolean;movable:boolean;parentLocked?:boolean;label:string};
+export type CanvasNodeDescriptor={id:string;styleTarget:string;defaultParentId:string|null;defaultOrder:number;canContain:boolean;movable:boolean;parentLocked?:boolean;supportsTitleFlow?:boolean;label:string};
 export type CanvasPlacement={matrix:{a:number;b:number;c:number;d:number;e:number;f:number};widthPx:number;heightPx:number;aspectLocked?:boolean;contentOffset?:{xPx:number;yPx:number}};
-export type CanvasNodeEntry={parentId:string|null;order:number;placement?:CanvasPlacement;label?:string;removed?:boolean};
+export type CanvasNodeEntry={flowAttachment?:"after-page-title";parentId:string|null;order:number;placement?:CanvasPlacement;label?:string;removed?:boolean};
 export type CanvasNodeMap=Record<string,CanvasNodeEntry>;
 export type CanvasLayout={desktop:CanvasNodeMap;mobile?:CanvasNodeMap;mobileInitialized?:boolean};
 export type CanvasScope=OwnerPage|Omit<OwnerPage,'trashedAt'>|'chrome';
@@ -42,12 +44,22 @@ export function validateCanvasLayout(value:unknown,nodes:CanvasNodeDescriptor[],
  for(const mode of ['desktop','mobile'] as const){
   if(mode==='mobile'&&!Object.hasOwn(value,mode))continue;const map=value[mode];const activeNodes=mode==='mobile'?mobileNodes:nodes,byId=new Map(activeNodes.map(node=>[node.id,node]));
   if(!plain(map)){issue(`.${mode}`,'Use a map of saved canvas nodes.');continue;}
+  const flowing=Object.entries(map).filter(([,entry])=>plain(entry)&&entry.removed!==true&&entry.flowAttachment!==undefined);
+  if(flowing.length>1)issue(`.${mode}`,'Only one status can follow this page title in a layout.');
+  if(flowing.length){const title=activeNodes.find(n=>n.id==='page-title'),savedTitle=map['page-title'];
+   if(!title)issue(`.${mode}`,'This page has no supported title flow slot.');
+   for(const [id]of flowing)if(activeNodes.some(node=>{const saved=map[node.id];return !node.parentLocked&&(plain(saved)?saved.parentId:node.defaultParentId)===id;}))issue(`.${mode}.${id}`,'Detach unrelated contents before following the title.');
+   for(const [id]of flowing)for(const node of activeNodes.filter(node=>node.defaultParentId===id&&node.parentLocked)){const child=map[node.id];if(plain(child)&&(child.removed===true||child.placement!==undefined))issue(`.${mode}.${id}`,'The live status value must remain visible in its native slot.');}
+   if(plain(savedTitle)&&(savedTitle.removed===true||savedTitle.placement!==undefined||savedTitle.parentId!==title?.defaultParentId))issue(`.${mode}`,'The page title must remain in its native slot while status follows it.');
+   const introId=title?.defaultParentId,intro=introId&&map[introId],shellId=activeNodes.find(n=>n.id===introId)?.defaultParentId,shell=shellId&&map[shellId];
+   if(plain(intro)&&(intro.removed===true||intro.placement!==undefined||intro.parentId!==shellId)||plain(shell)&&(shell.removed===true||shell.placement!==undefined||shell.parentId!==null))issue(`.${mode}`,'Title flow requires the native intro and page shell.');
+  }
   if(Object.keys(map).length>nodes.length){issue(`.${mode}`,'The layout contains unknown canvas nodes.');continue;}
   const parents=new Map(activeNodes.map(node=>[node.id,node.defaultParentId]));
   for(const [id,entry] of Object.entries(map)){
    const node=byId.get(id),at=`.${mode}.${id}`;
    if(!node){issue(at,'This canvas item no longer exists in this scope.');continue;}
-   if(!plain(entry)||!exact(entry,['parentId','order','placement','label','removed'])||!Object.hasOwn(entry,'parentId')||!Number.isSafeInteger(entry.order)||Number(entry.order)<0){issue(at,'Use an explicit parent, safe order and optional finite placement.');continue;}
+   if(!plain(entry)||!exact(entry,['parentId','order','placement','label','removed','flowAttachment'])||!Object.hasOwn(entry,'parentId')||!Number.isSafeInteger(entry.order)||Number(entry.order)<0){issue(at,'Use an explicit parent, safe order and optional finite placement.');continue;}
    if(entry.label!==undefined&&(typeof entry.label!=='string'||!entry.label.trim()||entry.label.length>120))issue(`${at}.label`,'Use a name of 1 to 120 characters.');
    if(entry.removed!==undefined&&typeof entry.removed!=='boolean')issue(`${at}.removed`,'Choose whether this piece is removed from the canvas.');
    if(entry.removed!==true&&typeof entry.parentId==='string'&&plain(map[entry.parentId])&&(map[entry.parentId] as Record<string,unknown>).removed===true)issue(`${at}.parentId`,'Move surviving contents out before removing their box.');
@@ -60,6 +72,7 @@ export function validateCanvasLayout(value:unknown,nodes:CanvasNodeDescriptor[],
    if(!node.movable&&entry.parentId!==node.defaultParentId){issue(`${at}.parentId`,'This functional item must stay in its semantic container.');continue;}
    if(entry.placement!==undefined&&entry.parentId!==null&&typeof entry.parentId==='string'&&!byId.get(entry.parentId)?.canContain&&!(node.parentLocked&&entry.parentId===node.defaultParentId))issue(`${at}.placement`,'Move this item into a container or the canvas before using detached placement. Its original semantic slot must remain unplaced.');
    if(entry.placement!==undefined&&!validCanvasPlacement(entry.placement))issue(`${at}.placement`,'Placement must contain finite, invertible two-dimensional geometry.');
+   if(entry.flowAttachment!==undefined&&(entry.flowAttachment!=='after-page-title'||entry.parentId!==null||entry.placement!==undefined||!node.supportsTitleFlow))issue(`${at}.flowAttachment`,'Title flow requires one text-only status at page root, without absolute placement.');
    parents.set(id,entry.parentId as string|null);
   }
   for(const id of byId.keys()){const parent=parents.get(id),entry=map[id];if(parent&&plain(map[parent])&&(map[parent] as Record<string,unknown>).removed===true&&(!plain(entry)||entry.removed!==true))issue(`.${mode}.${id}.parentId`,'Move surviving contents out before removing their box.');}
@@ -69,7 +82,13 @@ export function validateCanvasLayout(value:unknown,nodes:CanvasNodeDescriptor[],
 }
 export function validateContentCanvasLayout(content:CanvasContent,scope:CanvasScope,value:unknown,path='canvasLayout'):ValidationIssue[]{
  const nodes=getCanvasNodes(content,scope),mobile=defaultCanvasLayout(content,scope,true);
- return validateCanvasLayout(value,nodes,path,nodes.map(node=>({...node,defaultParentId:mobile[node.id].parentId,defaultOrder:mobile[node.id].order})));
+ const issues=validateCanvasLayout(value,nodes,path,nodes.map(node=>({...node,defaultParentId:mobile[node.id].parentId,defaultOrder:mobile[node.id].order})));
+ if(scope!=='chrome'&&plain(value))for(const mode of ['desktop','mobile'])if(plain(value[mode]))for(const [id,entry]of Object.entries(value[mode]))if(plain(entry)&&entry.removed!==true&&entry.flowAttachment==='after-page-title'){
+  const mobile=mode==='mobile',block=scope.blocks.find(b=>`block:${b.id}`===id),styles=content.contentOverrides?.styles;
+  const appearances=[scope.titleAppearance??styles?.[`${scope.builtinKey}.title`],styles?.[`layout.page:${scope.id}:intro`],styles?.[`layout.page:${scope.id}:shell`],block?.appearance,styles?.[`layout.block:${scope.id}:${block?.id}:status-value`],...["commissions.statusOpen","commissions.statusClosed","commissions.statusWaitlist","commissions.statusOpeningSoon"].map(key=>styles?.[key])];
+  if(appearances.some(a=>validElementBox(resolveElementAppearance(a,mobile)?.box)))issues.push({path:`${path}.${mode}.${id}.flowAttachment`,message:'Detach custom box geometry before following the page title.'});
+ }
+ return issues;
 }
 export function canAssignCanvasParent(content:CanvasContent,scope:CanvasScope,id:string,parentId:string|null,mobile=false):boolean{
  const nodes=getCanvasNodes(content,scope),node=nodes.find(node=>node.id===id);if(!node?.movable||id===parentId||parentId!==null&&!nodes.some(node=>node.id===parentId&&node.canContain))return false;
@@ -90,6 +109,8 @@ export function assignCanvasParent(content:OwnerContent,scope:OwnerPage|'chrome'
  if(!canAssignCanvasParent(content,scope,id,parentId,mobile)||placement!==undefined&&!validCanvasPlacement(placement))return false;
  const resolved=resolveCanvasLayout(content,scope,mobile),previous=resolved[id];if(previous.parentId===parentId&&!placement)return false;
  const order=Math.max(-1,...Object.values(resolved).filter(entry=>entry.parentId===parentId).map(entry=>entry.order))+1;if(!Number.isSafeInteger(order))return false;
+ const candidate={...resolved,[id]:{...previous,parentId,order,...(placement?{placement}: {})}};
+ if(validateCanvasLayout({desktop:candidate},getCanvasNodes(content,scope)).length)return false;
  const layout=materializeCanvasLayout(content,scope);
  const map=mobile?layout.mobile!:layout.desktop;if(mobile)layout.mobileInitialized=true;
  map[id]={...previous,parentId,order,...(placement?{placement:structuredClone(placement)}:previous.placement?{placement:structuredClone(previous.placement)}:{})};if(!mobile&&!layout.mobileInitialized)layout.mobile=structuredClone(layout.desktop);return true;
