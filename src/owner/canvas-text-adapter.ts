@@ -1,3 +1,4 @@
+import {isCommissionStatusTemplateKey,isCommissionStatusValueTarget} from './commission-status-value';
 import {authorTextField} from './canvas-author-text';
 import type {OwnerContent,OwnerPage} from './model';
 import {TEXT_FIELDS,LINK_FIELDS,getTemplateText,getTemplateLink} from './site-design';
@@ -8,10 +9,9 @@ export type CanvasTextField={inputKind?:'money';value:string;label:string;links:
 export function parseCanvasPrice(value:string):number|null{const text=value.trim();if(!/^\$?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/.test(text))return null;const amount=Number(text.replace(/[$,]/g,''));return Number.isFinite(amount)&&amount>=0&&amount<=1_000_000?amount:null;}
 /** Explicit model paths only. Never infer writable content from arbitrary DOM text. */
 export function canvasTextField(content:OwnerContent,page:OwnerPage,target:string|null):CanvasTextField|null{
- if(!target)return null;
+ if(!target||isCommissionStatusValueTarget(target)||target.startsWith('template-text:')&&isCommissionStatusTemplateKey(target.slice(14)))return null;
  const field=(value:string,label:string,links:boolean,write:CanvasTextField['write'],styleKey?:string,appearance:CanvasTextField['appearance']='style',blockId?:string):CanvasTextField=>({value,label,links,write,styleKey,appearance,blockId});
- const statusKey=content.site.commissionStatus==='Closed'?'commissions.statusClosed':content.site.commissionStatus==='Waitlist'?'commissions.statusWaitlist':content.site.commissionStatus==='Open!'?'commissions.statusOpen':'commissions.statusOpeningSoon';
- const displayKey=target==='canvas:layout.commissions.statusValue'||/^canvas:layout\.block:[^:]+:[^:]+:status-value$/.test(target)?statusKey:target==='canvas:layout.site.more'?'site.moreLabel':target==='canvas:layout.navigation:trello-board'?'site.trelloLabel':/^canvas:layout\.price-group:[^:]+:number$/.test(target)?'prices.groupNumber':null;
+ const displayKey=target==='canvas:layout.site.more'?'site.moreLabel':target==='canvas:layout.navigation:trello-board'?'site.trelloLabel':/^canvas:layout\.price-group:[^:]+:number$/.test(target)?'prices.groupNumber':null;
  if(displayKey){const value=getTemplateText(content,displayKey);return field(value,'Display text (does not change the underlying value)',false,(draft,next)=>{if(next.length>2000)return false;draft.contentOverrides??={};draft.contentOverrides.text??={};draft.contentOverrides.text[displayKey]=next;return true;},target.slice(7));}
  const author=authorTextField(content,page,target);if(author)return field(author.value,author.label,author.links,author.write,target.startsWith('canvas:')?target.slice(7):target==='site'?'site.brand':undefined);
  const premadePrice=/^canvas:layout\.premade:([^:]+):price$/.exec(target);

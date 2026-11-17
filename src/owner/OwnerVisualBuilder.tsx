@@ -44,6 +44,9 @@ import {captureFrameClipboard,pasteFrameClipboard,type FrameClipboardSessionRef}
 import {captureHorizontalGrowth,horizontalGrowthCaptureCurrent,measureHorizontalText,proposeHorizontalGrowth} from "./horizontal-text-growth";
 import { useMovablePanel } from "./use-movable-panel";
 import { canvasInteractionArea } from "./canvas-interaction-area";
+import { deleteItemWithContents } from "./canvas-delete-policy";
+import { commissionStatusTemplateKey } from "./commission-status-value";
+import { OwnerHexInput } from "./OwnerDesignInputs";
 
 type Props = {
   workspaceMode?:boolean;
@@ -391,6 +394,10 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   }
   function choose(target: string, element?: HTMLElement, toggle = false, createdIdentity?:{scope:"page"|"chrome";id:string}) {
     if (uploadBusy || browsing) return;
+    // A live status is a functional item, not an independently editable word.
+    const statusPart=/^canvas:layout\.block:([^:]+):([^:]+):status-value$/.exec(target);
+    const statusBlock=statusPart&&(statusPart[1]==="shared-footer"?sourceContent.footerBlocks:sourcePage.blocks)?.find(item=>item.id===statusPart[2]&&item.type==="commission-status");
+    if(statusBlock){target=`block:${statusBlock.id}`;const scope=statusPart![1]==="shared-footer"?"chrome":"page";element=layoutFrame(scope,target)??element;createdIdentity={scope,id:target};}
     closeCanvasMenu();
     if (addingItem) setAddingItem(null);
     if (target.startsWith("nav:")) {
@@ -605,10 +612,11 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     if(uploadBusy||saveBusy||browsing||!selectedLayout)return;
     const selection={...selectedLayout},source=sourceContent,modelScope=selection.scope==="chrome"?"chrome":sourcePage;
     const node=getCanvasNodes(source,modelScope).find(node=>node.id===selection.id);if(!node?.movable)return;
+    withContents=withContents||deleteItemWithContents(modelScope==="chrome"?source.footerBlocks??[]:modelScope.blocks,selection.id);
     onRemove(withContents?"Remove this box and its contents from the canvas?":"Remove this box from the canvas?",withContents?"This removes this box and all of its nested contents from this layout. Original media files are retained. Nothing is saved or published automatically. Undo restores the draft.":"Only this box is removed from this layout. Its contents stay where they are on the canvas. Original media files are retained. Nothing is saved or published automatically.",()=>{
       const current=deleteContext.current;
       if(!deleteMounted.current||current.source!==source||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.browsing||current.uploadBusy||current.saveBusy||current.selection?.id!==selection.id||current.selection?.scope!==selection.scope)return;
-      if(withContents){onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(source))return;const scope=selection.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===sourcePage.id);if(scope)removeCanvasNode(draft,scope,selection.id,useMobile,true);});setSelected(null);setSelectedLayout(null);setInspectorOpen(false);return;}
+      if(withContents){let changed=false;onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(source))return;const scope=selection.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===sourcePage.id);if(scope)changed=removeCanvasNode(draft,scope,selection.id,useMobile,true);});if(changed){setSelected(null);setSelectedLayout(null);setInlineTarget(null);setInspectorOpen(false);setAnnouncement("Item removed from this layout. Undo restores it.");}else setAnnouncement("The item could not be removed safely. Nothing changed.");return;}
       const map=resolveCanvasLayout(source,modelScope,useMobile),captures:Record<string,CapturedCanvasFrame>={};
       for(const [id,entry]of Object.entries(map)){if(entry.removed||entry.parentId!==selection.id)continue;const descriptor=getCanvasNodes(source,modelScope).find(node=>node.id===id),frame=layoutFrame(selection.scope,id);
         if(!descriptor?.movable||!frame){setAnnouncement("These contents must stay together as a functional unit. Move them out first, or explicitly remove the box and its contents. Nothing changed.");return;}
@@ -677,6 +685,8 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   }
   function selectLayer(scope:"page"|"chrome",id:string){
     if(uploadBusy||browsing)return;
+    const statusPart=/^canvas:layout\.block:[^:]+:([^:]+):status-value$/.exec(id);
+    if(statusPart&&(scope==="chrome"?sourceContent.footerBlocks:sourcePage.blocks)?.some(b=>b.id===statusPart[1]&&b.type==="commission-status"))id=`block:${statusPart[1]}`;
     const modelScope=scope==="chrome"?"chrome":sourcePage;
     const descriptor=getCanvasNodes(sourceContent,modelScope).find(item=>item.id===id),frame=layoutFrame(scope,id);
     if(!descriptor||!frame){setAnnouncement("That piece is not visible on this page right now. Nothing was changed.");return;}
@@ -791,6 +801,13 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
 
   if (imageBlock || imageBoxEditable) controls = <ImagePickerFramingContext.Provider value={<><div className={styles.modeSwitch} aria-label="Image editing target"><button type="button" aria-pressed={imageEditMode === "photo"} onClick={() => setImageEditMode("photo")}>Photo framing</button><button type="button" aria-pressed={imageEditMode === "box"} onClick={() => setImageEditMode("box")}>Whole content box</button></div>{imageEditMode === "box" && <p className={ui.help}>Move, resize or tilt the whole content box. Photo framing changes only the image size and crop.</p>}</>}>{controls}</ImagePickerFramingContext.Provider>;
   if(selectedText && !selected?.startsWith("template-link:") && block?.type!=="link"){const field=selectedText;controls=<>{field.inputKind==="money"?<><p>Edit the amount directly on the canvas. Prices are shared across your draft.</p><div className={styles.moneyActions}><button type="button" data-owner-button data-owner-text-tools className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>{if(!uploadBusy&&!saveBusy){setInlineTarget(selected);setTextFocusRequest(value=>value+1);}}}>Edit amount</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>{if(!uploadBusy&&!saveBusy)setPricesOpen(true);}}>Prices &amp; options</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={openPriceColors}>Edit all Price Colors</button></div></>:field.links?<OwnerLinkedTextField revision={sourceContent} disabled={uploadBusy||saveBusy} label="Text" multiline value={field.value} selectionHint={inlineSelectionScope.current===textContextKey?inlineSelection??undefined:undefined} contextKey={textContextKey} linkRequest={linkRequest?.contextKey===textContextKey?linkRequest:undefined} onChange={value=>commitInlineText(field.value,value)}/>:<><Field label="Text" multiline value={field.value} onChange={value=>commitInlineText(field.value,value)}/><small>{selectedHyperlink?.kind==="destination"?"Use Hyperlink to edit this item’s destination.":"Edit this item’s text here."}</small></>}</>;}
+  if(block?.type==="commission-status"&&block.textOnly){
+    const key=`layout.block:${footerBlock?"shared-footer":page.id}:${block.id}:status-value`;
+    const own=content.contentOverrides?.styles?.[key]?.textColor;
+    const color=own??content.contentOverrides?.styles?.["layout.commissions.statusValue"]?.textColor??content.contentOverrides?.styles?.[commissionStatusTemplateKey(content.site.commissionStatus)]?.textColor??(content.site.commissionStatus==="Closed"?"#b21b2b":content.site.commissionStatus==="Waitlist"?"#805216":"#24703e");
+    const setColor=(value:string)=>{if(uploadBusy||saveBusy)return;onEdit(draft=>{draft.contentOverrides??={};draft.contentOverrides.styles??={};draft.contentOverrides.styles[key]={...draft.contentOverrides.styles[key],textColor:value};});};
+    controls=<><p>Commission status follows the Hub. Its wording is locked here.</p><p>Current status: <strong>{content.site.commissionStatus}</strong></p><fieldset disabled={uploadBusy||saveBusy}><label>Status color <input type="color" value={/^#[0-9a-f]{6}$/i.test(color)?color:"#24703e"} onChange={event=>setColor(event.target.value)}/></label><OwnerHexInput key={key} label="Status color" value={color} onChange={setColor}/></fieldset><button type="button" className={ui.secondary} disabled={uploadBusy||saveBusy||!own} onClick={()=>onEdit(draft=>{const style=draft.contentOverrides?.styles?.[key];if(style)delete style.textColor;})}>Use original status color</button></>;
+  }
   if(block&&!footerBlock&&["text","heading","link"].includes(block.type))controls=<>{controls}<button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>requestFooterTransfer()}>Move to shared footer…</button></>;
   if(selectedHyperlink?.kind==="destination")controls=<>{controls}<div className={styles.destinationLinkActions}><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={openHyperlink}>Edit hyperlink destination</button>{selectedHyperlink.source!=="social"&&<WebsiteAssetPicker disabled={uploadBusy||saveBusy} key={`pdf:${textContextKey}`} targetId={`pdf:${textContextKey}`} revision={sourceContent} kind="document" value={selectedHyperlink.href} onSelect={href=>commitSelectedPdf(href)}/>}</div></>;
   if (selected && supportsBoxTarget(selected, boxPage) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box")) controls = <>{workspaceMode?<>{controls}<details data-owner-advanced-position><summary>Advanced positioning</summary><OwnerBoxFields layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={selectBoxContents} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} /></details></>:<><OwnerBoxFields layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={selectBoxContents} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} />{controls}</>}</>;
