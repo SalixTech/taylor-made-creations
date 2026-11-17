@@ -9,3 +9,6 @@
 /* Reparented native frames can live in a slot without a placement wrapper.
    Restore hit testing for them too; the empty slot itself remains transparent. */
 .slot > :not(.slot) { pointer-events:auto; }
+/* Opt-in semantic flow only. Never changes free-placement sizing or position. */
+.titleFlowItem{flex:0 1 auto;min-width:0;max-width:100%;overflow-wrap:anywhere;}
+.titleFlowItem>:first-child{margin:0!important;max-width:100%;}

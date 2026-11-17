@@ -13,9 +13,11 @@ export function captureNewItemFrame(frame:HTMLElement,block:PageBlock,samples?:H
     const heading=text?.closest<HTMLElement>('h2');
     const measured=text?captureCanvasFrame(text):null,box=heading?captureCanvasFrame(heading):null;
     if(!measured||!box)return capture;
-    // Independently transformed leaves need a separate layout policy; retain
-    // their existing frame rather than treating their local width as ours.
-    if([measured,box].some(value=>(['a','b','c','d'] as const).some(key=>Math.abs(value.screenMatrix[key]-capture.screenMatrix[key])>1e-6)))return capture;
+    // Computed CSS sizes are rounded separately from DOMRects. Match the
+    // existing geometry tolerance so harmless fractional rounding does not
+    // masquerade as a transformed leaf and retain the full-width frame.
+    // Genuine independent transforms still keep their existing frame.
+    if([measured,box].some(value=>(['a','b','c','d'] as const).some(key=>Math.abs(value.screenMatrix[key]-capture.screenMatrix[key])>1e-4)))return capture;
     widths.push(Math.max(measured.widthPx,box.widthPx));heights.push(box.heightPx);
   }
   return {...capture,widthPx:Math.max(1,Math.ceil(Math.max(...widths))),heightPx:Math.max(capture.heightPx,Math.ceil(Math.max(...heights)))};

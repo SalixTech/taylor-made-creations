@@ -10,6 +10,7 @@ export type CanvasMarker={type:ElementType;target:(props:Record<string,unknown>)
 export type ForceCanvasSlot={scope:'page'|'chrome';id:string;omitNodeId?:string};
 type CompiledNode={id:string;target:string;parent:string|null;body:ReactNode;inline:boolean;native:boolean};
 function mapNodes(tree:ReactNode,fn:(child:ReactNode)=>ReactNode):ReactNode{const result=Children.map(tree,fn);return !Array.isArray(tree)&&result?.length===1?result[0]:result;}
+export function CanvasFlowSlot(){return null;}
 function OriginalSlot(props:{id:string}){void props;return null;}
 /** Compiles only explicit marker identities/native React elements. It never invokes a component. */
 export function compileCanvasScene(tree:ReactNode,markers:readonly CanvasMarker[]){
@@ -38,8 +39,8 @@ export function CanvasScene({content,scope,mobile=false,editable=false,markers,c
  const activeSaved=mobile?saved?.mobile:saved?.desktop;
  const missingDestination=[...compiled.nodes.values()].some(node=>{const entry=activeSaved?.[node.id];return !!entry&&!entry.removed&&entry.parentId!==null&&!compiled.nodes.has(entry.parentId);});
  if(missingDestination)return <div role="alert" data-owner-layout-error={editable?'unavailable-destination':undefined}>{editable?'A saved destination box is unavailable. Restore that box or undo the change before continuing.':'This page layout is temporarily unavailable.'}</div>;
- const moved=(node:CompiledNode)=>{const entry=(mobile?saved?.mobile:saved?.desktop)?.[node.id];return !!entry&&(entry.parentId===null||compiled.nodes.has(entry.parentId))&&(!!entry.placement||entry.parentId!==node.parent);};
- const incoming=(parent:string|null)=>[...compiled.nodes.values()].filter(node=>node.id!==forceCanvasSlots?.omitNodeId&&!layout[node.id]?.removed&&inventory.has(node.id)&&moved(node)&&layout[node.id]?.parentId===parent).sort((a,b)=>layout[a.id].order-layout[b.id].order||a.id.localeCompare(b.id));
+ const moved=(node:CompiledNode)=>{const entry=(mobile?saved?.mobile:saved?.desktop)?.[node.id];return !!entry&&(entry.parentId===null||compiled.nodes.has(entry.parentId))&&(!!entry.placement||!!entry.flowAttachment||entry.parentId!==node.parent);};
+ const incoming=(parent:string|null)=>[...compiled.nodes.values()].filter(node=>node.id!==forceCanvasSlots?.omitNodeId&&!layout[node.id]?.removed&&inventory.has(node.id)&&moved(node)&&!layout[node.id]?.flowAttachment&&layout[node.id]?.parentId===parent).sort((a,b)=>layout[a.id].order-layout[b.id].order||a.id.localeCompare(b.id));
  // Reorder complete semantic nodes through their existing native slots; do not
  // transplant wrappers or lift default children into absolute layers.
  const reordered=new Map<string,CompiledNode>();
@@ -51,7 +52,7 @@ export function CanvasScene({content,scope,mobile=false,editable=false,markers,c
   group.forEach((node,index)=>reordered.set(node.id,sorted[index]));
  }
  const attrs=(id:string)=>editable?{'data-owner-layout-id':id,'data-owner-layout-scope':kind}:{};
- const renderTree=(tree:ReactNode,seen:ReadonlySet<string>):ReactNode=>mapNodes(tree,child=>{if(!isValidElement(child))return child;const el=child as ReactElement<Record<string,unknown>>;if(el.type===OriginalSlot){const original=compiled.nodes.get(String(el.props.id)),node=original&&!moved(original)?reordered.get(original.id)??original:original;return node&&node.id!==forceCanvasSlots?.omitNodeId&&!moved(node)?renderNode(node,seen):null;}if(typeof el.type==='string'||el.type===Fragment||markers.some(marker=>marker.type===el.type))return cloneElement(el,{},renderTree(el.props.children as ReactNode,seen));return el;});
+ const renderTree=(tree:ReactNode,seen:ReadonlySet<string>):ReactNode=>mapNodes(tree,child=>{if(!isValidElement(child))return child;const el=child as ReactElement<Record<string,unknown>>;if(el.type===CanvasFlowSlot)return <>{[...compiled.nodes.values()].filter(node=>node.id!==forceCanvasSlots?.omitNodeId&&!layout[node.id]?.removed&&layout[node.id]?.flowAttachment==='after-page-title').map(node=><div key={node.id} className={styles.titleFlowItem} data-owner-title-flow-item={editable?node.id:undefined}>{renderNode(node,seen)}</div>)}</>;if(el.type===OriginalSlot){const original=compiled.nodes.get(String(el.props.id)),node=original&&!moved(original)?reordered.get(original.id)??original:original;return node&&node.id!==forceCanvasSlots?.omitNodeId&&!moved(node)?renderNode(node,seen):null;}if(typeof el.type==='string'||el.type===Fragment||markers.some(marker=>marker.type===el.type)){const children=renderTree(el.props.children as ReactNode,seen);return cloneElement(el,{},children);}return el;});
  const slot=(id:string|null,seen:ReadonlySet<string>)=><div className={styles.slot} style={id&&layout[id]?.placement?.contentOffset?{translate:`${layout[id].placement!.contentOffset!.xPx}px ${layout[id].placement!.contentOffset!.yPx}px`}:undefined} {...(editable?{'data-owner-layout-slot':id??'__root','data-owner-placement-content':id??'__root','data-owner-layout-scope':kind}:{})}>{incoming(id).map(node=>renderNode(node,seen))}</div>;
  const renderNode=(node:CompiledNode,seen:ReadonlySet<string>):ReactNode=>{
   if(seen.has(node.id)||layout[node.id]?.removed)return null;const next=new Set([...seen,node.id]),entry=layout[node.id],placement=entry?.placement&&validCanvasPlacement(entry.placement)?entry.placement:undefined,hasSlot=incoming(node.id).length>0||forceCanvasSlots?.scope===kind&&forceCanvasSlots.id===node.id;
