@@ -356,3 +356,8 @@
 .boxHandle[data-compact="true"]::before { width:8px; height:8px; }
 
 .itemPlacement { position:absolute; inset:0; z-index:19; cursor:crosshair; touch-action:pan-y; }
+
+/* The inspector must not change the website desktop viewport. No scaling
+   or coordinate migration: the scrollport exposes the full-size public layout. */
+.previewViewport{min-width:0;max-width:100%;}
+.previewViewport[data-preview-device="desktop"]{overflow:auto;}

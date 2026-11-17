@@ -34,7 +34,7 @@ import { SiteFontLoader } from "./SiteFontLoader";
 import { CopyrightRange } from "./Copyright";
 import { FooterCredits } from "./FooterCredits";
 import termStyles from "@/components/Terms.module.css";
-import { isSafeImageSource, type OwnerContent, type OwnerPage, type PageBlock } from "@/owner/model";
+import { COMMISSION_STATUSES, isSafeImageSource, type OwnerContent, type OwnerPage, type PageBlock } from "@/owner/model";
 import { useNavigationDisclosure } from "./use-navigation-disclosure";
 import { DropdownChevron } from "./DropdownChevron";
 import { getHeaderNavigation } from "@/owner/header-navigation";
@@ -208,6 +208,16 @@ export function CommissionStatusAction({content,target,children,accessibleLabel}
  const override=getElementHref(content,target.replace(/^canvas:/,''));
  const action=override?<ContentLink content={content} href={override} className="button status-action" accessibleLabel={accessibleLabel}>{children}</ContentLink>:mode==='editor'?<button type="button" className="button status-action" aria-label={accessibleLabel?.trim()?undefined:"Request a commission"} onClick={()=>{if(live.current?.href===href&&live.current.target===target&&live.current.mode==='editor')setOpen(href);}}>{children}</button>:<Link className="button status-action" aria-label={accessibleLabel?.trim()?undefined:"Request a commission"} href={href}>{children}</Link>;
  return <><LayoutAppearance appearance={appearance} target={target} editable={mode==='editor'&&!!editable}>{action}</LayoutAppearance>{open===href&&mode==='editor'&&<OwnerDialog title="Commission form preview" wide maximizable onClose={()=>setOpen(null)} actions={<button type="button" className="button" onClick={()=>setOpen(null)}>Close preview</button>}><CommissionForm previewContent={content} additionalPartsQuantities={content.site.additionalPartsQuantities===true} configuration={content.commissionForm??{}}/></OwnerDialog>}</>;
+}
+/** Hidden, transient insertion measurements reuse the real renderer for every Hub state. */
+export function CommissionStatusSizingSamples({content,blockId,mobile}:{content:OwnerContent;blockId:string;mobile:boolean}){
+ const block=content.pages.flatMap(page=>page.blocks).find(item=>item.id===blockId);
+ if(block?.type!=="commission-status"||!block.textOnly)return null;
+ const theme={design:resolveSiteDesign(content.design,mobile)};
+ return <RenderContext value={{mode:"editor",editable:false,mobileLayout:mobile}}><div className={`selected-design ${styles.editorFrame}`} data-site-render-mode="editor" {...getSiteThemeAttributes(theme)} style={getSiteThemeStyle(theme)}>{COMMISSION_STATUSES.map(status=>{
+  const sample={...content,site:{...content.site,commissionStatus:status}};
+  return <div key={status} data-owner-status-size={status} style={{width:"max-content",maxWidth:"none"}}><ContentBlocks blocks={[block]} content={sample}/></div>;
+ })}</div></RenderContext>;
 }
 type BlocksProps={blocks:readonly PageBlock[];content:OwnerContent;presentation?:"terms"|"care"};
 export function ContentBlocks(props:BlocksProps){return buildContentBlocks(props,useContext(RenderContext));}
