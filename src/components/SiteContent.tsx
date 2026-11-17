@@ -3,6 +3,7 @@ import {useWebsiteDocumentLink} from "./useWebsiteDocumentLink";
 import { getElementHref } from "@/owner/canvas-hyperlinks";
 import {getInlineTextRuns,inlineTextStyleCSS,inlineTextStyleAttributes,getInlineTextSource,type InlineTextStyle} from "@/owner/rich-text";
 
+import {commissionStatusTemplateKey} from "@/owner/commission-status-value";
 import {commissionStatusRequestHref} from "@/owner/commission-status-block";
 import {ButtonPresentation,buttonPresentationProps} from "./ButtonPresentation";
 import type {ButtonAppearance} from "@/owner/button-import";
@@ -47,8 +48,12 @@ const ContainingLinkContext = createContext(false);
 const RenderContext = createContext<RenderOptions>({ mode: "private-preview" });
 /** Adds no DOM when uncustomized; semantic targets keep outer cards separate
  * from nested copy, and the same saved appearance renders in public mode. */
-function CanvasTarget({content,styleKey,children,inline=false,image=false}: {content:OwnerContent;styleKey:string;children:ReactElement;inline?:boolean;image?:boolean}) {
-  const {mode,editable,mobileLayout}=useContext(RenderContext),appearance=resolveElementAppearance(content.contentOverrides?.styles?.[styleKey],!!mobileLayout),target=`canvas:${styleKey}`;
+function CanvasTarget({content,styleKey,children,inline=false,image=false,textDefaultsFrom}: {content:OwnerContent;styleKey:string;children:ReactElement;inline?:boolean;image?:boolean;textDefaultsFrom?:string}) {
+  const {mode,editable,mobileLayout}=useContext(RenderContext),ownAppearance=resolveElementAppearance(content.contentOverrides?.styles?.[styleKey],!!mobileLayout),target=`canvas:${styleKey}`;
+  // A new live-status label follows the original value's typography, not its box
+  // position, dimensions or background. Per-copy appearance remains authoritative.
+  const source=textDefaultsFrom?resolveElementAppearance(content.contentOverrides?.styles?.[textDefaultsFrom],!!mobileLayout):undefined;
+  const appearance=source?{textColor:source.textColor,font:source.font,fontId:source.fontId,fontSize:source.fontSize,textSize:source.textSize,align:source.align,...ownAppearance}:ownAppearance;
   const href=getElementHref(content,styleKey),contained=useContext(ContainingLinkContext);
   const child=children as ReactElement<{children?:ReactNode}>;
   // Preserve the semantic/style-bearing leaf. Never wrap a native interactive control.
@@ -65,6 +70,21 @@ export function ElementLink({content,href,children,image=false}:{content:OwnerCo
 function useDestination(content: OwnerContent, href: string) {
   const { mode } = useContext(RenderContext);
   return resolveSiteDestination(content, href, mode === "public" ? "public" : "preview");
+}
+/** Hub availability is not editable text. Existing typography remains usable,
+ * while an item-level color wins over older nested template/run colors. */
+function CommissionStatusValue({content,styleKey}:{content:OwnerContent;styleKey:string}) {
+  const {mobileLayout}=useContext(RenderContext),mobile=!!mobileLayout;
+  const field=commissionStatusTemplateKey(content.site.commissionStatus),value=content.site.commissionStatus;
+  const sourceAppearance=resolveElementAppearance(content.contentOverrides?.styles?.[field],mobile);
+  const color=resolveElementAppearance(content.contentOverrides?.styles?.[styleKey],mobile)?.textColor;
+  const appearance=color?{...sourceAppearance,textColor:undefined}:sourceAppearance;
+  const savedRuns=getInlineTextRuns(content,`template:${field}`,mobile);
+  const runs=savedRuns.map(run=>run.text).join("")===value?savedRuns:[{text:value,style:undefined}];
+  return <LayoutAppearance appearance={appearance} inline><span data-owner-status-value="true">{runs.map((run,index)=>{
+    const style=color&&run.style?{...run.style,color:undefined}:run.style;
+    return <span key={index} {...inlineTextStyleAttributes(style)} style={inlineTextStyleCSS(style)}>{run.text}</span>;
+  })}</span></LayoutAppearance>;
 }
 function ContentLink({ content, href, children, className, editTarget, appearance: rawAppearance, navPageId, buttonDesignId, buttonAppearance, accessibleLabel }: { content: OwnerContent; href: string; children: ReactNode; className?: string; editTarget?: string; appearance?: ElementAppearance; navPageId?: string;buttonDesignId?:string;buttonAppearance?:ButtonAppearance;accessibleLabel?:string }) {
   const { mode, onNavigate, editable, mobileLayout } = useContext(RenderContext);
@@ -201,6 +221,7 @@ function buildContentBlocks({blocks,content,presentation}:BlocksProps,{mode,edit
     const element=(()=>{
       if(block.type==="commission-status"){
        const labelId=`commission-status-${pageId}-${block.id}`,field=(key:string)=>`block:${pageId}:${block.id}:${key}`;
+       if(block.textOnly)return <div {...edit} className={styles.block}>{<CanvasTarget content={content} styleKey={`layout.block:${pageId}:${block.id}:status-value`} textDefaultsFrom="layout.commissions.statusValue"><h2 className={`status-text-value ${content.site.commissionStatus==='Closed'?'status-closed':content.site.commissionStatus==='Waitlist'?styles.waitlist:'status-available'}`} style={{margin:0}}><CommissionStatusValue content={content} styleKey={`layout.block:${pageId}:${block.id}:status-value`}/></h2></CanvasTarget>}</div>;
        return <section {...edit} className="status-panel" aria-labelledby={labelId}><div className="status-summary">{child(block,'status-label',<span id={labelId} className="status-label"><InlineLinkedText content={content} text={block.label} fieldId={field('label')} links={false}/></span>)}{child(block,'status-value',<h2 className={content.site.commissionStatus==='Closed'?'status-closed':content.site.commissionStatus==='Waitlist'?styles.waitlist:'status-available'}><TemplateLeaf content={content} field={content.site.commissionStatus==='Closed'?'commissions.statusClosed':content.site.commissionStatus==='Waitlist'?'commissions.statusWaitlist':content.site.commissionStatus==='Open!'?'commissions.statusOpen':'commissions.statusOpeningSoon'}/></h2>)}</div>{child(block,'status-note',<p className="status-copy"><InlineLinkedText content={content} text={block.note} fieldId={field('note')}/></p>)}<CommissionStatusAction content={content} accessibleLabel={block.actionLabel} target={`canvas:layout.block:${pageId}:${block.id}:status-action`}>{child(block,'status-action-label',<span><InlineLinkedText content={content} text={block.actionLabel} fieldId={field('actionLabel')} links={false}/></span>)}</CommissionStatusAction></section>;
       }
       if(block.type==="section")return <section {...edit} className={styles.block} data-owner-section-frame={block.id}>{block.heading&&child(block,"heading",<h2><InlineLinkedText content={content} text={block.heading} fieldId={`block:${pageId}:${block.id}:heading`}/></h2>)}<div data-owner-section-id={mode==="editor"&&editable?block.id:undefined} style={{minHeight:mode==="editor"&&editable?64:undefined}}>{render(block.id,new Set([...ancestors,block.id]))}</div></section>;
