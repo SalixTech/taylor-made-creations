@@ -99,13 +99,13 @@ export function WebsitePromotionDialog(props:WebsitePromotionDialogProps){
      void reconcile(next.promotion);
     }
    }});controller.current=client;
-   const start=async()=>{const result=client.hasPending()?await client.resolve():await client.prepare(props.revisedSource);if(active&&result.phase==="prepared")await client.stage();};
+   const start=async()=>{if(client.hasPending()){await client.resolve();return;}const result=await client.prepare(props.revisedSource);if(active&&result.phase==="prepared")await client.stage();};
    void start();
   }catch(cause){void Promise.resolve().then(()=>{if(active)setState({phase:"locked",busy:false,canRetry:false,error:cause instanceof Error?cause.message:"The owner session or saved operation could not be verified."});});}
   return()=>{active=false;alive.current=false;client?.dispose();if(controller.current===client)controller.current=null;};
  },[props.request,ownerUid,projectId,assertCurrent,props.revisedSource,props.target]);
  async function prepare(){const current=controller.current;if(!current)return;const result=await current.prepare(latest.current.revisedSource);if(result.phase==="prepared")await current.stage();}
- async function resolve(retry=false){const current=controller.current;if(!current)return;const state=current.getState();if(state.phase==="committed"&&state.promotion){await reconcile(state.promotion);return;}const result=retry?await current.retry():await current.resolve();if(result.phase==="prepared")await current.stage();}
+ async function resolve(retry=false){const current=controller.current;if(!current)return;const state=current.getState();if(state.phase==="committed"&&state.promotion){await reconcile(state.promotion);return;}const result=retry?await current.retry():await current.resolve();if(retry&&result.phase==="prepared")await current.stage();}
  async function close(){if(closing.current||!alive.current||reconciling.current||reconciliation.required)return;const current=controller.current;const now=current?.getState();if(now&&(now.busy||["unknown","confirming","resolving"].includes(now.phase)))return;closing.current=true;try{if(current&&now&&["committed","cancelled"].includes(now.phase)){setState({...now,busy:true});await current.acknowledge();}if(alive.current)latest.current.onClose();}catch(cause){if(alive.current&&now)setState({...now,busy:false,error:cause instanceof Error?cause.message:"The saved receipt could not be cleared. Try closing again."});}finally{closing.current=false;}}
  return <WebsitePromotionReview target={props.target} reconciliationRequired={reconciliation.required} state={{...state,busy:state.busy||reconciliation.busy,error:reconciliation.error??state.error}} onPrepare={prepare} onStage={async()=>{await controller.current?.stage();}} onCommit={async confirmation=>{await controller.current?.commit(confirmation);}} onResolve={()=>resolve()} onRetry={()=>resolve(true)} onCancel={async()=>{await controller.current?.cancel();}} onClose={close}/>;
 }
