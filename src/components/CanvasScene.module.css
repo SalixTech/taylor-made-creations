@@ -5,3 +5,7 @@
 .placed{position:absolute;left:0;top:0;transform-origin:0 0;box-sizing:border-box;pointer-events:auto;min-width:0;overflow:visible;}
 .placedBody{position:relative;box-sizing:border-box;min-width:0;}
 .placedBody>:first-child{margin:0!important;max-width:none!important;width:100%!important;}
+
+/* Reparented native frames can live in a slot without a placement wrapper.
+   Restore hit testing for them too; the empty slot itself remains transparent. */
+.slot > :not(.slot) { pointer-events:auto; }
