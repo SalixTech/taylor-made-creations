@@ -181,7 +181,10 @@ export function OwnerCanvasBoxTools({ showResizeHandles=true,onCanvasMoveStart,o
   }
   /* eslint-disable react-hooks/refs */
   const events=(kind:Kind)=>({onPointerDown:(event:PointerEvent<HTMLButtonElement>)=>start(event,kind),onPointerMove:move,onPointerUp:(event:PointerEvent<HTMLButtonElement>)=>{event.preventDefault();event.stopPropagation();finish(true,event.pointerId);},onPointerCancel:(event:PointerEvent<HTMLButtonElement>)=>finish(false,event.pointerId),onLostPointerCapture:(event:PointerEvent<HTMLButtonElement>)=>finish(false,event.pointerId),onKeyDown:(event:KeyboardEvent<HTMLButtonElement>)=>keys(event,kind)});
-  const position=(x:number,y:number):CSSProperties=>{const p=transformPoint(frame.matrix,{x,y});return {left:p.x-14,top:p.y-14};};
+  const compactHandles = Math.min(frame.width,frame.height) < 64;
+  const handleSize = compactHandles ? 20 : 28;
+  const visibleHandles = compactHandles ? handles.filter(handle=>handle.length===2) : handles;
+  const position=(x:number,y:number):CSSProperties=>{const p=transformPoint(frame.matrix,{x,y});return {left:p.x-handleSize/2,top:p.y-handleSize/2,width:handleSize,height:handleSize,minWidth:handleSize,minHeight:handleSize};};
   return <div data-owner-canvas-controls="true" className={styles.boxTools} onClick={event=>{event.preventDefault();event.stopPropagation();}} onDragStart={event=>{if(event.target instanceof HTMLElement&&event.target.closest("[data-owner-reparent-id]"))return;event.preventDefault();event.stopPropagation();}}>
     {ghost&&preview?.guides?.map((guide,index)=>{
       const screenToCanvas=multiplyAffine(bounds.parentToCanvas,bounds.screenToParent);
@@ -209,7 +212,7 @@ export function OwnerCanvasBoxTools({ showResizeHandles=true,onCanvasMoveStart,o
       </div>
       <span className={styles.boxToolbarHint}>{hasContents ? (selectBoxContents?"Move frame and contents together · draft only":"Move frame only · contents stay in place · draft only") : "Drag content or handles · draft only"}</span>
     </div>
-    {showResizeHandles&&handles.map(handle=><button key={handle} data-owner-button type="button" disabled={disabled} className={styles.boxHandle} data-handle={handle} style={position(handle.includes("w")?0:handle.includes("e")?frame.width:frame.width/2,handle.includes("n")?0:handle.includes("s")?frame.height:frame.height/2)} {...events(handle)} aria-label={`Resize content box. ${handleNames[handle]}. Drag or use arrow keys; Shift keeps proportions; Escape cancels.`} title={`Resize ${handleNames[handle]}`} />)}
+    {visibleHandles.map(handle=><button key={handle} data-owner-button type="button" disabled={disabled} className={styles.boxHandle} data-handle={handle} data-resize-visible={showResizeHandles} data-compact={compactHandles} style={position(handle.includes("w")?0:handle.includes("e")?frame.width:frame.width/2,handle.includes("n")?0:handle.includes("s")?frame.height:frame.height/2)} {...events(handle)} aria-label={`Resize content box. ${handleNames[handle]}. Drag or use arrow keys; Shift keeps proportions; Escape cancels.`} title={`Resize ${handleNames[handle]}`} />)}
     {showResizeHandles&&<button data-owner-button type="button" disabled={disabled} className={styles.boxRotateHandle} style={position(frame.width/2,-32)} {...events("rotate")} aria-label="Rotate content box. Drag or use arrow keys; Shift snaps to 15 degrees; Escape cancels." title="Rotate box; Shift snaps to 15°">↻</button>}
     <span className={styles.boxNotice} role="status">{notice}</span>
   </div>;

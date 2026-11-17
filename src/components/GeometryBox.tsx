@@ -17,14 +17,20 @@ export function GeometryBox({ box: rawBox, children: rawChildren, target, editab
   const ref = useRef<HTMLElement | null>(null);
   const contentsRef=useRef<HTMLElement|null>(null);
   const [actualWidth, setActualWidth] = useState<number | null>(null);
+  const [gridFlowSlot, setGridFlowSlot] = useState(false);
   const valid = validElementBox(box);
   const designWidth = valid ? box.referenceParentPx * (box.widthPercent / 100) : 0;
   useLayoutEffect(() => {
     const frame = ref.current;
-    if (!valid || !frame) { setActualWidth(null); return; }
+    if (!valid || !frame) { setActualWidth(null); setGridFlowSlot(false); return; }
     let active = true;
     const measure = () => {
       if (!active) return;
+      // A grid already gives this slot its own track. Applying the card's
+      // percentage of the entire grid again shrinks it a second time.
+      const slot = frame.parentElement;
+      const parentDisplay = slot?.hasAttribute("data-owner-flow-slot") && slot.parentElement ? window.getComputedStyle(slot.parentElement).display : "";
+      setGridFlowSlot(parentDisplay === "grid" || parentDisplay === "inline-grid");
       const width = layoutSize(frame, "width");
       if (Number.isFinite(width) && width > 0) setActualWidth(current => current === width ? current : width);
     };
@@ -103,7 +109,7 @@ export function GeometryBox({ box: rawBox, children: rawChildren, target, editab
       && near(box.flow.xPercent/100*box.referenceParentPx,centeredMargin);
     const flowMarginLeft = responsiveNativeMargins ? `${box.flow.marginLeftPx/box.referenceParentPx*100}%` : box.flow.marginLeftPx;
     const flowMarginRight = responsiveNativeMargins ? `${box.flow.marginRightPx/box.referenceParentPx*100}%` : box.flow.marginRightPx;
-    return <Tag className={`${styles.flowSlot} ${inline ? styles.inline : ""}`} data-owner-flow-slot="true" style={{ width: `${slotWidthPercent}%`, height: Number.isFinite(slotHeight) ? slotHeight : undefined, marginTop:box.flow.marginTopPx, marginRight:flowMarginRight, marginBottom:box.flow.marginBottomPx, marginLeft:flowMarginLeft, ...margins }}>
+    return <Tag className={`${styles.flowSlot} ${inline ? styles.inline : ""}`} data-owner-flow-slot="true" style={{ width: gridFlowSlot ? "100%" : `${slotWidthPercent}%`, height: Number.isFinite(slotHeight) ? slotHeight : undefined, marginTop:box.flow.marginTopPx, marginRight:flowMarginRight, marginBottom:box.flow.marginBottomPx, marginLeft:flowMarginLeft, ...margins }}>
       <Tag ref={node => { ref.current = node; }} className={`${styles.frame} ${styles.flowFrame}`} {...sceneAttrs} data-owner-geometry="true" data-owner-layout="reflow" data-owner-edit={editable ? target : undefined} tabIndex={editable ? 0 : undefined} aria-label={editable ? "Edit content box" : undefined} style={{ ...frameStyle, width: Number.isFinite(frameWidth) ? `${frameWidth}%` : undefined, left: Number.isFinite(frameLeft) ? `${frameLeft}%` : undefined }}>{childSlot?<>{frameContents}{childSlot}</>:frameContents}</Tag>
     </Tag>;
   }

@@ -113,6 +113,15 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const [placementIntent,setPlacementIntent]=useState<{scope:"page"|"chrome";id:string;parentId:string|null;pageId:string;mobile:boolean;source:OwnerContent;capture:CapturedCanvasFrame;relative?:{id:string;after:boolean}}|null>(null);
   const [deleteIntent,setDeleteIntent]=useState<{scope:"page"|"chrome";id:string;parentId:string|null;pageId:string;mobile:boolean;source:OwnerContent;captures:Record<string,CapturedCanvasFrame>}|null>(null);
   const [drawingSpace,setDrawingSpace]=useState(false);
+  const [addingItem,setAddingItem]=useState<{block:PageBlock;source:OwnerContent;pageId:string;mobile:boolean;point?:{x:number;y:number}}|null>(null);
+  const applyingItem=useRef<typeof addingItem>(null);
+  const itemPreview=useMemo(()=>{
+    if(!addingItem?.point)return null;
+    const preview=structuredClone(addingItem.source),target=preview.pages.find(p=>p.id===addingItem.pageId);
+    if(!target)return null;
+    target.blocks.push(structuredClone(addingItem.block));
+    return preview;
+  },[addingItem]);
   const [contextMenu,setContextMenu]=useState<{x:number;y:number}|null>(null);
   const contextMenuRef=useRef<HTMLDivElement>(null);
   const [boxNameDraft,setBoxNameDraft]=useState<{id:string;original:string;value:string}|null>(null);
@@ -369,6 +378,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   function choose(target: string, element?: HTMLElement, toggle = false, createdIdentity?:{scope:"page"|"chrome";id:string}) {
     if (uploadBusy || browsing) return;
     closeCanvasMenu();
+    if (addingItem) setAddingItem(null);
     if (target.startsWith("nav:")) {
       const closing = toggle && navigationOpen && navigationTarget.current === target;
       navigationTarget.current = closing ? null : target;
@@ -415,14 +425,25 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       return;
     }
     const nearest = event.target.closest<HTMLElement>("[data-owner-edit]");
+    // Detached/pasted frames have clickable padding outside their editable child.
+    // Prefer that frame over an unrelated editable ancestor underneath it.
+    const hitFrame=event.target.closest<HTMLElement>("[data-owner-layout-id]");
+    if(hitFrame&&canvasRef.current?.contains(hitFrame)&&(!nearest||nearest.closest("[data-owner-layout-id]")!==hitFrame)){
+      const scope=hitFrame.dataset.ownerLayoutScope==="chrome"?"chrome":"page";
+      const node=getCanvasNodes(sourceContent,scope==="chrome"?"chrome":sourcePage).find(n=>n.id===hitFrame.dataset.ownerLayoutId);
+      if(node){event.preventDefault();event.stopPropagation();choose(node.styleTarget,hitFrame,false,{scope,id:node.id});setSelectedLayout({scope,id:node.id});return;}
+    }
     const target=nearest&&canvasRef.current?resolveCanvasClickTarget(sourceContent,sourcePage,canvasRef.current,nearest):nearest;
     if (!target || !canvasRef.current?.contains(target)) { if (!("key" in event)) { setSelected(null); setSelectedLayout(null); setInspectorOpen(false); } return; }
     event.preventDefault(); event.stopPropagation();
     const text=canvasTextField(sourceContent,sourcePage,target.dataset.ownerEdit!);
     // Legacy section panels retain click/keyboard toggle behavior. A text leaf
     // instead enters native editing; the dedicated workspace inspector stays put.
+    const alreadySelected=selected===target.dataset.ownerEdit&&target.closest("[data-owner-layout-id]")===layoutFrame(selectedLayout?.scope??"page",selectedLayout?.id??"");
     choose(target.dataset.ownerEdit!, target, !workspaceMode&&!text);
-    if(!("key" in event)||event.key==="Enter"){setInlineTarget(text?target.dataset.ownerEdit!:null);setInlineSelection(null);}
+    // First click selects the box and exposes resize controls. Click again (or
+    // press Enter) to type, so small/pasted text never traps the box controls.
+    if(text&&(("key" in event&&event.key==="Enter")||alreadySelected)){setInlineTarget(target.dataset.ownerEdit!);setInlineSelection(null);}
   }
   function canvasNav(event: DragEvent<HTMLDivElement>) { const node = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-owner-nav-page]") : null; return node && canvasRef.current?.contains(node) ? node : null; }
   function beginBlockDrag(event: DragEvent<HTMLDivElement>) {
@@ -596,6 +617,39 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   /* eslint-disable react-hooks/set-state-in-effect -- Switching layout/session invalidates a pending pointer transaction. */
   useEffect(()=>{spaceDrag.current=null;setSpacePreview(null);setDrawingSpace(false);},[browsing,sourcePage.id,useMobile]);
   /* eslint-enable react-hooks/set-state-in-effect */
+  /* eslint-disable react-hooks/set-state-in-effect -- Measure a transient insertion preview, then atomically commit or discard before paint. */
+  // Adding is a cancellable local preview until the user clicks a location.
+  // Measure the real renderer before one atomic draft edit; never guess a box height.
+  useEffect(()=>{
+    if(!addingItem)return;
+    const cancel=()=>setAddingItem(null);
+    const escape=(event:globalThis.KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();cancel();}};
+    window.addEventListener("keydown",escape,true);
+    if(addingItem.source!==sourceContent||addingItem.pageId!==sourcePage.id||addingItem.mobile!==useMobile||browsing||uploadBusy||saveBusy)cancel();
+    return()=>window.removeEventListener("keydown",escape,true);
+  },[addingItem,sourceContent,sourcePage.id,useMobile,browsing,uploadBusy,saveBusy]);
+  useLayoutEffect(()=>{
+    const intent=addingItem;if(!intent?.point||!itemPreview||applyingItem.current===intent)return;
+    applyingItem.current=intent;
+    if(intent.source!==sourceContent||intent.pageId!==sourcePage.id||intent.mobile!==useMobile||browsing||uploadBusy||saveBusy){setAddingItem(null);return;}
+    const frame=layoutFrame("page",`block:${intent.block.id}`),destination=layoutDestination("page",null);
+    const captured=frame?captureCanvasFrame(frame):null;
+    if(captured){captured.screenMatrix.e=intent.point.x;captured.screenMatrix.f=intent.point.y;captured.aspectLocked=false;}
+    const placement=captured&&destination?placeCapturedCanvasFrame(captured,destination):null;
+    let changed=false;
+    if(placement)onContentEdit(draft=>{
+      if(JSON.stringify(draft)!==JSON.stringify(intent.source))return;
+      const target=draft.pages.find(p=>p.id===intent.pageId);if(!target||target.blocks.length>=100)return;
+      const candidate=structuredClone(draft),page=candidate.pages.find(p=>p.id===intent.pageId)!;
+      page.blocks.push(structuredClone(intent.block));
+      if(!assignCanvasParent(candidate,page,`block:${intent.block.id}`,null,intent.mobile,placement))return;
+      Object.assign(draft,candidate);changed=true;
+    });
+    setAddingItem(null);
+    if(changed){setSelected(`block:${intent.block.id}`);setSelectedLayout({scope:"page",id:`block:${intent.block.id}`});setSelectedOccurrence(0);setInlineTarget(null);setInspectorOpen(true);setAnnouncement("Item placed at your chosen location. Undo removes it.");}
+    else setAnnouncement("This item could not be placed safely. Nothing was added; try again.");
+  },[addingItem,itemPreview,sourceContent,sourcePage.id,useMobile,browsing,uploadBusy,saveBusy,onContentEdit]);
+  /* eslint-enable react-hooks/set-state-in-effect */
   function finishSpace(event:PointerEvent<HTMLDivElement>,cancel=false){
     const drag=spaceDrag.current;if(!drag||drag.pointer!==event.pointerId)return;spaceDrag.current=null;setSpacePreview(null);
     if(event.currentTarget.hasPointerCapture?.(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
@@ -718,7 +772,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     </>;
   }
   if (block) controls = <OwnerBlocksEditor disabled={uploadBusy||saveBusy} content={content} onEditContent={onEdit} layoutOrder={layoutOrder} mobileLayout={useMobile} fonts={content.fonts} page={footerBlock?footerPage:page} focusedBlockId={block.id} hideAddPalette hideReorder onEdit={footerBlock?change=>onEdit(draft=>{const target={...page,id:"shared-footer",blocks:draft.footerBlocks??[]};change(target);draft.footerBlocks=target.blocks;}):editPage} onRemove={() => requestDelete()} />;
-  if (selected === "sections") controls = <><p className={ui.help}>Add an item to the page, then edit it directly on the canvas. New items are independent. Existing saved layouts stay unchanged; boxes move with their contents by default; frame-only movement is optional.</p><div className={styles.palette}>{(Object.entries(blockLabels) as [PageBlock["type"], string][]).filter(([type])=>type!=="commission-status").map(([type, label]) => <button type="button" key={type} draggable={false} disabled={uploadBusy || page.blocks.length >= 100} onClick={() => { if (uploadBusy || page.blocks.length >= 100) return; if(type==="canvas-space"){setSelected(null);setSelectedLayout(null);setInspectorOpen(false);setDrawingSpace(true);setAnnouncement("Drag in any direction to draw Canvas Space. Escape cancels.");return;} const next = createBlock(type); editPage(target => { target.blocks.push(next); }); choose(`block:${next.id}`,undefined,false,{scope:"page",id:`block:${next.id}`}); }}><span aria-hidden="true">＋</span>{label}</button>)}</div></>;
+  if (selected === "sections") controls = <><p className={ui.help}>Choose an item, then click where it should start on the page. You can scroll before placing it; Escape cancels. New items are independent. Existing saved layouts stay unchanged; boxes move with their contents by default; frame-only movement is optional.</p><div className={styles.palette}>{(Object.entries(blockLabels) as [PageBlock["type"], string][]).map(([type, label]) => <button type="button" key={type} draggable={false} disabled={uploadBusy || page.blocks.length >= 100} onClick={() => { if (uploadBusy || page.blocks.length >= 100) return; if(type==="canvas-space"){setSelected(null);setSelectedLayout(null);setInspectorOpen(false);setDrawingSpace(true);setAnnouncement("Drag in any direction to draw Canvas Space. Escape cancels.");return;} setAddingItem({block:createBlock(type),source:sourceContent,pageId:sourcePage.id,mobile:useMobile});setSelected(null);setSelectedLayout(null);setInlineTarget(null);setInspectorOpen(false);setAnnouncement("Click where this item should start. Scroll to another part of the page first if needed. Escape cancels."); }}><span aria-hidden="true">＋</span>{label}</button>)}</div></>;
 
 
   if (imageBlock || imageBoxEditable) controls = <ImagePickerFramingContext.Provider value={<><div className={styles.modeSwitch} aria-label="Image editing target"><button type="button" aria-pressed={imageEditMode === "photo"} onClick={() => setImageEditMode("photo")}>Photo framing</button><button type="button" aria-pressed={imageEditMode === "box"} onClick={() => setImageEditMode("box")}>Whole content box</button></div>{imageEditMode === "box" && <p className={ui.help}>Move, resize or tilt the whole content box. Photo framing changes only the image size and crop.</p>}</>}>{controls}</ImagePickerFramingContext.Provider>;
@@ -766,7 +820,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     {!browsing && <OwnerHeaderEditor content={content} onEdit={onEdit} open={navigationOpen} onOpenChange={changeNavigationOpen} disabled={uploadBusy} />}
     </details>
     <div ref={toolbarRef} className={styles.textToolbarDock} data-owner-formatting-dock>
-      {!browsing&&<OwnerTextFormattingBar resizeHandles={showResizeHandles} onResizeHandlesChange={setShowResizeHandles} canHyperlink={selectedHyperlink?.kind==="destination"||selectedHyperlink?.kind==="inline"&&!!formattingSelection} shove={shove} onShoveChange={value=>{if(uploadBusy||saveBusy||browsing)return;shoveGesture.current=null;setShove(value);setShoveNotice("");}} computed={toolbarComputed} selectionStyles={selectedRichRuns.map(run=>run.style??{})} marks={textMarks} selectionKey={formattingKey} active={!!selectedText&&!!inlineTextId} selected={!!formattingSelection} caretActive={!!typingCaret} disabled={uploadBusy||saveBusy} fonts={sourceContent.fonts} onStyle={formatSelectedText} onReset={()=>formatSelectedText(null)} onLink={()=>openHyperlink()} onEdit={()=>{if(selectedText)setInlineTarget(selected);}}/>}
+      {!browsing&&<OwnerTextFormattingBar resizeHandles={showResizeHandles} onResizeHandlesChange={value=>{setShowResizeHandles(value);if(value)setInlineTarget(null);}} canHyperlink={selectedHyperlink?.kind==="destination"||selectedHyperlink?.kind==="inline"&&!!formattingSelection} shove={shove} onShoveChange={value=>{if(uploadBusy||saveBusy||browsing)return;shoveGesture.current=null;setShove(value);setShoveNotice("");}} computed={toolbarComputed} selectionStyles={selectedRichRuns.map(run=>run.style??{})} marks={textMarks} selectionKey={formattingKey} active={!!selectedText&&!!inlineTextId} selected={!!formattingSelection} caretActive={!!typingCaret} disabled={uploadBusy||saveBusy} fonts={sourceContent.fonts} onStyle={formatSelectedText} onReset={()=>formatSelectedText(null)} onLink={()=>openHyperlink()} onEdit={()=>{if(selectedText)setInlineTarget(selected);}}/>}
     </div>
 
     {textWidthWarning&&<p className={styles.help} role="status" data-owner-text-width-warning>{textWidthWarning}</p>}
@@ -774,9 +828,10 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     <div className={styles.layoutIndicator} role="status"><strong>{useMobile?"Editing independent mobile layout":device==="mobile"?"Mobile preview · editing shared layout":"Editing desktop layout"}</strong></div>
     <div className={`${styles.stage} ${workspaceMode&&!browsing?styles.workspaceStage:""}`} data-device={device}>
       <div ref={canvasRef} tabIndex={-1} className={`${styles.canvas} ${!browsing ? styles.editing : ""}`} onContextMenu={event=>{if(browsing||uploadBusy||saveBusy)return;if(event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,[contenteditable]"))return;event.preventDefault();if(event.target instanceof HTMLElement){const nearest=event.target.closest<HTMLElement>("[data-owner-edit]");const target=nearest&&canvasRef.current?resolveCanvasClickTarget(sourceContent,sourcePage,canvasRef.current,nearest):nearest;if(target?.dataset.ownerEdit)choose(target.dataset.ownerEdit,target,false);}setContextMenu({x:event.clientX,y:event.clientY});}} onPointerDownCapture={() => { dragClickGuard.current = false; }} onClickCapture={capture} onKeyDownCapture={capture} onDragStartCapture={beginBlockDrag} onDragOver={overBlock} onDrop={dropBlock} onDragEnd={endBlockDrag}>
-        <SiteContentFrame forceCanvasSlots={footerTransfer?.phase==="measure"?{scope:"chrome",id:"canvas:layout.site.footer"}:drawingSpace?{scope:"page",id:"__root"}:deleteIntent?{scope:deleteIntent.scope,id:deleteIntent.parentId??"__root",omitNodeId:deleteIntent.id}:placementIntent?{scope:placementIntent.scope,id:placementIntent.parentId??"__root",omitNodeId:placementIntent.id}:undefined} content={footerTransfer?.phase==="measure"?footerTransfer.preview:sourceContent} page={footerTransfer?.phase==="measure"?footerTransfer.preview.pages.find(p=>p.id===sourcePage.id)??sourcePage:sourcePage} layoutViewport={device} mode="editor" editable={!browsing} onEditCommissionForm={workspaceMode ? undefined : onEditCommissionForm} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
+        <SiteContentFrame forceCanvasSlots={footerTransfer?.phase==="measure"?{scope:"chrome",id:"canvas:layout.site.footer"}:drawingSpace||addingItem?{scope:"page",id:"__root"}:deleteIntent?{scope:deleteIntent.scope,id:deleteIntent.parentId??"__root",omitNodeId:deleteIntent.id}:placementIntent?{scope:placementIntent.scope,id:placementIntent.parentId??"__root",omitNodeId:placementIntent.id}:undefined} content={itemPreview??(footerTransfer?.phase==="measure"?footerTransfer.preview:sourceContent)} page={itemPreview?.pages.find(p=>p.id===sourcePage.id)??(footerTransfer?.phase==="measure"?footerTransfer.preview.pages.find(p=>p.id===sourcePage.id)??sourcePage:sourcePage)} layoutViewport={device} mode="editor" editable={!browsing} onEditCommissionForm={workspaceMode ? undefined : onEditCommissionForm} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
         {!browsing&&inlineTarget&&inlineTarget===selected&&selectedText&&<OwnerCanvasTextEditor key={`${sourcePage.id}:${inlineTarget}:${selectedLayout?.scope??"page"}:${selectedLayout?.id??selectedOccurrence}:${useMobile}:${clipboardScopeKey??"owner-mounted"}`} canvasRef={canvasRef} target={inlineTarget} identity={selectedLayout??undefined} value={selectedText.value} inputKind={selectedText.inputKind} horizontalGrowth={horizontalText} runs={inlineRuns} focusRequest={textFocusRequest} onUndo={()=>{clearPendingTyping();onUndo?.();}} onRedo={()=>{clearPendingTyping();onRedo?.();}} links={selectedText.links} disabled={uploadBusy||saveBusy} onCommit={commitInlineText} onCancel={()=>{clearPendingTyping();setInlineTarget(null);}} onSelection={receiveInlineSelection} onHyperlink={requestInlineHyperlink}/> }
         {!browsing && selected && (imageStyleKey || imageBlock) && (imageStyleKey === "site.logo" || imageEditMode === "photo") && <OwnerCanvasImageTools key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={selectedImageAppearance} disabled={uploadBusy} onChange={changeImageAppearance} />}
+        {addingItem&&!browsing&&<div className={styles.itemPlacement} data-owner-canvas-controls role="region" aria-label="Click to place the new item; scroll to choose a location, or Escape to cancel" onClick={event=>{if(event.button!==0||addingItem.point||uploadBusy||saveBusy)return;event.preventDefault();event.stopPropagation();setAddingItem({...addingItem,point:{x:event.clientX,y:event.clientY}});}}><span className={styles.spacePrompt}>Click to place {blockLabels[addingItem.block.type]} · Scroll to choose a location · Escape cancels</span></div>}
         {drawingSpace&&!browsing&&<div className={styles.spaceDrawing} data-owner-canvas-controls data-owner-space-drawing tabIndex={0} role="region" aria-label="Draw Canvas Space in any direction; Escape cancels" onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();spaceDrag.current=null;setSpacePreview(null);setDrawingSpace(false);}}} onPointerDown={event=>{if(event.button!==0||uploadBusy||saveBusy)return;const parent=layoutDestination("page",null),map=parent?captureCanvasSpaceParent(parent):null;if(!map)return;event.preventDefault();event.stopPropagation();spaceDrag.current={pointer:event.pointerId,start:{x:event.clientX,y:event.clientY},map,source:sourceContent,pageId:sourcePage.id,mobile:useMobile};event.currentTarget.setPointerCapture?.(event.pointerId);}} onPointerMove={event=>{const drag=spaceDrag.current;if(!drag||drag.pointer!==event.pointerId)return;const rect=event.currentTarget.getBoundingClientRect();setSpacePreview({left:Math.min(drag.start.x,event.clientX)-rect.left,top:Math.min(drag.start.y,event.clientY)-rect.top,width:Math.abs(event.clientX-drag.start.x),height:Math.abs(event.clientY-drag.start.y)});}} onPointerUp={event=>finishSpace(event)} onPointerCancel={event=>finishSpace(event,true)} onLostPointerCapture={event=>{if(spaceDrag.current)finishSpace(event,true);}}>{spacePreview&&<div className={styles.spacePreview} style={spacePreview}/>}<span className={styles.spacePrompt}>Drag to draw Canvas Space · Escape cancels</span></div>}
         {!browsing && !(inlineTarget===selected&&selectedText) && selected && (boxStyleKey || selected === "page-title" || boxEditableBlock) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box") && <OwnerCanvasBoxTools showResizeHandles={showResizeHandles} onCopyBox={clipboardScopeKey&&sharedFrameClipboard?copyBox:undefined} onPasteBox={hasFrameClipboard&&frameClipboard.current?.scopeKey===clipboardScopeKey?()=>void pasteBox():undefined} onCanvasMoveStart={shove?startShove:undefined} onCanvasMovePreview={(point,snapshot)=>{previewShove(snapshot);if(!footerBlock&&block&&["text","heading","link"].includes(block.type)){const frame=footerFrame();if(frame){if(overFooter(point))frame.dataset.ownerFooterDrop="true";else delete frame.dataset.ownerFooterDrop;}}}} onCanvasMoveCancel={()=>{clearFooterHighlight();shoveGesture.current=null;}} onCanvasMoveCommit={shove||(!footerBlock&&block&&["text","heading","link"].includes(block.type))?(capture,point,next)=>{clearFooterHighlight();if(!footerBlock&&block&&["text","heading","link"].includes(block.type)&&overFooter(point)){shoveGesture.current=null;return requestFooterTransfer(capture);}return commitShove(capture,next);}:undefined} layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={selectBoxContents} onSelectBoxContents={selected=>setContentsSelection(selected?null:contentsSelectionKey)} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} onEditContent={() => {setInspectorOpen(true);if(selectedText)setInlineTarget(selected);}} onDelete={selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable?()=>requestDelete():undefined} onSelectParent={selectedLayout&&selectedLayoutMap[selectedLayout.id]?.parentId?selectParent:undefined} reparentId={undefined} sectionOrder={layoutOrder} />}
       </div>

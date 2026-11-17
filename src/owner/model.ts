@@ -30,7 +30,7 @@ export type CanvasSpaceBlock = { id: string; type: "canvas-space"; widthPx: numb
 export type SpacerBlock = { id: string; type: "spacer"; size: "small" | "medium" | "large" };
 export type FaqBlock = { id: string; type: "faq"; items: { id: string; question: string; answer: string }[] };
 export type FeatureBlock = { id: string; type: "feature"; heading: string; body: string; src: string; alt: string; imageSide: "left" | "right" };
-export type CommissionStatusBlock = {id:string;type:"commission-status";label:string;note:string;actionLabel:string};
+export type CommissionStatusBlock = {id:string;type:"commission-status";label:string;note:string;actionLabel:string;textOnly?:boolean};
 export type SectionBlock = { id: string; type: "section"; heading: string };
 export type PageBlock = (SectionBlock | CommissionStatusBlock | TextBlock | ImageBlock | LinkBlock | HeadingBlock | ListBlock | DividerBlock | SpacerBlock | CanvasSpaceBlock | FaqBlock | FeatureBlock) & { appearance?: ElementAppearance; parentId?: string; mobileParentId?: string | null; mobileOrder?: number };
 export type FooterBlock = (TextBlock | HeadingBlock | LinkBlock) & {appearance?:ElementAppearance};
@@ -417,7 +417,7 @@ function validateContent(value: unknown, published = false): ValidationResult {
       if (block.appearance !== undefined) appearance(block.appearance, `${b}.appearance`);
       for (const key of ["parentId", "mobileParentId"]) if (block[key] !== undefined && !(key === "mobileParentId" && block[key] === null) && (typeof block[key] !== "string" || !ID_PATTERN.test(block[key] as string))) issue(`${b}.${key}`, "Choose a section in this page.");
       if (block.mobileOrder !== undefined && (typeof block.mobileOrder !== "number" || !Number.isSafeInteger(block.mobileOrder) || block.mobileOrder < 0)) issue(`${b}.mobileOrder`, "Use a nonnegative integer mobile order.");
-      if(block.type==="commission-status"){exact(block,["parentId","mobileParentId","mobileOrder","id","type","label","note","actionLabel","appearance"],b);text(block.label,`${b}.label`,2000,false);text(block.note,`${b}.note`,20000,false);text(block.actionLabel,`${b}.actionLabel`,2000,false);}
+      if(block.type==="commission-status"){exact(block,["parentId","mobileParentId","mobileOrder","id","type","label","note","actionLabel","textOnly","appearance"],b);if(block.textOnly!==undefined&&typeof block.textOnly!=="boolean")issue(`${b}.textOnly`,"Use a boolean text-only flag.");text(block.label,`${b}.label`,2000,false);text(block.note,`${b}.note`,20000,false);text(block.actionLabel,`${b}.actionLabel`,2000,false);}
       else if (block.type === "section") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); }
       else if (block.type === "text") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "heading", "body", "appearance"], b); text(block.heading, `${b}.heading`, 200, false); text(block.body, `${b}.body`, 20000, false); }
       else if (block.type === "image") { exact(block, ["parentId", "mobileParentId", "mobileOrder", "id", "type", "src", "alt", "caption", "appearance"], b); image(block.src, `${b}.src`); text(block.alt, `${b}.alt`, 500); text(block.caption, `${b}.caption`, 1000, false); }
@@ -617,7 +617,7 @@ export function createPublicContentSnapshot(content: OwnerContent): PublicOwnerC
       id: page.id, kind: page.kind, ...(page.builtinKey ? { builtinKey: page.builtinKey } : {}),
       slug: page.slug, title: page.title, navLabel: page.navLabel, showInNav: page.showInNav, order: page.order, ...(page.navPlacement !== undefined ? { navPlacement: page.navPlacement } : {}), ...(page.availability !== undefined ? { availability: page.availability } : {}), ...(page.titleAppearance !== undefined ? { titleAppearance: publicAppearance(page.titleAppearance) } : {}), ...(page.canvasLayout !== undefined ? {canvasLayout:structuredClone(page.canvasLayout)}:{}),
       blocks: page.blocks.map(block => {
-        if(block.type==="commission-status")return {...blockLayout(block),id:block.id,type:block.type,label:block.label,note:block.note,actionLabel:block.actionLabel};
+        if(block.type==="commission-status")return {...blockLayout(block),id:block.id,type:block.type,label:block.label,note:block.note,actionLabel:block.actionLabel,...(block.textOnly!==undefined?{textOnly:block.textOnly}:{})};
         if (block.type === "section") return {...blockLayout(block),id:block.id,type:block.type,heading:block.heading};
         if (block.type === "text") return { ...blockLayout(block), id: block.id, type: block.type, heading: block.heading, body: block.body };
         if (block.type === "image") return { ...blockLayout(block), id: block.id, type: block.type, src: publicImage(block.src, `pages.${page.id}.${block.id}.src`), alt: block.alt, caption: block.caption };

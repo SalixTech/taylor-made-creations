@@ -348,3 +348,11 @@
 .moneyActions>button{flex:1 1 130px;min-width:0;max-width:100%;white-space:normal;}
 
 .destinationLinkActions{display:grid;gap:10px;justify-items:start;align-items:start;max-width:100%;margin-top:8px;}
+
+/* Keep edge/corner hit areas usable when the owner hides the visual dots. */
+.boxHandle[data-resize-visible="false"]::before { opacity:0; }
+.boxHandle[data-resize-visible="false"]:hover::before,
+.boxHandle[data-resize-visible="false"]:focus-visible::before { opacity:1; }
+.boxHandle[data-compact="true"]::before { width:8px; height:8px; }
+
+.itemPlacement { position:absolute; inset:0; z-index:19; cursor:crosshair; touch-action:pan-y; }
