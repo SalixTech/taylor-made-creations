@@ -4,8 +4,9 @@ import SiteSelect from '@/components/SiteSelect';
 import type {InlineTextStyle} from './rich-text';
 import type {ComputedTextAppearance} from './editable-text-dom';
 import styles from './OwnerTextFormattingBar.module.css';
+import type {ReactNode} from 'react';
 type Font={id:string;name:string};
-export function OwnerTextFormattingBar({resizeHandles=true,onResizeHandlesChange,active,selected,caretActive=false,disabled,fonts,onStyle,onLink,marks={},selectionKey="",selectionStyles=[],computed,shove=false,onShoveChange,canHyperlink}:{resizeHandles?:boolean;onResizeHandlesChange?:(enabled:boolean)=>void;canHyperlink?:boolean;shove?:boolean;onShoveChange?:(enabled:boolean)=>void;active:boolean;selected:boolean;caretActive?:boolean;disabled:boolean;fonts?:Font[];onStyle:(style:InlineTextStyle)=>void;onReset?:()=>void;onLink:()=>void;onEdit?:()=>void;marks?:Partial<Record<"bold"|"italic"|"underline",boolean>>;selectionKey?:string;selectionStyles?:InlineTextStyle[];computed?:ComputedTextAppearance|null}){
+export function OwnerTextFormattingBar({resizeHandles=true,onResizeHandlesChange,active,selected,caretActive=false,disabled,fonts,onStyle,onLink,marks={},selectionKey="",selectionStyles=[],computed,shove=false,onShoveChange,canHyperlink,children}:{children?:ReactNode;resizeHandles?:boolean;onResizeHandlesChange?:(enabled:boolean)=>void;canHyperlink?:boolean;shove?:boolean;onShoveChange?:(enabled:boolean)=>void;active:boolean;selected:boolean;caretActive?:boolean;disabled:boolean;fonts?:Font[];onStyle:(style:InlineTextStyle)=>void;onReset?:()=>void;onLink:()=>void;onEdit?:()=>void;marks?:Partial<Record<"bold"|"italic"|"underline",boolean>>;selectionKey?:string;selectionStyles?:InlineTextStyle[];computed?:ComputedTextAppearance|null}){
  const id=useId(),common=<T,>(read:(style:InlineTextStyle)=>T):T|null|undefined=>{if(!selectionStyles.length)return undefined;const first=read(selectionStyles[0]);return selectionStyles.every(style=>Object.is(read(style),first))?first:null;};
  const explicitFont=common(style=>style.fontId?`custom:${style.fontId}`:style.font),explicitSize=common(style=>style.fontSize),explicitColor=common(style=>style.color);
  const family=computed?.fontFamily,rawFamily=family?.split(',')[0]?.trim().replace(/^['"]|['"]$/g,'');
@@ -36,5 +37,6 @@ export function OwnerTextFormattingBar({resizeHandles=true,onResizeHandlesChange
   <button type="button" disabled={!linkAvailable} onMouseDown={e=>e.preventDefault()} onClick={()=>{if(linkAvailable&&live.current.linkAvailable&&live.current.key===selectionKey)onLink();}}>Hyperlink</button>
   {onShoveChange&&<button type="button" disabled={disabled} aria-pressed={shove} title="Shove: moving a box into a gap makes room below. Off keeps free placement." onMouseDown={e=>e.preventDefault()} onClick={()=>{if(!disabled)onShoveChange(!shove);}}>Shove</button>}
   {onResizeHandlesChange&&<button type="button" disabled={disabled} aria-pressed={resizeHandles} title="Show or hide resize handles; selection outlines stay visible." onMouseDown={e=>e.preventDefault()} onClick={()=>{if(!disabled)onResizeHandlesChange(!resizeHandles);}}>Resize handles</button>}
+  {children}
  </div>;
 }

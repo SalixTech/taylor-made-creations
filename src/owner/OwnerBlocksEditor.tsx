@@ -22,7 +22,7 @@ export function createBlock(type: PageBlock["type"]): PageBlock {
     case "section": return {id,type,heading:"New section"};
     case "text": return { id, type, heading: "", body: "Your text goes here." };
     case "image": return { id, type, src: "/images/home-collage.webp", alt: "Taylor Made Creations fursuit work", caption: "" };
-    case "link": return { id, type, label: "Get in touch", href: "/contact" };
+    case "link": return { id, type, label: "Get in touch", href: "/contact", buttonAppearance: { preset: "solid" } };
     case "heading": return { id, type, text: "Your section heading", level: 2 };
     case "list": return { id, type, items: ["Your first item"], style: "bullet" };
     case "divider": return { id, type };

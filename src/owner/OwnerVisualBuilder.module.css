@@ -365,3 +365,40 @@
 .previewViewport[data-preview-device="desktop"]{overflow:auto;}
 
 @media(max-width:650px){.textToolbarDock{flex-wrap:wrap;}.sectionMenu{position:static;margin-left:auto;}.sectionMenu .dockedPanel{right:8px;}}
+
+.textToolbarDock .sectionMenu { position:relative; margin-left:0; }
+.sectionMenu .dockedPanel {
+  width:min(344px,calc(100vw - 24px));
+  max-height:min(420px,55dvh);
+}
+.dockedPanel .panelHeader { padding:8px 12px; }
+.dockedPanel .panelHeader h2 { margin:0; font-size:16px; }
+.dockedPanel .panelNav { padding:4px 10px; gap:4px; }
+.dockedPanel .panelContent { padding:8px 12px; }
+.dockedPanel .panelFooter { padding:6px 12px; justify-content:flex-end; }
+.dockedPanel .panelContent details { margin-block:4px; }
+.dockedPanel .panelContent :is(p,fieldset) { margin-block:6px; }
+.dockedPanel .panelContent h3 { margin-block:6px; }
+@media(max-width:650px){
+  .textToolbarDock .sectionMenu { position:static; }
+  .sectionMenu .dockedPanel { inset:100% 8px auto auto; }
+}
+.itemPicker {
+  position:fixed; z-index:91; width:min(248px,calc(100vw - 16px));
+  max-height:calc(100dvh - 24px); overflow:auto; padding:10px;
+  border:1px solid var(--owner-control-line,#888); border-radius:10px;
+  background:var(--owner-surface,#fff); color:var(--owner-ink,#222);
+  box-shadow:0 6px 24px #0003;
+}
+.itemPicker header { display:flex; align-items:center; justify-content:space-between; }
+.itemPicker p { margin:4px 0 8px; font-size:12px; }
+.itemChoices { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
+.itemPicker button { min-height:30px; border:1px solid var(--owner-control-line,#888); border-radius:6px; background:transparent; color:inherit; }
+.itemPicker button:hover { background:var(--owner-hover,#eee); }
+.itemPicker button[draggable="true"] { cursor:grab; }
+.textToolbarDock .sectionToggle {
+  font:inherit; font-size:12px; color:var(--owner-ink,#eee);
+  border:1px solid var(--owner-control-line,#777); border-radius:5px;
+  min-height:28px; padding:3px 7px; line-height:20px; background:var(--owner-raised,#292929);
+}
+.textToolbarDock .sectionToggle[aria-expanded="true"] { box-shadow:inset 0 -2px currentColor; }
