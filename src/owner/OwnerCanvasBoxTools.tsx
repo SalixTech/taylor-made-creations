@@ -203,10 +203,11 @@ export function OwnerCanvasBoxTools({ showResizeHandles=true,onCanvasMoveStart,o
       <button data-owner-button type="button" disabled={disabled} {...events("move")} aria-label="Move content box. Drag or use arrow keys; Shift moves faster; Escape cancels.">Move box</button>
 
       {onDelete&&<button data-owner-button type="button" disabled={disabled} onClick={()=>{if(!disabled){finish(false);onDelete();}}}>Delete</button>}
+      <button data-owner-button type="button" disabled={disabled} aria-pressed={box.aspectLocked} onClick={()=>{if(disabled)return;finish(false);if(boxed)save({...box,aspectLocked:!box.aspectLocked});else if(onInitialAspectLockChange)onInitialAspectLockChange(!box.aspectLocked);else setInitialLocked(locked=>!locked);}}>Lock ratio</button>
       <details className={styles.boxMore}><summary onClick={event=>event.stopPropagation()}>More</summary><div>{sectionOrder&&<><button data-owner-button type="button" disabled={disabled||sectionOrder.index<=0} onClick={()=>{if(!disabled&&sectionOrder.index>0)sectionOrder.onMove(-1);}}>Move earlier</button><button data-owner-button type="button" disabled={disabled||sectionOrder.index>=sectionOrder.count-1} onClick={()=>{if(!disabled&&sectionOrder.index<sectionOrder.count-1)sectionOrder.onMove(1);}}>Move later</button></>}      {onSelectParent&&<button data-owner-button type="button" disabled={disabled} onClick={onSelectParent}>Select parent box</button>}
       {hasContents&&onSelectBoxContents&&<button data-owner-button type="button" disabled={disabled} aria-pressed={!selectBoxContents} onClick={()=>{if(disabled)return;finish(false);onSelectBoxContents?.(!selectBoxContents);}}>Move frame only</button>}
       {reparentId&&<button data-owner-button type="button" draggable={!disabled} disabled={disabled} data-owner-reparent-id={reparentId} title="Drag this handle into a section container to change membership">Move into section</button>}
-      <button data-owner-button type="button" disabled={disabled} aria-pressed={box.aspectLocked} onClick={()=>{if(disabled)return;finish(false);if(boxed)save({...box,aspectLocked:!box.aspectLocked});else if(onInitialAspectLockChange)onInitialAspectLockChange(!box.aspectLocked);else setInitialLocked(locked=>!locked);}}>Lock ratio: {box.aspectLocked ? "on" : "off"}</button>
+
       <button data-owner-button type="button" disabled={disabled || !boxed || (!!placement && !onResetPlacement)} onClick={()=>{if(disabled || !boxed)return;finish(false);if(placement){onResetPlacement?.();return;}const next={...value};delete next.box;setInitialLocked(true);onInitialAspectLockChange?.(true);onChange(next);setNotice("Original flow layout restored.");}}>Reset box</button>
 </div></details>
       </div>
@@ -214,7 +215,7 @@ export function OwnerCanvasBoxTools({ showResizeHandles=true,onCanvasMoveStart,o
     </div>
     {visibleHandles.map(handle=><button key={handle} data-owner-button type="button" disabled={disabled} className={styles.boxHandle} data-handle={handle} data-resize-visible={showResizeHandles} data-compact={compactHandles} style={position(handle.includes("w")?0:handle.includes("e")?frame.width:frame.width/2,handle.includes("n")?0:handle.includes("s")?frame.height:frame.height/2)} {...events(handle)} aria-label={`Resize content box. ${handleNames[handle]}. Drag or use arrow keys; Shift keeps proportions; Escape cancels.`} title={`Resize ${handleNames[handle]}`} />)}
     {showResizeHandles&&<button data-owner-button type="button" disabled={disabled} className={styles.boxRotateHandle} style={position(frame.width/2,-32)} {...events("rotate")} aria-label="Rotate content box. Drag or use arrow keys; Shift snaps to 15 degrees; Escape cancels." title="Rotate box; Shift snaps to 15°">↻</button>}
-    <span className={styles.boxNotice} role="status">{notice}</span>
+    <span className={styles.srOnly} role="status">{notice}</span>
   </div>;
   /* eslint-enable react-hooks/refs */
 }

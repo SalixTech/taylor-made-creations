@@ -31,7 +31,7 @@ test("Edit Section toggles a single inspector under the formatting bar without w
   assert.ok(content(dock).includes("Edit Section"));
   assert.ok(content(dock).includes("Page content"));
 
-  button("Done").props.onClick();
+  h.find(node => node.props["aria-label"] === "Close section editor").props.onClick();
   render();
   assert.equal(panel(), undefined);
 

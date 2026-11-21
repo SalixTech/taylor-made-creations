@@ -402,3 +402,36 @@
   min-height:28px; padding:3px 7px; line-height:20px; background:var(--owner-raised,#292929);
 }
 .textToolbarDock .sectionToggle[aria-expanded="true"] { box-shadow:inset 0 -2px currentColor; }
+
+/* Keep editing controls and the layout label together while the page scrolls. */
+.textToolbarDock{flex-direction:column;align-items:stretch;}
+.textToolbarDock>[role="toolbar"]{align-self:center;}
+.layoutIndicator{overflow-wrap:anywhere;}
+.builder[data-builder-device="mobile"] .textToolbarDock>[role="toolbar"]{
+  width:100%;border:1px solid #ffffff75;
+}
+.sectionMenu .dockedPanel{max-height:min(55dvh,420px);}
+.dockedPanel .panelContent{overflow:auto;min-height:0;}
+.dockedPanel .inspectorMore{margin-top:10px;}
+.itemPicker{
+  box-sizing:border-box;
+  --picker-top:clamp(8px,var(--picker-y),calc(100dvh - 310px));
+  left:clamp(8px,var(--picker-x),calc(100vw - 256px));
+  top:var(--picker-top);
+  max-height:calc(100dvh - var(--picker-top) - 8px);
+  overscroll-behavior:contain;
+}
+.itemPicker button.pickerClose{border:0;min-width:32px;font-size:21px;}
+.editing [data-owner-nav-page][draggable="true"]{cursor:grab;}
+.editing [data-owner-asset-selected]{outline:2px dashed var(--owner-accent,#b41133);outline-offset:2px;}
+.savedAsset{display:flex;align-items:center;gap:8px;padding-block:6px;}
+.savedAsset span{margin-inline-end:auto;overflow-wrap:anywhere;}
+.canvasContextMenu{max-height:calc(100dvh - 16px);overflow:auto;}
+.textToolbarDock .titleSizeHandle{cursor:ew-resize;touch-action:none;min-width:90px;}
+.builder[data-builder-device="mobile"] .textToolbarDock{width:100%;margin-left:0;}
+.dockedPanel .headerEditor{padding:0;border:0;background:transparent;}
+.dockedPanel .navRow{
+  background:var(--owner-raised,#292929);
+  border-color:var(--owner-control-line,#888);
+}
+.dockedPanel .navRowHeading>span,.dockedPanel .navRow small{color:var(--owner-ink,#eee);}

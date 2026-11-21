@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import { getPageNavPlacement, isPageAvailable, validatePageSlug, type OwnerContent, type OwnerPage } from "./model";
 import { OwnerSelect, Toggle } from "./OwnerFields";
 import { OwnerPageSlug } from "./OwnerPageSlug";
-import { reorderById } from "./builder-interactions";
+import { reorderNavigationPages } from "./builder-interactions";
 import { getAutomaticMorePage, getHeaderNavigation } from "./header-navigation";
 import { createNavigationDragGhost, navigationDropAfter } from "./navigation-drag";
 import styles from "./OwnerVisualBuilder.module.css";
@@ -41,12 +41,12 @@ export function OwnerHeaderEditor({ content, onEdit, open, onOpenChange, disable
   }
   function reorder(sourceId: string, targetId: string, after = false) {
     if (disabled) return;
-    onEdit(draft => { const active = draft.pages.filter(page => !page.trashedAt).sort((a, b) => a.order - b.order); const slots = active.map(page => page.order); if (reorderById(active, sourceId, targetId, after)) active.forEach((page, index) => { page.order = slots[index]; }); });
+    onEdit(draft => { reorderNavigationPages(draft, sourceId, targetId, after); });
     setAnnouncement("Navigation order updated in your draft.");
   }
   function movePage(id: string, direction: -1 | 1) {
     if (disabled) return;
-    onEdit(draft => { const active = draft.pages.filter(page => !page.trashedAt).sort((a, b) => a.order - b.order); const slots = active.map(page => page.order); const from = active.findIndex(page => page.id === id); const target = active[from + direction]; if (from >= 0 && target && reorderById(active, id, target.id, direction > 0)) active.forEach((page, index) => { page.order = slots[index]; }); });
+    onEdit(draft => { const active = draft.pages.filter(page => !page.trashedAt).sort((a, b) => a.order - b.order); const from = active.findIndex(page => page.id === id); const target = active[from + direction]; if (from >= 0 && target) reorderNavigationPages(draft, id, target.id, direction > 0); });
     setAnnouncement("Navigation order updated in your draft.");
   }
   function clearDrag() {

@@ -12,3 +12,21 @@ test('same-page paste preserves all original raw blocks and both original layout
 test('fresh IDs cannot collide with page or nested FAQ identifiers',()=>{const f=fixture(),clip=captureFrameClipboard(f.content,f.page.id,'block:frame');for(const id of[f.page.id,'question'])assert.throws(()=>pasteFrameClipboard(f.content,f.target.id,clip,{newId:()=>id,verifiedAssets:new Set()}),/fresh box identity/);});
 test('FAQ identities with common prefixes remap only the exact semantic child, and original split status pieces refuse',()=>{const f=fixture(),faq=f.page.blocks.find(b=>b.type==='faq');faq.items=[{id:'a',question:'A?',answer:'A'},{id:'a-b',question:'B?',answer:'B'}];for(const mode of ['desktop','mobile'])f.page.canvasLayout[mode]=resolveCanvasLayout(f.content,f.page,mode==='mobile');const clip=captureFrameClipboard(f.content,f.page.id,'block:frame'),out=pasteFrameClipboard(f.content,f.target.id,clip,{newId:f.newId,verifiedAssets:new Set()}),page=out.content.pages.find(p=>p.id===f.target.id),newFaq=page.blocks.find(b=>b.type==='faq');for(const item of newFaq.items)assert.ok(page.canvasLayout.desktop[`canvas:layout.block:${page.id}:${newFaq.id}:faq-${item.id}-question`]);const content=createDefaultOwnerContent(),commission=content.pages.find(p=>p.builtinKey==='commissions');commission.canvasLayout={desktop:resolveCanvasLayout(content,commission)};commission.canvasLayout.desktop['canvas:layout.commissions.statusValue'].parentId=null;assert.throws(()=>captureFrameClipboard(content,commission.id,'canvas:layout.commissions.status'),/separately moved/);});
 test('uploaded fonts, inline document links and both device font choices remain referenced and require current verification',()=>{const f=fixture(),fontId='11111111-1111-4111-8111-111111111111',doc='22222222-2222-4222-8222-222222222222';f.content.fonts=[{id:fontId,name:'Custom',src:`/api/cloud-fonts/${fontId}`,format:'woff2'}];f.content.contentOverrides.styles[`layout.block:${f.page.id}:child:body`].mobile.fontId=fontId;f.page.blocks.find(b=>b.id==='child').body=`[PDF](/api/cloud-documents/${doc})`;delete f.content.contentOverrides.inlineStyles[`block:${f.page.id}:child:body`];const clip=captureFrameClipboard(f.content,f.page.id,'block:frame');assert.deepEqual(new Set(clip.assets),new Set([`/api/cloud-fonts/${fontId}`,`/api/cloud-documents/${doc}`]));const out=pasteFrameClipboard(f.content,f.target.id,clip,{newId:f.newId,verifiedAssets:new Set(clip.assets)});assert.deepEqual(out.content.fonts,f.content.fonts);assert.equal(out.content.pages.find(p=>p.id===f.target.id).blocks.find(b=>b.type==='text').body,`[PDF](/api/cloud-documents/${doc})`);});
+
+test('a saved selection copies multiple roots together and preserves their relative positions', () => {
+  const f = fixture();
+  for (const mode of ['desktop','mobile']) f.page.canvasLayout[mode]['block:child'].parentId = null;
+  const clip = captureFrameClipboard(f.content, f.page.id, 'block:frame', ['block:child', 'block:faq']);
+  assert.equal(clip.blocks.length, 3);
+  const result = pasteFrameClipboard(f.content, f.target.id, clip, {
+    newId: f.newId, verifiedAssets: new Set(), preserveRelativePlacement: true,
+  });
+  const page = result.content.pages.find(item => item.id === f.target.id);
+  const child = page.blocks.find(item => item.type === 'text' && item.id.startsWith('copy-'));
+  const faq = page.blocks.find(item => item.type === 'faq' && item.id.startsWith('copy-'));
+  for (const [mode, difference] of [['desktop', 13], ['mobile', 37]]) {
+    const graph = page.canvasLayout[mode];
+    assert.equal(graph[result.rootId].placement.matrix.e - graph[`block:${child.id}`].placement.matrix.e, difference);
+    assert.equal(graph[`block:${faq.id}`].parentId, result.rootId);
+  }
+});

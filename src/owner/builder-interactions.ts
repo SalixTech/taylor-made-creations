@@ -1,5 +1,7 @@
 import {initializeInlineTextMobile} from "./rich-text";
-import {initializeCanvasMobileLayouts} from "./canvas-layout";
+import {getCanvasNodes, initializeCanvasMobileLayouts, resolveCanvasLayout, updateCanvasPlacement} from "./canvas-layout";
+import {getHeaderNavigation} from "./header-navigation";
+import {boxStyleKeyForTarget} from "./box-targets";
 /** Safe editor operations: stable identities and bounded values, never arbitrary CSS. */
 export function normalizeHexColor(value: string): string | null {
   const input = value.trim().replace(/^#/, "");
@@ -59,4 +61,46 @@ export function initializeMobileLayout(content:OwnerContent){
  for(const block of content.footerBlocks??[])block.appearance=snapshot(block.appearance);
  for(const key of Object.keys(content.contentOverrides?.styles??{}))content.contentOverrides!.styles![key]=snapshot(content.contentOverrides!.styles![key]);
  content.design??={};content.design.mobileDesign??=structuredClone(resolveSiteDesign(content.design,false)??{});content.design.mobileLayoutEnabled=true;
+}
+
+
+/** Keep membership and ordering while returning this page to responsive flow. */
+export function reflowPageForMobile(draft: OwnerContent, pageId: string) {
+  const page = draft.pages.find(item => item.id === pageId);
+  if (!page) return;
+  initializeMobileLayout(draft);
+  for (const [id, entry] of Object.entries(resolveCanvasLayout(draft, page, true))) {
+    if (entry.placement && !entry.removed) updateCanvasPlacement(draft, page, id, true, undefined);
+  }
+  editContentForLayout(draft, view => {
+    const current = view.pages.find(item => item.id === pageId)!;
+    if (current.titleAppearance) delete current.titleAppearance.box;
+    for (const block of current.blocks) if (block.appearance) delete block.appearance.box;
+    const keys = getCanvasNodes(view, current).map(node => boxStyleKeyForTarget(node.styleTarget));
+    if (current.builtinKey) keys.push(`${current.builtinKey}.title`);
+    for (const key of keys) {
+      const appearance = key ? view.contentOverrides?.styles?.[key] : undefined;
+      if (appearance) delete appearance.box;
+    }
+  }, true);
+}
+
+/** A saved chrome graph can retain navigation order independently of page records. */
+export function reorderNavigationPages(draft: OwnerContent, sourceId: string, targetId: string, after = false) {
+  const pages = draft.pages.filter(page => !page.trashedAt).sort((a, b) => a.order - b.order);
+  const pageSlots = pages.map(page => page.order);
+  if (!reorderById(pages, sourceId, targetId, after)) return false;
+  pages.forEach((page, index) => { page.order = pageSlots[index]; });
+
+  const navigation = getHeaderNavigation(draft);
+  for (const map of [draft.chromeLayout?.desktop, draft.chromeLayout?.mobile]) {
+    if (!map) continue;
+    for (const [links, parent] of [[navigation.main, "canvas:layout.site.navigation"], [navigation.more, "canvas:layout.site.more"]] as const) {
+      const entries = links.map(link => map[`canvas:layout.navigation:${link.id}`])
+        .filter(entry => entry && !entry.removed && entry.parentId === parent);
+      const slots = entries.map(entry => entry.order).sort((a, b) => a - b);
+      entries.forEach((entry, index) => { entry.order = slots[index]; });
+    }
+  }
+  return true;
 }

@@ -7,8 +7,8 @@ import { multiplyAffine, transformPoint } from './box-geometry';
 import { findCanvasBoxTarget } from './box-targets';
 import styles from './OwnerVisualBuilder.module.css';
 type Gesture = { pointerId: number; x: number; y: number; corner: ImageCorner | 'crop'; original: ElementAppearance; current: ElementAppearance; geometry: CanvasBoxBounds; frameStyle: string; imageStyle: string; frame: HTMLElement; image: HTMLImageElement; button: HTMLButtonElement };
-export function OwnerCanvasImageTools({ canvasRef, target, occurrence = 0, value, disabled, onChange, renderVersion }: {
-  renderVersion?: object; canvasRef: RefObject<HTMLDivElement | null>; target: string; occurrence?: number; value?: ElementAppearance; disabled: boolean; onChange: (value: ElementAppearance) => void;
+export function OwnerCanvasImageTools({ canvasRef, target, occurrence = 0, value, disabled, onChange, onReplace, renderVersion }: {
+  onReplace?: () => void; renderVersion?: object; canvasRef: RefObject<HTMLDivElement | null>; target: string; occurrence?: number; value?: ElementAppearance; disabled: boolean; onChange: (value: ElementAppearance) => void;
 }) {
   const [bounds, setBounds] = useState<CanvasBoxBounds | null>(null);
   const [unsupported, setUnsupported] = useState(false);
@@ -97,6 +97,7 @@ export function OwnerCanvasImageTools({ canvasRef, target, occurrence = 0, value
   /* eslint-enable react-hooks/refs */
   return <div className={styles.imageTools} data-owner-canvas-controls="true" onClick={event => { event.preventDefault(); event.stopPropagation(); }} onDragStart={event => { event.preventDefault(); event.stopPropagation(); }}>
     <div className={styles.imageToolbar} style={{ left: Math.max(0, bounds.left), top: Math.max(0, bounds.top - 42) }}>
+      {onReplace&&<button data-owner-button type="button" disabled={disabled} onClick={onReplace}>Replace logo</button>}
       <button data-owner-button type="button" disabled={disabled} aria-pressed={value?.imageAspectLocked !== false} onClick={() => { if (!disabled) { finish(false); onChange({ ...value, imageAspectLocked: value?.imageAspectLocked === false }); } }}>Lock ratio</button>
       <button data-owner-button type="button" disabled={disabled} aria-pressed={crop} onClick={() => { finish(false); setCrop(!crop); }}>Crop position</button>
       <button data-owner-button type="button" disabled={disabled || !undo} onClick={() => { if (!disabled && undo) { finish(false); onChange(undo); setUndo(null); setStatus('Photo adjustment undone.'); } }}>Undo framing</button>
