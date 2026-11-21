@@ -4,16 +4,22 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import {createRequire} from 'node:module';
+const sdkSource=readFileSync(createRequire(import.meta.url).resolve('@firebase/functions'),'utf8');
+const sdkEncode=new Function(sdkSource.slice(sdkSource.indexOf('function mapValues('),sdkSource.indexOf('function decode('))+';return encode;')();
+import { BackupError, createOwnerBackupService } from '../firebase/functions/owner-backups-core.mjs';
+import { OWNER_UID } from '../firebase/functions/cleanup-core.mjs';
 
 // All Firebase imports are mocked before evaluation. These tests never make a
 // Firebase request, initialize the real SDK, or touch a real project/account.
 const root = fileURLToPath(new URL('../src/', import.meta.url));
 function fixture() {
-  let raw = null, readError = null, writeError = null, beforeRead = null, afterRead = null, retryDocument;
+  let raw = null, readError = null, writeError = null, beforeRead = null, afterRead = null, afterCallable = null, retryDocument;
   let reads = 0, commits = 0, appInitializations = 0, authInitializations = 0;
   let publicRaw = null, publicAssetsRaw = null;
-  const cloudFiles = new Map();
-  const user = { uid: 'owner-uid', email: 'owner@example.test', reload: async () => {}, getIdToken: async () => 'mock-token' };
+  const cloudFiles = new Map(), privateRecovery = new Map(), callableInputs = [];
+  const lookup = path => path === 'ownerWorkspace/current' ? raw : path === 'site/published' ? publicRaw : path === 'site/publishedAssets' ? publicAssetsRaw : path.startsWith('ownerFiles/') ? cloudFiles.get(path.slice(11)) ?? null : privateRecovery.get(path) ?? null;
+  const user = { uid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843', email: 'owner@example.test', reload: async () => {}, getIdToken: async () => 'mock-token' };
   const auth = { currentUser: user };
   const db = {};
   const appMocks = { getApps: () => [], initializeApp: options => { ++appInitializations; return { name: 'tmc-private-owner', options }; } };
@@ -22,20 +28,29 @@ function fixture() {
   const liteMocks = {
     getFirestore: () => db,
     doc: (actualDb, ...parts) => { const path = parts.join('/'); assert.equal(actualDb, db); assert.ok(['ownerWorkspace/current', 'site/published', 'site/publishedAssets'].includes(path) || /^ownerFiles\/[a-f0-9-]{36}$/.test(path)); return { path }; },
-    getDoc: async () => { ++reads; await beforeRead?.(); if (readError) throw readError; const result = snapshot(raw); await afterRead?.(); return result; },
+    getDoc: async ref => { ++reads; await beforeRead?.(ref.path); if (readError) throw readError; const result = snapshot(lookup(ref.path)); await afterRead?.(ref.path); return result; },
     runTransaction: async (_db, transform) => {
       let pending = new Map();
       const transaction = {
-        get: async ref => { ++reads; await beforeRead?.(); if (readError) throw readError; const result = snapshot(ref.path === 'site/published' ? publicRaw : ref.path === 'site/publishedAssets' ? publicAssetsRaw : ref.path.startsWith('ownerFiles/') ? cloudFiles.get(ref.path.slice(11)) ?? null : raw); await afterRead?.(); return result; },
+        get: async ref => { ++reads; await beforeRead?.(ref.path); if (readError) throw readError; const result = snapshot(lookup(ref.path)); await afterRead?.(ref.path); return result; },
         set: (ref, data) => { pending.set(ref.path, structuredClone(data)); },
+        create: (ref, data) => { assert.equal(lookup(ref.path), null, `immutable create ${ref.path}`); assert.equal(pending.has(ref.path), false); pending.set(ref.path, structuredClone(data)); },
       };
       let result = await transform(transaction);
       if (retryDocument !== undefined) { raw = structuredClone(retryDocument); retryDocument = undefined; pending = new Map(); result = await transform(transaction); }
       if (writeError) throw typeof writeError === 'function' ? writeError() : writeError;
-      if (pending.size) { if (pending.has('ownerWorkspace/current')) raw = pending.get('ownerWorkspace/current'); if (pending.has('site/published')) publicRaw = pending.get('site/published'); if (pending.has('site/publishedAssets')) publicAssetsRaw = pending.get('site/publishedAssets'); ++commits; }
+      if (pending.size) { if (pending.has('ownerWorkspace/current')) raw = pending.get('ownerWorkspace/current'); if (pending.has('site/published')) publicRaw = pending.get('site/published'); if (pending.has('site/publishedAssets')) publicAssetsRaw = pending.get('site/publishedAssets'); for (const [path, value] of pending) if (!['ownerWorkspace/current', 'site/published', 'site/publishedAssets'].includes(path)) privateRecovery.set(path, value); ++commits; }
       return result;
     },
   };
+  const toAdmin = snap => ({ exists: snap.exists(), data: () => snap.exists() ? snap.data() : undefined });
+  const adminDb = { doc: path => ({ path, get: async () => toAdmin(await liteMocks.getDoc({ path })) }), runTransaction: callback => liteMocks.runTransaction(db, tx => callback({ get: async ref => toAdmin(await tx.get(ref)), set: tx.set, create: tx.create })) };
+  const service = createOwnerBackupService({ db: adminDb });
+  const functionsMocks = { getFunctions: () => ({}), httpsCallable: (_functions, name) => async input => {
+    assert.equal(name, 'tmcOwnerPublishContent'); input=sdkEncode(input); callableInputs.push(structuredClone(input));
+    try { const data = await service.publishContent(input, { auth: { uid: OWNER_UID } }); await afterCallable?.(); return { data }; }
+    catch (cause) { const error = new Error(cause instanceof BackupError ? cause.message : cause?.name === 'OwnerValidationError' ? 'The website content is invalid. Nothing was saved or published.' : 'This action could not be confirmed.'); error.code = `functions/${cause instanceof BackupError ? cause.code : cause?.name === 'OwnerValidationError' ? 'invalid-argument' : 'unavailable'}`; throw error; }
+  } };
   const cache = new Map();
   function load(path) {
     path = resolve(path);
@@ -45,7 +60,7 @@ function fixture() {
     const source = readFileSync(path, 'utf8');
     if (path.endsWith('.json')) { compiledModule.exports = JSON.parse(source); return compiledModule.exports; }
     const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText;
-    const require = name => name === 'firebase/app' ? appMocks : name === 'firebase/auth' ? authMocks : name === 'firebase/firestore/lite' ? liteMocks : name.startsWith('.') ? load(resolve(dirname(path), name)) : (() => { throw new Error(`Unexpected import ${name}`); })();
+    const require = name => name === 'firebase/functions' ? functionsMocks : name === 'firebase/app' ? appMocks : name === 'firebase/auth' ? authMocks : name === 'firebase/firestore/lite' ? liteMocks : name.startsWith('@/') ? load(resolve(root, name.slice(2))) : name.startsWith('.') ? load(resolve(dirname(path), name)) : (() => { throw new Error(`Unexpected import ${name}`); })();
     new Function('require', 'module', 'exports', output)(require, compiledModule, compiledModule.exports);
     return compiledModule.exports;
   }
@@ -55,11 +70,12 @@ function fixture() {
   const model = load(resolve(root, 'owner/model.ts'));
   return {
     storeModule, client, defaults, model, user, auth, db,
-    store: () => storeModule.createFirebaseOwnerStore({ db, auth, ownerUid: 'owner-uid' }),
+    store: () => storeModule.createFirebaseOwnerStore({ db, auth, ownerUid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843' }),
     state: () => ({ raw: structuredClone(raw), reads, commits, appInitializations, authInitializations }),
     raw: value => { raw = structuredClone(value); },
     publicRaw: () => structuredClone(publicRaw),
     publicAssetsRaw: () => structuredClone(publicAssetsRaw),
+    recovery: () => structuredClone(privateRecovery), callableInputs, afterCallable: value => { afterCallable = value; },
     cloudFile: (id, value) => cloudFiles.set(id, structuredClone(value)),
     setPublicRaw: value => { publicRaw = structuredClone(value); },
     readError: value => { readError = value; }, writeError: value => { writeError = value; },
@@ -69,7 +85,7 @@ function fixture() {
 const validEnvironment = {
   apiKey: 'AIza' + 'a'.repeat(35), authDomain: 'taylor-made-creations.firebaseapp.com', projectId: 'taylor-made-creations',
   storageBucket: 'taylor-made-creations.firebasestorage.app', messagingSenderId: '419542649730',
-  appId: '1:419542649730:web:44fcea3e91247c36429d9b', ownerUid: 'owner-uid',
+  appId: '1:419542649730:web:44fcea3e91247c36429d9b', ownerUid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843',
 };
 
 test('Firebase config fails closed for every missing field and placeholders', () => {
@@ -85,26 +101,27 @@ test('Firebase config fails closed for every missing field and placeholders', ()
 test('owner verification rejects wrong UID before any account verification', async () => {
   const f = fixture(); let calls = 0;
   const wrong = { ...f.user, uid: 'someone-else', reload: async () => { ++calls; } };
-  await assert.rejects(f.client.verifyOwnerSession({ auth: f.auth, db: f.db, ownerUid: 'owner-uid' }, wrong), error => error.code === 'denied');
+  await assert.rejects(f.client.verifyOwnerSession({ auth: f.auth, db: f.db, ownerUid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843' }, wrong), error => error.code === 'denied');
   assert.equal(calls, 0);
 });
 test('owner verification waits for server reload and forced token refresh', async () => {
   const f = fixture(), calls = [];
   f.user.reload = async () => { calls.push('reload'); };
   f.user.getIdToken = async force => { assert.equal(force, true); calls.push('token'); return 'mock'; };
-  await f.client.verifyOwnerSession({ auth: f.auth, db: f.db, ownerUid: 'owner-uid' }, f.user);
+  await f.client.verifyOwnerSession({ auth: f.auth, db: f.db, ownerUid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843' }, f.user);
   assert.deepEqual(calls, ['reload', 'token']);
 });
 test('async verification cannot grant access to a replaced or signed-out session', async () => {
-  for (const replacement of [null, { uid: 'owner-uid' }, { uid: 'wrong' }]) {
+  for (const replacement of [null, { uid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843' }, { uid: 'wrong' }]) {
     const f = fixture(); f.user.getIdToken = async () => { f.auth.currentUser = replacement; return 'mock'; };
-    await assert.rejects(f.client.verifyOwnerSession({ auth: f.auth, db: f.db, ownerUid: 'owner-uid' }, f.user), error => error.code === 'expired');
+    await assert.rejects(f.client.verifyOwnerSession({ auth: f.auth, db: f.db, ownerUid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843' }, f.user), error => error.code === 'expired');
   }
 });
 test('an empty cloud document loads defaults without writing or opening IndexedDB', async () => {
   const f = fixture(); const initial = await f.store().load();
   assert.equal(initial.revision, 0); assert.equal(initial.updatedAt, null); assert.equal(initial.localPublished, null);
   assert.deepEqual(f.state(), { raw: null, reads: 1, commits: 0, appInitializations: 0, authInitializations: 0 });
+  assert.equal(f.callableInputs.length, 0); assert.equal(f.recovery().size, 0, 'opening a workspace does not create a server publication or backup');
 });
 test('cloud draft and private preview commit explicit independent snapshots', async () => {
   const f = fixture(), store = f.store();
@@ -231,6 +248,7 @@ test('only explicit live publish commits a separate public snapshot atomically',
   assert.equal(f.publicRaw(),null);
   state=await store.publishLocal(state.revision);
   assert.equal(f.publicRaw(),null);
+  assert.equal(f.callableInputs.length,0);assert.equal(f.recovery().size,0,'draft/private-preview actions cannot implicitly publish');
   const previousPreview=structuredClone(state.localPublished);
   const content=structuredClone(state.draft);
   content.home.title='Published title';content.gallery[0].visible=false;
@@ -262,13 +280,25 @@ test('live publish snapshots unsaved edits and can explicitly publish the saved 
   const next=await store.publishLive(undefined,state.revision);
   assert.equal(next.revision,2);assert.equal(f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw()).revision,2);
 });
+test('restored full-site publishing sends full mode and current draft only across the callable boundary', async () => {
+  const f=fixture(),store=f.store(),draft=f.defaults.createDefaultOwnerContent();
+  draft.home.title='CURRENT WEBSITE DRAFT';
+  draft.gallery=[{id:'website-photo',name:'Website photo',src:'/images/heads.webp',alt:'Website photo',visible:true,width:100,height:100}];
+  await store.publishLive(draft,0);
+  const wire=JSON.parse(JSON.stringify(f.callableInputs[0]));
+  assert.equal(wire.mode,'full');assert.equal(wire.expectedRevision,0);assert.ok(wire.operationId);
+  assert.deepEqual(Object.keys(wire).sort(),['content','expectedRevision','mode','operationId']);
+  assert.deepEqual(wire.content,draft);assert.equal(wire.galleryLibrary,undefined);assert.equal(wire.selection,undefined);
+  const published=f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw());
+  assert.equal(published.content.home.title,'CURRENT WEBSITE DRAFT');
+  assert.deepEqual(published.content.gallery.map(photo=>photo.id),['website-photo']);
+});
 test('live publish failure, conflict and retry never partially commit either document', async () => {
-  for(const mode of ['network','stale','retry','session','data-image','corrupt']){
+  for(const mode of ['network','stale','retry','data-image','corrupt']){
     const f=fixture(),store=f.store(),content=f.defaults.createDefaultOwnerContent();
     await store.publishLive(content,0);
     const beforePrivate=f.state().raw,beforePublic=f.publicRaw(),beforeAssets=f.publicAssetsRaw();
     if(mode==='network')f.writeError({code:'unavailable'});
-    if(mode==='session')f.afterRead(()=>{f.auth.currentUser=null;});
     if(mode==='data-image')content.home.image.src='data:image/png;base64,aGVsbG8=';
     if(mode==='corrupt')f.raw({...beforePrivate,payload:'broken'});
     if(mode==='retry'){
@@ -306,7 +336,7 @@ test('publication refuses corrupted or ahead-of-workspace public state without o
     if(mode==='corrupt')f.setPublicRaw({...f.publicRaw(),payload:'broken'});
     else f.setPublicRaw(f.storeModule.encodePublishedOwnerSnapshot(f.model.createPublishedOwnerSnapshot(content,2)));
     const beforePrivate=f.state().raw,beforePublic=f.publicRaw();
-    await assert.rejects(store.publishLive(content,1),error=>error.code==='corrupt');
+    await assert.rejects(store.publishLive(content,1),error=>error.code==='write' && error.cause?.code==='functions/failed-precondition');
     assert.deepEqual(f.state().raw,beforePrivate);assert.deepEqual(f.publicRaw(),beforePublic);assert.equal(f.state().commits,1);
   }
 });
@@ -317,7 +347,7 @@ test('a failed public transaction read never queues a private draft save',async(
   assert.equal(f.state().raw,null);assert.equal(f.publicRaw(),null);assert.equal(f.state().commits,0);
 });
 
-test('permission failure is classified as conflict only after a validated server revision change',async()=>{
+test('server transaction failures remain unconfirmed writes rather than client-inferred permission conflicts',async()=>{
   for(const mode of ['changed','unchanged','corrupt','read-denied']){
     const f=fixture(),store=f.store(),content=f.defaults.createDefaultOwnerContent();
     const saved=await store.publishLive(content,0),beforePublic=f.publicRaw();
@@ -330,7 +360,7 @@ test('permission failure is classified as conflict only after a validated server
       if(mode==='read-denied')f.readError({code:'permission-denied'});
       return {code:'permission-denied'};
     });
-    await assert.rejects(store.publishLive(content,1),error=>error.code===(mode==='changed'?'conflict':'write'));
+    await assert.rejects(store.publishLive(content,1),error=>error.code==='write' && error.cause?.code==='functions/unavailable');
     assert.deepEqual(f.publicRaw(),beforePublic);assert.equal(f.state().commits,1);
   }
 });
@@ -367,9 +397,9 @@ test('selective premade publication changes only selected saved and public listi
 test('selective publication requires initial publication and rejects invalid or invisible listing atomically', async () => {
   const f = fixture(), store = f.store();
   const item = { id: 'selected', name: 'Selected', image: '/images/home-collage.webp', alt: 'Selected', description: '', price: 2, visible: true };
-  await assert.rejects(store.publishPremadeLive(item, 0), error => error.code === 'not-published');
+  await assert.rejects(store.publishPremadeLive(item, 0), error => error.code === 'write' && error.cause?.code === 'functions/failed-precondition');
   assert.equal(f.state().commits, 0);
-  const current = await store.publishLive(undefined, 0);
+  const current = await store.publishLive(f.defaults.createDefaultOwnerContent(), 0);
   const before = f.state().raw, beforePublic = f.publicRaw();
   for (const invalid of [{ ...item, visible: false }, { ...item, soldChannel: 'third-party', externalUrl: 'javascript:alert(1)' }, { ...item, image: 'data:image/png;base64,aGVsbG8=' }, { ...item, price: -1 }]) {
     await assert.rejects(store.publishPremadeLive(invalid, current.revision));
@@ -382,7 +412,7 @@ test('selective publication requires initial publication and rejects invalid or 
 
 test('selective publication rejects stale revisions, transaction races and failures without partial changes', async () => {
   for (const scenario of ['stale', 'retry', 'denied']) {
-    const f = fixture(), store = f.store(), current = await store.publishLive(undefined, 0);
+    const f = fixture(), store = f.store(), current = await store.publishLive(f.defaults.createDefaultOwnerContent(), 0);
     const before = f.state().raw, beforePublic = f.publicRaw();
     const item = { id: 'selected', name: 'Selected', image: '/images/home-collage.webp', alt: 'Selected', description: '', price: 2, visible: true };
     if (scenario === 'retry') {
@@ -443,11 +473,16 @@ test('settings Save live requires existing publication and rejects stale revisio
   const bad=structuredClone(content);bad.site.name='';await assert.rejects(store.publishSettingsCardLive(bad,'business',current.revision));
   assert.equal(f.state().commits,commits);
 });
-test('settings Save live rejects sign-out during reads and never publishes unrelated dirty cards',async()=>{
+test('settings server commit after browser sign-out is discarded by adapter and never publishes unrelated dirty cards',async()=>{
   const f=fixture(),store=f.store(),content=f.defaults.createDefaultOwnerContent();await store.saveDraft(content,0);await store.publishLive(undefined,1);
-  const current=await store.load(),before=f.state().commits;
+  const current=await store.load(),before=f.state().commits,beforePublic=f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw());
+  content.home.title='PRIVATE UNSAVED HOME';content.site.email='changed@example.test';
   f.afterRead(()=>{f.auth.currentUser=null;});
-  await assert.rejects(store.publishSettingsCardLive(content,'contacts',current.revision));assert.equal(f.state().commits,before);
+  await assert.rejects(store.publishSettingsCardLive(content,'contacts',current.revision),error=>error.code==='unavailable');
+  assert.equal(f.state().commits,before+1,'the server request was authorized before browser logout');
+  const published=f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw());
+  assert.equal(published.revision,current.revision+1);assert.deepEqual(published.content.home,beforePublic.content.home);assert.equal(published.content.site.email,'changed@example.test');
+  assert.equal(f.auth.currentUser,null);assert.equal(f.recovery().has(`ownerRecoveryVersions/p-${published.revision}`),true);
 });
 test('settings live save preserves retained published inventory while shop is switched off',async()=>{
   const f=fixture(),store=f.store(),content=f.defaults.createDefaultOwnerContent();
@@ -474,4 +509,54 @@ test('ready cloud assets in Trash can remain referenced by a private draft witho
   draft.gallery[0].src=`/api/cloud-media/${id}`;
   const saved=await store.saveDraft(draft,0);assert.deepEqual(saved.draft.gallery,draft.gallery);
   saved.draft.site.name='Unrelated name';const next=await store.saveDraft(saved.draft,1);assert.deepEqual(next.draft.gallery,draft.gallery);
+});
+
+
+test('authorized full publication may finish after browser session replacement but returns no private success to that session',async()=>{
+  for(const replacement of [null,{uid:'client-fixture'},{uid:'a4ARjp0z8ZOByKlC2AfGzmMRj843'}]){
+    const f=fixture(),store=f.store(),draft=f.defaults.createDefaultOwnerContent();
+    f.afterRead(()=>{f.auth.currentUser=replacement;});
+    await assert.rejects(store.publishLive(draft,0),error=>error.code==='unavailable');
+    assert.equal(f.state().commits,1);assert.equal(f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw()).revision,1);
+    assert.equal(f.state().raw.revision,1);assert.equal(f.publicAssetsRaw().revision,1);assert.equal(f.auth.currentUser,replacement,'preview/publication never changes another role auth');
+    assert.equal(f.recovery().has('ownerRecoveryVersions/p-1'),true);
+  }
+});
+test('lost callable acknowledgment reuses exact operation receipt without a second publication or backup mutation',async()=>{
+  const f=fixture(),store=f.store(),draft=f.defaults.createDefaultOwnerContent();
+  f.afterCallable(()=>{f.afterCallable(null);throw Error('response lost after authorized commit');});
+  await assert.rejects(store.publishLive(draft,0),error=>error.code==='write');
+  const before={private:f.state().raw,public:f.publicRaw(),assets:f.publicAssetsRaw(),recovery:f.recovery()};
+  assert.equal(f.state().commits,1);assert.equal(f.callableInputs.length,1);
+  const recovered=await store.publishLive(draft,0);
+  assert.equal(recovered.revision,1);assert.equal(f.state().commits,1);assert.equal(f.callableInputs[0].operationId,f.callableInputs[1].operationId);
+  assert.deepEqual({private:f.state().raw,public:f.publicRaw(),assets:f.publicAssetsRaw(),recovery:f.recovery()},before);
+  const changed=structuredClone(draft);changed.home.title='A new explicit action';
+  await store.publishLive(changed,1);assert.notEqual(f.callableInputs[1].operationId,f.callableInputs[2].operationId);assert.equal(f.state().commits,2);
+});
+
+
+test('publication transport omits undefined styles while preserving exact desktop/mobile design and replay identity',async()=>{
+ const f=fixture(),store=f.store(),draft=f.defaults.createDefaultOwnerContent();
+ for(const page of draft.pages){page.titleAppearance=undefined;for(const block of page.blocks)block.appearance=undefined;}
+ draft.pages[0].titleAppearance={textColor:'#123456',marginTopPx:0,imageAspectLocked:false,mobile:{fontSize:27,backgroundColor:undefined}};
+ const encodedWithoutFix=sdkEncode(draft);assert.equal(encodedWithoutFix.pages[1].titleAppearance,null);
+ assert.throws(()=>f.model.assertOwnerContent(encodedWithoutFix),error=>error.issues.some(issue=>issue.path==='pages[1].titleAppearance'));
+ const expected=JSON.parse(JSON.stringify(draft));
+ f.afterCallable(()=>{f.afterCallable(null);throw Error('lost receipt');});
+ await assert.rejects(store.publishLive(draft,0),error=>error.code==='write');
+ assert.equal(f.state().commits,1,'first call committed before acknowledgment loss');
+ const result=await store.publishLive(draft,0);assert.equal(result.revision,1);assert.equal(f.state().commits,1);
+ assert.equal(f.callableInputs[0].operationId,f.callableInputs[1].operationId);
+ assert.deepEqual(f.callableInputs[0].content,expected);assert.deepEqual(result.draft,expected);
+ assert.ok(Object.hasOwn(draft.pages[1],'titleAppearance'),'caller-owned draft is not rewritten');
+ assert.equal(draft.pages[1].titleAppearance,undefined);
+ assert.equal(f.storeModule.decodePublishedOwnerSnapshot(f.publicRaw()).content.pages[0].titleAppearance.mobile.fontSize,27);
+});
+test('explicit null appearance remains rejected rather than normalized away',async()=>{
+ for(const target of ['title','block']){const f=fixture(),store=f.store(),draft=f.defaults.createDefaultOwnerContent();if(target==='title')draft.pages[0].titleAppearance=null;else draft.pages[0].blocks.push({id:'null-style',type:'text',heading:'',body:'keep',appearance:null});
+ await assert.rejects(store.publishLive(draft,0));assert.equal(f.callableInputs.length,0);assert.equal(f.state().commits,0);}
+});
+test('both exact studio owners use canonical config; account changes fence existing store',async()=>{
+ for(const uid of ['a4ARjp0z8ZOByKlC2AfGzmMRj843','VhnIFsEQFqRtS8u98mP921wim4J3']){const f=fixture();f.user.uid=uid;const client={auth:f.auth,db:f.db,ownerUid:'a4ARjp0z8ZOByKlC2AfGzmMRj843'};await f.client.verifyOwnerSession(client,f.user);const store=f.store();await store.load();f.auth.currentUser={...f.user,uid:uid==='a4ARjp0z8ZOByKlC2AfGzmMRj843'?'VhnIFsEQFqRtS8u98mP921wim4J3':'a4ARjp0z8ZOByKlC2AfGzmMRj843'};await assert.rejects(store.load(),/session ended/);}
 });

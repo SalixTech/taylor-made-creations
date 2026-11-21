@@ -44,19 +44,19 @@ test('folder rows have a modest gap at every depth without changing row targets 
       const computed = cascade(sheets, width);
       for (const container of [children, nested]) {
         assert.equal(computed(container)['margin-top'], '6px');
-        assert.equal(computed(container)['margin-left'], '12px');
-        assert.equal(computed(container)['padding-left'], '3px');
+        assert.equal(computed(container)['margin-left'], '9px');
+        assert.equal(computed(container)['padding-left'], '6px');
       }
       for (const sibling of [projects, secondNested, collapsedSibling]) {
-        assert.equal(computed(sibling.node)['margin-top'], '6px');
+        assert.equal(computed(sibling.node)['margin-top'], '2px');
       }
       for (const first of [root, fonts, firstNested]) {
         assert.equal(computed(first.node)['margin-top'], undefined, 'no doubled gap on first child');
       }
       for (const entry of [root, fonts, projects, firstNested, secondNested, collapsedSibling]) {
-        assert.equal(computed(entry.row).gap, '2px');
-        assert.equal(computed(entry.row).padding, undefined);
-        assert.equal(computed(entry.link).padding, '8px 4px');
+        assert.equal(computed(entry.row).gap, '0');
+        assert.equal(computed(entry.row).padding, '3px 5px');
+        assert.equal(computed(entry.link).padding, '7px 4px');
         assert.equal(computed(entry.expand).height, '30px');
         assert.match(computed(entry.row).outline, /^2px dashed /);
       }

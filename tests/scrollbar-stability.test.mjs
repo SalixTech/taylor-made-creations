@@ -10,7 +10,7 @@ const rules = [];
 css.walkRules(rule => rules.push(rule));
 const declaration = (rule, property) => rule.nodes.find(node => node.type === 'decl' && node.prop === property);
 
-test('WebKit scrollbars keep the same collapsed size in every interaction state', () => {
+test('WebKit scrollbars keep fixed per-scope sizes in every interaction state', () => {
   const track = rules.find(rule => rule.selector === '::-webkit-scrollbar');
   assert.equal(declaration(track, 'width')?.value, '6px');
   assert.equal(declaration(track, 'height')?.value, '6px');
@@ -19,13 +19,13 @@ test('WebKit scrollbars keep the same collapsed size in every interaction state'
   assert.ok(interactionRules.length > 0);
   for (const rule of interactionRules) {
     for (const node of rule.nodes.filter(node => node.type === 'decl')) {
-      assert.equal(node.prop, 'background-color', `${rule.selector} must change color only`);
+      if(rule.selectors.every(selector=>selector.startsWith('html:has([data-full-page-builder])')&&selector.endsWith('::-webkit-scrollbar-thumb:hover'))){assert.ok(['background-color','background'].includes(node.prop));assert.equal(node.value,'var(--builder-scroll-thumb)');}else assert.equal(node.prop,'background-color',`${rule.selector} must change color only`);
     }
   }
   for (const rule of rules.filter(rule => /::-webkit-scrollbar(?:\s|,|$|:hover|:active)/.test(rule.selector))) {
     for (const property of ['width', 'height']) {
       const value = declaration(rule, property)?.value;
-      if (value) assert.equal(value, '6px', `${rule.selector} ${property}`);
+      if(value){const builderViewport=rule.selectors.every(selector=>selector.startsWith('html:has([data-full-page-builder])')&&selector.endsWith('::-webkit-scrollbar'));assert.equal(value,builderViewport?'10px':'6px',`${rule.selector} ${property}`);}
     }
   }
 });

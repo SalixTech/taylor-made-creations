@@ -1,8 +1,10 @@
-import { test } from 'node:test';
+import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { harness, content, nodes } from './owner-ui-harness.mjs';
 const flush = () => new Promise(resolve => setImmediate(resolve));
+const fixtures = new Set();
+afterEach(() => { for (const fixture of fixtures) fixture.unmount(); fixtures.clear(); });
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const id = '11111111-1111-4111-8111-111111111111';
 const folderId = '22222222-2222-4222-8222-222222222222';
@@ -11,12 +13,17 @@ const file = { id, schemaVersion: 1, revision: 2, kind: 'photo', name: 'Private 
 const source = `/api/cloud-media/${id}`;
 function setup(options = {}) {
   const h = harness(), calls = [], selected = [];
+  fixtures.add(h); const unmount=h.unmount; let mounted=true; h.unmount=()=>{ if (!mounted) return; mounted=false; fixtures.delete(h); unmount(); };
   const library = { files: [{ ...file }], folders: { schemaVersion: 1, revision: 0, folders: {} }, loading: false, ready: true, error: '', async refresh() { calls.push({ method: 'refresh' }); }, ...options.library };
   const methods = {
-    async readCloudFileOrder() { return {schemaVersion:1,revision:0,keys:[]}; },
+    pendingWebsiteUploads() { return options.pendingUploads ?? []; },
+    async retryWebsiteUpload(id, config) { calls.push({ method: "retry-upload", id, config }); return options.retryUpload ? options.retryUpload(id, config) : file; },
+    async readCloudFileOrder() { return options.order ?? {schemaVersion:1,revision:0,keys:[]}; },
     async saveCloudFileOrder(parentId, order, moving, target, after) { calls.push({method:"order",parentId,order,moving,target,after}); },
     async changeCloudFile(value, change) { calls.push({ method: 'file', value, change }); if (options.fileChange) return options.fileChange(value, change); return { ...value, ...change }; },
     async changeCloudFolder(registry, id, change) { calls.push({ method: 'folder', registry, id, change }); return {...registry,revision:registry.revision+1,folders:{...registry.folders,[id]:{...registry.folders[id],...change}}}; },
+    async readCloudGallery() { return options.readGallery ? options.readGallery() : options.gallery ?? null; },
+    async ensureCloudSystemFolders() { return library.folders; },
     async ensureCloudFontsFolder() { calls.push({method:'fonts'}); return library.folders; },
     async readCloudCleanupStatus() { return {available:true,automaticCleanupEnabled:false,lastRunAt:null,message:'Ready',...options.cleanup}; },
     async permanentDeleteCloudFiles(files) { calls.push({method:'purge',files}); return options.purge ? options.purge(files) : {deletedIds:files.map(f=>f.id),blockedIds:[],failedIds:[]}; },
@@ -33,6 +40,7 @@ function setup(options = {}) {
   h.overrides['./cloud-files-client'] = methods;
   h.overrides['./use-cloud-files'] = { useCloudFiles: () => library };
   h.overrides['./media-client'] = { useOwnerMediaSource: () => ({ src: 'blob:private-image', error: null }) };
+  if(options.workspace) h.overrides['./website-workspace-config']={WEBSITE_WORKSPACE:options.workspace};
   const Hub = h.load('src/owner/CloudFileHub.tsx').CloudFileHub;
   const render = () => h.render(Hub, { manager: true, ...options.props });
   render();
@@ -42,7 +50,7 @@ function setup(options = {}) {
   return { h, calls, selected, library, render, button, dialog, action };
 }
 test('File Hub exposes compact usage with truthful billing detail and no fake connection success', () => {
-  const t = setup(); assert.match(content(t.h.tree), /1 file · 1 KB, including Trash/); assert.match(t.h.find(n=>n.props.title?.includes('billing')).props.title,/billing total may differ/); assert.match(content(t.h.tree), /Storage read access has not been checked/); assert.equal(t.button('Empty Trash'), undefined); assert.equal(t.button('Use photo'), undefined); assert.ok(t.button('New folder')); t.h.unmount();
+  const t = setup(); assert.match(content(t.h.tree), /1 file · 1 KB, including Trash/); assert.match(t.h.find(n=>n.props.title?.includes('billing')).props.title,/billing total may differ/); assert.equal(t.button('Check storage access'), undefined); assert.doesNotMatch(content(t.h.tree), /Storage read access has not been checked/); assert.equal(t.button('Empty Trash'), undefined); assert.equal(t.button('Use photo'), undefined); assert.ok(t.button('New folder')); t.h.unmount();
 });
 test('photo picker All photos includes ready nested images but excludes PDFs, pending and inherited-trash photos', () => {
   const chosen = [];
@@ -53,6 +61,13 @@ test('photo picker All photos includes ready nested images but excludes PDFs, pe
 });
 test('view and dialog close leave current selection and URL unchanged', () => {
   const t = setup(); t.button('View').props.onClick(); t.render(); assert.equal(t.dialog().props.title, file.name); assert.ok(t.h.find(n => n.type?.name === 'PrivatePhoto')); t.action('Close photo').props.onClick(); t.render(); assert.equal(t.dialog(), undefined); assert.equal(t.h.window.location.href, ''); assert.equal(t.calls.length, 0); t.h.unmount();
+});
+test('general File Hub hint does not promise a removed folder menu; file placement remains accessible', async()=>{
+ const t=setup();await flush();t.render();
+ const hint=t.h.find(n=>n.type==='p'&&content(n).startsWith('Drop files here to upload'));
+ assert.ok(hint);assert.match(content(hint),/drag a card to an edge to reorder/);assert.doesNotMatch(content(hint),/More actions|⋯/);
+ assert.ok(t.button('Keyboard placement'),'existing file keyboard placement is not removed with the generic hint');
+ t.h.unmount();
 });
 test('new folder is inline, cancellation does not write, and Enter saves its name', async () => {
   const t = setup(); t.button('New folder').props.onClick(); t.render(); assert.equal(t.dialog(),undefined); t.button('Cancel').props.onClick(); t.render(); assert.equal(t.calls.length,0);
@@ -65,7 +80,7 @@ test('Trash confirmation is recoverable, repeated submits issue one write, and d
   // The icon has a specific action name, distinct from the Trash view.
   t.button('Move to Trash: Private cloud photo').props.onClick(); t.render();
   assert.match(content(t.dialog()), /No bytes are deleted/); assert.match(content(t.dialog()), /Existing page and published photo references are kept/);
-  t.action('Move to Trash').props.onClick(); t.action('Move to Trash').props.onClick(); t.render(); assert.equal(t.calls.filter(c => c.method === 'file').length, 1); assert.equal(t.dialog().props.dismissDisabled, true);
+  assert.match(t.action('Move to Trash').props.className,/primary/);t.action('Move to Trash').props.onClick(); t.action('Move to Trash').props.onClick(); t.render(); assert.equal(t.calls.filter(c => c.method === 'file').length, 1); assert.equal(t.dialog().props.dismissDisabled, true);
   t.dialog().props.onClose(); t.render(); assert.ok(t.dialog()); gate.resolve(file); await flush(); t.render(); assert.equal(t.dialog(), undefined); assert.match(content(t.h.tree), /Moved to Trash/); t.h.unmount();
 });
 test('failed rename remains editable and does not show saved status; refresh follows uncertain writes', async () => {
@@ -99,8 +114,8 @@ test('logout revokes downloaded object URLs and clears photo dialogs before acce
   t.library.ready = false; t.library.loading = false; t.library.files = []; t.render(); assert.deepEqual(revoked, ['blob:private-download']); await flush();
   t.library.ready = true; t.library.files = [file]; t.render(); assert.equal(t.dialog(), undefined); assert.doesNotMatch(content(t.h.tree), /File handed to your browser/); t.h.unmount();
 });
-test('access check reports only after awaited result; denied/unconfigured metadata leaves controls unavailable', async () => {
-  const t = setup(); t.button('Check storage access').props.onClick(); t.render(); assert.doesNotMatch(content(t.h.tree), /Actual Storage read probe succeeded/); await flush(); t.render(); assert.match(content(t.h.tree), /Actual Storage read probe succeeded/); t.h.unmount();
+test('diagnostic panel stays removed while denied/unconfigured metadata leaves controls unavailable', async () => {
+  const t = setup(); await flush(); t.render(); assert.equal(t.button('Check storage access'), undefined); assert.equal(t.calls.some(call => call.method === 'probe'), false); t.h.unmount();
   const denied = setup({ library: { ready: false, error: 'Cloud files access was denied', files: [] } }); assert.equal(denied.button('Upload files').props.disabled, true); assert.equal(denied.button('New folder').props.disabled, true); assert.match(content(denied.h.tree), /No local fallback was used/); denied.h.unmount();
 });
 function hookSetup(reader) {
@@ -167,7 +182,7 @@ test('File Hub uploads preserve originals, while the photo picker requests websi
 });
 test('original photo conversion is explicit, keeps original metadata and does not select or publish',async()=>{
   const original={...file,kind:'file',contentType:'application/octet-stream',name:'Original.png',width:0,height:0};const gate=deferred(),t=setup({library:{files:[original]},websitePhoto:()=>gate.promise});
-  assert.equal(t.button('View'),undefined);t.button('Create website photo').props.onClick();t.button('Create website photo').props.onClick();t.render();assert.equal(t.calls.filter(c=>c.method==='website-photo').length,1);assert.equal(t.library.files[0],original);gate.resolve(file);await flush();t.render();assert.match(content(t.h.tree),/original file is unchanged/);assert.equal(t.library.files[0],original);t.h.unmount();
+  assert.equal(t.button('View'),undefined);assert.equal(t.button('Create website photo'),undefined);assert.equal(t.button('Use photo'),undefined);assert.equal(t.button('Create optimized website copy').props['aria-label'],'Create optimized website copy: Original.png');assert.equal(t.calls.filter(call=>call.method==='website-photo').length,0);t.button('Create optimized website copy').props.onClick();t.button('Create optimized website copy').props.onClick();t.render();assert.equal(t.calls.filter(c=>c.method==='website-photo').length,1);assert.equal(t.library.files[0],original);gate.resolve(file);await flush();t.render();assert.match(content(t.h.tree),/original file is unchanged/);assert.equal(t.library.files[0],original);assert.equal(t.calls.some(call=>['file','folder','purge','purge-folders','upload'].includes(call.method)),false);t.h.unmount();
 });
 test('default Fonts folder is protected from rename, move, Trash and dragging',()=>{
   const fontFolder='00000000-0000-4000-8000-000000000001';
@@ -185,13 +200,13 @@ test('card edge drops reorder mixed items without changing folders or file bytes
  assert.equal(getCard('Projects').props['data-insert'],'before');getCard('Projects').props.onDrop({dataTransfer,preventDefault(){},stopPropagation(){}});await flush();t.render();
  const call=t.calls.find(c=>c.method==='order');assert.equal(call.moving,`file:${id}`);assert.equal(call.target,`folder:${folderId}`);assert.equal(call.after,false);assert.equal(t.calls.some(c=>c.method==='file'||c.method==='folder'),false);t.h.unmount();
 });
-test('touch/keyboard placement moves an item out through visible Up without opening a dialog',async()=>{
+test('touch/keyboard placement moves an item out through the folder rail without opening a dialog',async()=>{
  const t=setup({library:{files:[{...file,parentId:folderId}],folders:{schemaVersion:1,revision:1,folders:{[folderId]:{name:'Projects',parentId:'root',trashedAt:null}}}}});
- t.button('Open').props.onClick();t.render();await flush();t.render();t.button('Reorder / move').props.onClick();t.render();
- assert.equal(t.dialog(),undefined);t.button('↑ Move selected item up one folder').props.onClick();await flush();t.render();assert.equal(t.calls.find(c=>c.method==='file').change.parentId,'root');t.h.unmount();
+ t.button('Open').props.onClick();t.render();await flush();t.render();t.button('Keyboard placement').props.onClick();t.render();
+ assert.equal(t.dialog(),undefined);t.button('Move selected item to: My files').props.onClick();await flush();t.render();assert.equal(t.calls.find(c=>c.method==='file').change.parentId,'root');t.h.unmount();
 });
 test('Cancel move sits in a dedicated contained toolbar rather than inside the announcement paragraph',async()=>{
- const t=setup();await flush();t.render();t.button('Reorder / move').props.onClick();t.render();
+ const t=setup();await flush();t.render();t.button('Keyboard placement').props.onClick();t.render();
  const toolbar=t.h.find(n=>n.props['data-file-move-toolbar']);assert.ok(toolbar);assert.match(toolbar.props.className,/moveStatus/);
  const cancel=nodes(toolbar).find(n=>n.type==='button'&&content(n)==='Cancel move');assert.ok(cancel);
  const message=nodes(toolbar).find(n=>n.props.role==='status');assert.ok(message);assert.equal(nodes(message).some(n=>n.type==='button'),false);
@@ -297,7 +312,7 @@ test('hierarchy rejects self, descendant and stale destinations without bubbling
 test('hierarchy keyboard move can be canceled and respects protected Fonts',async()=>{
  const t=setup({library:{folders:treeFolders()}});await flush();t.render();
  const card=t.h.all(n=>n.type==='li').find(n=>content(n).includes(file.name));
- nodes(card).find(n=>n.type==='button'&&content(n)==='Reorder / move').props.onClick();t.render();
+ nodes(card).find(n=>n.type==='button'&&content(n)==='Keyboard placement').props.onClick();t.render();
  assert.ok(t.button('Move selected item to: Projects'));t.button('Cancel move').props.onClick();t.render();
  assert.equal(t.button('Move selected item to: Projects'),undefined);assert.equal(t.calls.some(c=>c.method==='file'),false);
  const fonts=t.h.all(n=>n.type==='li').find(n=>content(n).includes('Fonts folder'));
@@ -308,7 +323,7 @@ test('hierarchy keyboard move can be canceled and respects protected Fonts',asyn
 test('Trash is an accessible icon view beside Refresh, never a destructive shortcut', async () => {
  const t=setup({library:{files:[file,{...file,id:childId,name:'Old photo',trashedAt:'2026-10-26T00:00:00.000Z'}]}});
  const actions=t.h.find(n=>n.type==='div' && n.props.className==='headingActions');
- assert.ok(actions); assert.deepEqual(nodes(actions).filter(n=>n.type==='button').map(n=>n.props['aria-label']||content(n)),['Refresh files','Trash']);
+ assert.ok(actions); assert.deepEqual(nodes(actions).filter(n=>n.type==='button'||n.type?.name==='RefreshButton').map(n=>n.props.label||n.props['aria-label']||content(n)),['Refresh files','Trash']);
  assert.equal(t.button('Trash').props.title,'View Trash');assert.equal(t.button('Trash').props['aria-pressed'],false);
  assert.ok(nodes(t.button('Trash')).some(n=>n.type?.name==='TrashIcon'));assert.equal(content(t.button('Trash')),'');
  t.button('Trash').props.onClick();await flush();t.render();assert.equal(t.button('Trash').props['aria-pressed'],true);
@@ -328,4 +343,59 @@ test('file and folder Trash entrypoints are named red icons and protected Fonts 
   assert.match(button.props.className,/icon/);assert.doesNotMatch(button.props.className,/danger/);
  }
  t.h.unmount();
+});
+
+ test('folder overflow reorder is removed while explicit Move, Rename and Trash stay available',async()=>{
+ const t=setup({library:{folders:treeFolders()}});await flush();t.render();
+ const folder=t.h.all(n=>n.type==='li').find(n=>content(n).includes('Projects')&&nodes(n).some(child=>child.props['aria-label']==='Move: Projects'));
+ assert.ok(folder);assert.equal(nodes(folder).some(n=>n.type==='summary'),false);assert.ok(nodes(folder).find(n=>n.props['aria-label']==='Move: Projects'));assert.ok(nodes(folder).find(n=>n.props['aria-label']==='Rename: Projects'));assert.ok(nodes(folder).find(n=>n.props['aria-label']==='Move to Trash: Projects'));t.h.unmount();
+});
+
+test('Gallery links saved photos from other folders once without exposing move/trash/rename actions',async()=>{
+ const galleryId='00000000-0000-4000-8000-000000000002';
+ const physical={...file,id:childId,parentId:galleryId,name:'Already in Gallery'};
+ const t=setup({gallery:{items:[{src:source},{src:source},{src:`/api/cloud-media/${childId}`}]},library:{folders:{schemaVersion:1,revision:1,folders:{[galleryId]:{name:'Gallery',parentId:'root',trashedAt:null}}},files:[file,physical]}});
+ t.h.find(n=>n.type==='button'&&n.props['aria-label']==='Open folder: Gallery').props.onClick();t.render();await flush();t.render();await flush();t.render();
+ assert.equal(t.h.all(n=>n.type==='li').length,2);assert.match(content(t.h.tree),/Linked from My files/);
+ assert.equal(t.button(`Rename: ${file.name}`),undefined);assert.equal(t.button(`Move to Trash: ${file.name}`),undefined);assert.ok(t.button(`Rename: ${physical.name}`));
+ const card=t.h.find(n=>n.type==='li'&&content(n).includes(file.name));assert.equal(card.props.draggable,false);assert.ok(t.button('Open original folder'));
+ assert.equal(t.calls.filter(call=>['file','folder','upload','purge'].includes(call.method)).length,0);
+ t.button('Open original folder').props.onClick();t.render();assert.ok(t.button(`Rename: ${file.name}`));
+});
+test('late private Gallery read after navigation never adds links to the next folder',async()=>{
+ const pending=deferred(),galleryId='00000000-0000-4000-8000-000000000002';
+ const t=setup({readGallery:()=>pending.promise,library:{folders:{schemaVersion:1,revision:1,folders:{[galleryId]:{name:'Gallery',parentId:'root',trashedAt:null}}}}});
+ t.h.find(n=>n.type==='button'&&n.props['aria-label']==='Open folder: Gallery').props.onClick();t.render();await flush();t.render();
+ t.h.find(n=>n.type==='button'&&n.props['aria-label']==='Open folder: My files').props.onClick();t.render();await flush();pending.resolve({items:[{src:source}]});await flush();t.render();
+ assert.doesNotMatch(content(t.h.tree),/Linked from/);assert.ok(t.button(`Rename: ${file.name}`));
+});
+
+test('retained upload exposes explicit same-ID retry and synchronous modal busy guard',async()=>{
+ const task=deferred(),busy=[];const t=setup({pendingUploads:[{id,name:'Pending original',bytes:42,running:false}],retryUpload:()=>task.promise,props:{onBusyChange:value=>busy.push(value)}});
+ const retry=t.button('Retry same upload');assert.ok(retry);retry.props.onClick();assert.deepEqual(busy,[true]);assert.equal(t.calls.filter(c=>c.method==='retry-upload').length,1);assert.equal(t.calls.find(c=>c.method==='retry-upload').id,id);
+ t.render();assert.equal(t.button('Retry same upload').props.disabled,true);t.h.unmount();task.resolve(file);await task.promise;await Promise.resolve();assert.deepEqual(busy,[true],'old completion must not clear replacement modal lock');
+});
+
+test('website PDF modal lists only ready documents, keeps private PDFs private, and uploads explicit website documents',async()=>{
+  const chosen=[],pending=deferred();
+  const t=setup({props:{manager:false,pickerKind:'document',onSelect:src=>chosen.push(src)},library:{files:[{...file,kind:'document',name:'Website PDF'},{...file,id:folderId,kind:'pdf',name:'Private PDF'},{...file,id:childId,kind:'document',name:'Pending PDF',status:'uploading'}]},upload:()=>pending.promise});
+  assert.ok(t.button('Use PDF: Website PDF'));assert.equal(t.button('Use PDF: Private PDF'),undefined);assert.equal(t.button('Use PDF: Pending PDF'),undefined);
+  const choose=t.button('Use PDF: Website PDF');choose.props.onClick();assert.deepEqual(chosen,[`/api/cloud-documents/${id}`]);chosen.length=0;
+  const input=t.h.find(n=>n.type==='input'&&n.props.type==='file');assert.equal(input.props.accept,'.pdf,application/pdf');input.props.onChange({target:{files:[new File(['%PDF-test'],'care.pdf')],value:''}});await flush();
+  const call=t.calls.find(x=>x.method==='upload');assert.equal(call.options.websiteDocument,true);assert.equal(call.options.photoOnly,false);assert.equal(call.options.preserveOriginal,false);
+  choose.props.onClick();assert.deepEqual(chosen,[]);pending.resolve({...file,kind:'document'});await flush();t.render();assert.match(content(t.h.tree),/Choose Use PDF/);assert.deepEqual(chosen,[]);t.unmount?.();t.h.unmount();
+});
+
+test('website PDF upload unmount aborts pending operation; no selection occurs after completion',async()=>{
+ const pending=deferred(),chosen=[],t=setup({props:{manager:false,pickerKind:'document',onSelect:src=>chosen.push(src)},upload:()=>pending.promise});
+ t.h.find(n=>n.type==='input'&&n.props.type==='file').props.onChange({target:{files:[new File(['x'],'care.pdf')],value:''}});await flush();const call=t.calls.find(x=>x.method==='upload');t.h.unmount();assert.equal(call.options.signal.aborted,true);pending.resolve({...file,kind:'document'});await flush();assert.deepEqual(chosen,[]);
+});
+
+test('Website Defaults is pinned above custom root order and beta Commissions is an empty isolated view',async()=>{
+ const defaults='00000000-0000-4000-8000-000000000006',commissions='00000000-0000-4000-8000-000000000003';
+ const t=setup({workspace:'beta',order:{schemaVersion:1,revision:1,keys:[`folder:${folderId}`,`folder:${defaults}`]},library:{files:[],folders:{schemaVersion:1,revision:1,folders:{[folderId]:{name:'AAA custom',parentId:'root',trashedAt:null},[defaults]:{name:'Website Defaults',parentId:'root',trashedAt:null},[commissions]:{name:'Commissions',parentId:defaults,trashedAt:null}}}}});
+ await flush();t.render();const rows=t.h.all(n=>n.type==='li');assert.match(content(rows[0]),/Website Defaults/);assert.equal(rows[0].props.draggable,false);assert.equal(t.button('Move to Trash: Website Defaults'),undefined);
+ nodes(rows[0]).find(n=>n.type==='button'&&content(n)==='Open').props.onClick();t.render();const commission=t.h.all(n=>n.type==='li').find(n=>content(n).includes('Commissions'));
+ nodes(commission).find(n=>n.type==='button'&&content(n)==='Open').props.onClick();t.render();assert.match(content(t.h.tree),/Beta is website-only/);assert.equal(t.h.find(n=>n.type?.name==='CommissionFileHub'),undefined);assert.equal(t.button('New folder'),undefined);assert.equal(t.button('Upload files'),undefined);assert.equal(t.calls.some(c=>c.method==='file'||c.method==='folder'),false);
+ t.button('Back to Website Defaults').props.onClick();t.render();assert.match(content(t.h.tree),/Commissions/);t.h.unmount();
 });

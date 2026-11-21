@@ -230,7 +230,7 @@ test('explicit main More unlisted and hidden states remain separate without migr
   page.navPlacement = 'invented'; assert.equal(m.validateOwnerContent(content).valid, false);
 });
 
-test('bounded numeric appearance and private unreferenced fonts are safely projected', () => {
+test('finite positive creative appearance and private unreferenced fonts are safely projected', () => {
   const content = d.createDefaultOwnerContent();
   const id = '11111111-1111-4111-8111-111111111111', unused = '22222222-2222-4222-8222-222222222222';
   content.fonts = [{ id, name: 'Uploaded', src: `/api/fonts/${id}`, format: 'woff2' }, { id: unused, name: 'Unused draft', src: `/api/fonts/${unused}`, format: 'otf' }];
@@ -242,7 +242,8 @@ test('bounded numeric appearance and private unreferenced fonts are safely proje
   assert.deepEqual(snapshot.design, content.design);
   assert.deepEqual(snapshot.pages[0].blocks, content.pages[0].blocks);
   m.assertPublicOwnerContent(snapshot);
-  for (const bad of [{ fontSize: 0 }, { fontSize: 145 }, { fontSize: '18px' }, { widthPercent: 101 }, { heightPercent: Infinity }, { headingAlign: 'justify' }, { fontId: 'missing' }, { style: 'position:fixed' }]) {
+  for (const valid of [{ fontSize: 145 }, { widthPercent: 101 }]) { content.pages[0].blocks[0].appearance = valid; assert.equal(m.validateOwnerContent(content).valid, true); assert.deepEqual(m.createPublicContentSnapshot(content).pages[0].blocks[0].appearance, valid); }
+  for (const bad of [{ fontSize: 0 }, { fontSize: -1 }, { fontSize: Infinity }, { fontSize: NaN }, { widthPercent: 0 }, { widthPercent: -1 }, { fontSize: '18px' }, { heightPercent: Infinity }, { headingAlign: 'justify' }, { fontId: 'missing' }, { style: 'position:fixed' }]) {
     content.pages[0].blocks[0].appearance = bad;
     assert.equal(m.validateOwnerContent(content).valid, false, JSON.stringify(bad));
   }

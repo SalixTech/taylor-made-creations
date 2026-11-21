@@ -196,9 +196,18 @@ test('the existing-photo panel compiles with owner theme tokens and stays readab
     const summary = element('summary', {}, panel), label = element('label', {}, panel), input = element('input', {}, label);
     const computed = cascade([globals, compiled.css, modes]);
     const background = computed(panel)['background-color'];
-    assert.equal(background, mode === 'dark' ? '#242426' : '#fff');
+    assert.equal(background, mode === 'dark' ? '#2c2c2d' : '#fff');
     assert.ok(contrast(computed(summary).color, background) >= 4.5);
     assert.ok(contrast(computed(label).color, background) >= 4.5);
     assert.ok(contrast(computed(input).color, computed(input)['background-color']) >= 4.5);
   }
+});
+
+test('premade amount surfaces honor the same optional price color without altering button accents',()=>{
+ const root=element('div',{class:'selected-design','data-site-theme':'true'}),amount=element('p',{class:'premade-price'},root),button=element('a',{class:'button'},root);
+ const computed=cascade([globals,'.selected-design{--site-accent:#215a70;--site-price-text:#ab1234}']);
+ assert.equal(computed(amount).color,'#ab1234');assert.notEqual(computed(button).color,'#ab1234');
+ for(const path of ['src/owner/OwnerSitePreview.module.css','src/components/PremadeShopPreview.module.css']) assert.match(read(path),/color:var\(--site-price-text,var\(--wine\)\)/);
+ const value=make();value.design={colors:{accent:'#215a70',priceText:'#ab1234'}};
+ for(const mode of ['editor','private-preview','public'])assert.match(render(mode==='public'?copyForPublic(value):value,'premades',mode),/--site-price-text:#ab1234/);
 });

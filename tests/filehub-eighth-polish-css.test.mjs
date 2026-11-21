@@ -14,7 +14,7 @@ const buttons=await postcss([local(),scope({generateScopedName:name=>`Button_${n
 test('open desktop folder rail stretches with the file pane while mobile and collapsed remain compact',()=>{
  const hub=element('section',{class:'Hub_hub Hub_manager'}),explorer=element('div',{class:'Hub_explorer'},hub);
  const rail=element('details',{class:'Hub_folderSidebar',open:''},explorer),nav=element('nav',{},rail);
- for(const width of [701,1050,1440]){const computed=cascade([compiled.css],width);assert.equal(computed(rail)['align-self'],'stretch');assert.equal(computed(explorer)['grid-template-columns'],'minmax(165px,210px) minmax(0,1fr)');}
+ for(const width of [701,1050,1440]){const computed=cascade([compiled.css],width);assert.equal(computed(rail)['align-self'],'stretch');assert.equal(computed(explorer)['grid-template-columns'],'minmax(185px,230px) minmax(0,1fr)');}
  for(const width of [375,650,700]){const computed=cascade([compiled.css],width);assert.equal(computed(rail)['align-self'],'start');assert.equal(computed(explorer)['grid-template-columns'],'minmax(0,1fr)');assert.equal(computed(nav)['max-height'],'230px');}
  delete rail.attrs.open;assert.notEqual(cascade([compiled.css],1440)(rail)['align-self'],'stretch');
 });

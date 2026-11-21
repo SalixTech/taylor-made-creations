@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { harness, content, nodes } from './owner-ui-harness.mjs';
 
@@ -6,10 +6,13 @@ import { harness, content, nodes } from './owner-ui-harness.mjs';
 // hook scopes per mounted boundary. This is not a browser or Firebase integration test.
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const button = (h, label) => h.find(node => node.type === 'button' && content(node).trim() === label);
-const ownerUid = 'navigation-test-owner';
+const ownerUid = 'a4ARjp0z8ZOByKlC2AfGzmMRj843';
+const activeFixtures = new Set();
+afterEach(() => { for (const h of activeFixtures) h.unmount(); activeFixtures.clear(); });
 
 async function workspaceFixture(section, pageId) {
   const gate = harness(), portal = harness(), builder = harness(), preview = harness();
+  for (const h of [gate, portal, builder, preview]) activeFixtures.add(h);
   for (const h of [portal, builder]) {
     h.overrides['./HelpButton'] = { HelpButton: () => null };
     h.overrides['./TaylorServices'] = { TaylorServices: () => null };
@@ -33,6 +36,7 @@ async function workspaceFixture(section, pageId) {
   let observer, loads = 0, writes = 0, createdStores = 0, portalElement, builderKey;
   const saved = portal.load('src/owner/defaults.ts').createInitialOwnerWorkspace();
   const store = {
+    readGallery: async () => null,
     load: async () => { loads++; return structuredClone(saved); }, subscribe: () => () => {}, dispose() {},
     saveDraft: async () => { writes++; throw Error('Unexpected write'); },
     publishLive: async () => { writes++; throw Error('Unexpected publish'); },
@@ -79,7 +83,7 @@ async function workspaceFixture(section, pageId) {
     gate, portal, builder, preview, store, saved, render, builderElement,
     frame: () => builder.find(node => node.type?.name === 'SiteContentFrame'),
     get loads() { return loads; }, get writes() { return writes; },
-    close() { for (const h of [builder, portal, preview, gate]) h.unmount(); },
+    close() { for (const h of [builder, portal, preview, gate]) { h.unmount(); activeFixtures.delete(h); } },
   };
 }
 
@@ -87,7 +91,11 @@ test('the actual /taylor route authenticates before mounting the workspace and i
   const t = await workspaceFixture();
   assert.equal(t.builderElement(), undefined, '/taylor starts at Overview');
   assert.ok(t.portal.find(node => node.type === 'a' && node.props.href === '/taylor/overview' && node.props['aria-current'] === 'page'));
-  t.portal.find(node => node.type === 'a' && content(node).trim() === 'Website builder').props.onClick(); t.render();
+  const separateBuilder = t.portal.find(node => node.type === 'a' && content(node).trim() === 'Website builder');
+  assert.equal(separateBuilder.props.href, 'https://build.taylormadecreations.dog'); assert.equal(separateBuilder.props.target, '_blank');
+  // Exercise the existing main editor through its Overview management card;
+  // the sidebar intentionally opens a separate beta builder tab now.
+  t.portal.find(node => node.type === 'a' && node.props.href === '/taylor/pages').props.onClick({ preventDefault() {} }); t.render();
   assert.equal(t.frame().props.editable, false); assert.equal(t.loads, 1);
   button(t.builder, 'Edit website').props.onClick(); t.render();
   assert.equal(t.builderElement().props.browsing, false); assert.equal(t.frame().props.editable, true);
@@ -97,6 +105,7 @@ test('the actual /taylor route authenticates before mounting the workspace and i
   assert.ok(t.builder.find(node => node.type === 'aside'));
   const exit = button(t.builder, 'Exit edit mode').props.onClick;
   exit(); exit(); t.render();
+  {const dialog=t.portal.find(node=>node.type?.name==='Dialog');assert.equal(dialog.props.title,'Leave edit mode?');assert.equal(t.builderElement().props.browsing,false);nodes(dialog.props.actions).find(node=>node.type==='button'&&content(node)==='Exit edit mode').props.onClick();t.render();}
   assert.equal(t.builderElement().props.browsing, true); assert.equal(t.frame().props.editable, false);
   assert.equal(t.builder.find(node => node.type === 'aside'), undefined);
   assert.equal(t.frame().props.content.home.title, 'KEEP THIS UNSAVED EDIT');
@@ -106,7 +115,7 @@ test('the actual /taylor route authenticates before mounting the workspace and i
   const navigation = nodes(frame.type(frame.props)).find(node => node.type?.name === 'ContentLink' && node.props.href === '/gallery');
   assert.ok(navigation);
   t.builder.currentContext = frame.props;
-  const galleryLink = navigation.type(navigation.props);
+  const galleryLink = nodes(navigation.type(navigation.props)).find(node => node.type === 'Link');
   assert.equal(galleryLink.type, 'Link'); assert.equal(galleryLink.props.href, '/taylor/preview/gallery');
   let prevented = false;
   galleryLink.props.onClick({ preventDefault() { prevented = true; } }); t.render();
@@ -116,6 +125,8 @@ test('the actual /taylor route authenticates before mounting the workspace and i
   button(t.builder, 'Edit website').props.onClick(); t.render();
   assert.equal(t.frame().props.editable, true); assert.equal(t.builder.find(node => node.type === 'aside'), undefined);
   button(t.builder, 'Exit edit mode').props.onClick(); t.render();
+  assert.equal(t.portal.find(node=>node.type?.name==='Dialog'),undefined,'re-entering and exiting without new edits does not repeat the earlier session confirmation');
+  assert.equal(t.frame().props.content.home.title,'KEEP THIS UNSAVED EDIT','quiet mode exit preserves earlier unsaved work');
   assert.equal(t.frame().props.editable, false); assert.equal(t.writes, 0); assert.equal(t.loads, 1);
   assert.notEqual(t.saved.draft.home.title, 'KEEP THIS UNSAVED EDIT');
   t.close();
@@ -165,7 +176,7 @@ test('legacy workspace and preview URLs redirect to their distinct canonical pat
 
 test('every concrete public route renders its own identity and stays behind the publication gate', async () => {
   const routes = [
-    ['page.tsx', [], 'Home'], ['client-hub/page.tsx', ['client-hub'], 'ClientHub'],
+    ['page.tsx', [], 'Home'],
     ['commissions/page.tsx', ['commissions'], 'Commissions'],
     ['commissions/request/page.tsx', ['commissions/request'], 'Request'],
     ['contact/page.tsx', ['contact'], 'Contact'], ['examples/page.tsx', ['examples'], 'Examples'],

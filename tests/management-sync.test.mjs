@@ -18,7 +18,8 @@ function setup() {
   const base = storage.createOwnerStore({ read: async () => structuredClone(raw), update: async fn => { raw = structuredClone(fn(raw)); return structuredClone(raw); } });
   const store = { ...base,
     async load() { loads++; if (queue.length) return queue.shift(); return structuredClone(raw); },
-    async saveDraft(...args) { saves++; if (saveGate) await saveGate.promise; if (saveError) throw new Error(saveError); return base.saveDraft(...args); },
+    // Source-hook workspace projection; atomic named writes have real SDK/rules coverage.
+    async saveDraft(value, revision, version) { saves++; assert.ok(version?.id && version?.name); if (saveGate) await saveGate.promise; if (saveError) throw new Error(saveError); return base.saveDraft(value, revision); },
     async publishLive() { publishes++; throw new Error('Publishing not authorized by these tests'); },
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   };
@@ -105,13 +106,17 @@ test('unmount cancels background effects and late manual/automatic results do no
     assert.equal(t.listeners.size, 0); assert.equal(t.h.hooks.some(slot => slot?.home?.title === 'AFTER SESSION ENDS'), false); assert.equal(t.title, before); t.focus(); assert.equal(t.loads, 2);
   }
 });
-test('success notices expire after exactly 30 seconds and can be dismissed immediately', async () => {
-  const t = await open(); t.button('Sync cloud draft').props.onClick(); await flush(); t.render(); assert.match(content(t.h.tree), /Cloud Sync complete/); assert.deepEqual([...t.timers.values()].map(x => x.delay), [30_000]);
+test('success notices expire after exactly 5 seconds and can be dismissed immediately', async () => {
+  const t = await open(); t.button('Sync cloud draft').props.onClick(); await flush(); t.render(); assert.match(content(t.h.tree), /Cloud Sync complete/); assert.deepEqual([...t.timers.values()].map(x => x.delay), [5_000]);
   t.expire(); assert.doesNotMatch(content(t.h.tree), /Cloud Sync complete/); t.button('Sync cloud draft').props.onClick(); await flush(); t.render(); t.button('Dismiss notification').props.onClick(); t.render(); assert.doesNotMatch(content(t.h.tree), /Cloud Sync complete/); assert.equal(t.timers.size, 0); t.h.unmount();
 });
-test('actionable error does not auto-expire, survives section navigation, and has an explicit dismiss control', async () => {
-  const t = await open(), pending = deferred(); t.queue = [pending.promise]; t.focus(); pending.reject(new Error('Permission denied')); await flush(); t.render(); assert.match(content(t.h.tree), /Permission denied/); assert.equal(t.timers.size, 0);
-  t.button('Home page').props.onClick(); t.render(); assert.match(content(t.h.tree), /Permission denied/); t.expire(); assert.match(content(t.h.tree), /Permission denied/); t.button('Dismiss error').props.onClick(); t.render(); assert.doesNotMatch(content(t.h.tree), /Permission denied/); t.h.unmount();
+test('ordinary error expires after8seconds, survives navigation until then, and can be dismissed early', async () => {
+  const t = await open(), pending = deferred(); t.queue = [pending.promise]; t.focus(); pending.reject(new Error('Network unavailable')); await flush(); t.render(); assert.match(content(t.h.tree), /Network unavailable/); assert.deepEqual([...t.timers.values()].map(x=>x.delay),[8_000]);
+  t.button('Home page').props.onClick(); t.render(); assert.match(content(t.h.tree), /Network unavailable/); t.expire(); assert.doesNotMatch(content(t.h.tree), /Network unavailable/);
+  const help=t.h.find(n=>typeof n.type==='function'&&n.type.name==='HelpButton');help.props.onFeedback({kind:'error',message:'Try this operation again.'});t.render();t.button('Dismiss error').props.onClick();t.render();assert.doesNotMatch(content(t.h.tree),/Try this operation again/);assert.equal(t.timers.size,0);t.h.unmount();
+});
+test('conflict recovery instructions remain visible without an expiry timer',async()=>{
+  const t=await open(),help=t.h.find(n=>typeof n.type==='function'&&n.type.name==='HelpButton');help.props.onFeedback({kind:'error',message:'This draft changed in another tab or device. Reload the saved draft.'});t.render();assert.equal(t.timers.size,0);assert.ok(t.button('Reload saved draft'));t.expire();assert.match(content(t.h.tree),/another tab or device/);t.h.unmount();
 });
 test('help feedback is delivered to a dismissible main-workspace notice rather than only sidebar state', async () => {
   const t = await open(); const help = t.h.find(n => typeof n.type === 'function' && n.type.name === 'HelpButton'); assert.equal(typeof help.props.onFeedback, 'function'); help.props.onFeedback({ kind: 'success', message: 'Provider accepted test report.' }); t.render();
@@ -145,8 +150,8 @@ test('Dialog outside-click dismissal requires both pointer-down and click outsid
   props.dismissDisabled = false; render(); h.tree.props.onCancel({ preventDefault() {} }); assert.equal(dismissed, 2); h.unmount();
 });
 
-test('identical new notifications restart the full 30-second timer rather than inheriting old expiry', async () => {
+test('identical new notifications restart the full 5-second timer rather than inheriting old expiry', async () => {
   const t = await open(); const notify = t.h.find(n => typeof n.type === 'function' && n.type.name === 'HelpButton').props.onFeedback;
   notify({ kind: 'success', message: 'Report accepted.' }); t.render(); const firstId = [...t.timers.keys()][0]; assert.ok(firstId);
-  notify({ kind: 'success', message: 'Report accepted.' }); t.render(); const secondId = [...t.timers.keys()][0]; assert.notEqual(firstId, secondId); assert.equal(t.timers.size, 1); assert.equal(t.timers.get(secondId).delay, 30_000); assert.equal(t.timers.has(firstId), false); t.h.unmount(); assert.equal(t.timers.size, 0);
+  notify({ kind: 'success', message: 'Report accepted.' }); t.render(); const secondId = [...t.timers.keys()][0]; assert.notEqual(firstId, secondId); assert.equal(t.timers.size, 1); assert.equal(t.timers.get(secondId).delay, 5_000); assert.equal(t.timers.has(firstId), false); t.h.unmount(); assert.equal(t.timers.size, 0);
 });

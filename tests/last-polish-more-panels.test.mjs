@@ -21,11 +21,11 @@ function builderSetup(pageKey = 'contact') {
 }
 
 test('all external inspector openers toggle closed, expose expanded state, return focus and reopen without edits', () => {
-  for (const [page, labels] of [['contact', ['Page content', 'Design', 'Header & footer', 'Page settings', 'Contact details', 'Commission status', '＋ Add a section']], ['home', ['Welcome text', 'Main photo']], ['premades', ['Shop: on ⌄']]]) {
+  for (const [page, labels] of [['contact', ['Page content', 'Design', 'Header & footer', 'Page settings', 'Contact details', 'Commission status', 'Add Item']], ['home', ['Welcome text', 'Main photo']], ['premades', ['Shop: on ⌄']]]) {
     const t = builderSetup(page);
     for (const label of labels) {
       const before = structuredClone(t.value); let focused = 0;
-      const trigger = { focus(options) { assert.equal(options.preventScroll, true); focused++; } };
+      const trigger = { focus(options) { assert.equal(options.preventScroll, true); focused++; }, closest() { return null; } };
       assert.equal(t.opener(label).props['aria-expanded'], false, label);
       t.opener(label).props.onClick({ currentTarget: trigger }); t.render();
       assert.equal(t.opener(label).props['aria-expanded'], true, label);
@@ -41,7 +41,7 @@ test('all external inspector openers toggle closed, expose expanded state, retur
 });
 
 test('internal tabs switch without self-closing and preserve external focus target plus unsaved edits', () => {
-  const t = builderSetup(); let focused = 0; const trigger = { focus() { focused++; } };
+  const t = builderSetup(); let focused = 0; const trigger = { focus() { focused++; }, closest() { return null; } };
   t.opener('Page content').props.onClick({ currentTarget: trigger }); t.render();
   t.field('Page title').props.onChange('My unsaved contact page'); t.render();
   t.tab('Page content').props.onClick(); t.render(); assert.ok(t.panel());
@@ -60,7 +60,7 @@ test('every external opener respects upload lock and changing the panel closes a
   canvas.querySelectorAll = selector => selector === '.nav-more[open]' ? [menu] : [];
   t.opener('Page content').props.onClick(); t.render(); assert.equal(menu.open, false);
   t.props.uploadBusy = true; t.render();
-  for (const label of ['Page content', 'Header & footer', 'Design', 'Contact details', 'Commission status', '＋ Add a section']) {
+  for (const label of ['Page content', 'Header & footer', 'Design', 'Contact details', 'Commission status', 'Add Item']) {
     assert.equal(t.opener(label).props.disabled, true); t.opener(label).props.onClick(); t.render(); assert.equal(t.panel().props['aria-label'], 'Page content');
   }
   const topbar = t.h.find(n => n.type?.name === 'OwnerHeaderEditor'); topbar.props.onOpenChange(true); t.render(); assert.ok(t.panel()); assert.equal(t.h.find(n => n.type?.name === 'OwnerHeaderEditor').props.open, false);

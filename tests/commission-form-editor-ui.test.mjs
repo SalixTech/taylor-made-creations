@@ -11,7 +11,7 @@ function fixture(callbacks={}){
  const rendered=()=>[...nodes(h.tree),...(!preview()?.props.visualEditor?[]:configuration.COMMISSION_SECTIONS.flatMap(section=>{const q=questions(section.id),sec=sections();return [...q.props.items.flatMap(item=>nodes(q.props.children(item,null))),...sec.props.items.flatMap(item=>nodes(sec.props.children(item,null)))];}))];
  const component=(name,label)=>(name==='CommissionForm'?nodes(h.tree):rendered()).find(node=>node.type?.name===name&&(label===undefined||node.props.label===label));
  const button=label=>rendered().find(node=>node.type==='button'&&content(node)===label);
- const choose=id=>{const field=configuration.COMMISSION_FIELDS.find(item=>item.id===id)||draft.commissionForm.customQuestions.find(item=>item.id===id);const list=questions(field.section),card=list.props.children(list.props.items.find(item=>item.id===id),null);nodes(card).find(node=>node.props.onClickCapture).props.onClickCapture({preventDefault(){},stopPropagation(){}});render();};
+ const choose=id=>{const field=configuration.COMMISSION_FIELDS.find(item=>item.id===id)||draft.commissionForm.customQuestions.find(item=>item.id===id);const list=questions(field.section),card=list.props.children(list.props.items.find(item=>item.id===id),null);const surface=nodes(card).find(node=>node.props.role==='button');if(!surface.props['aria-expanded'])surface.props.onClick({stopPropagation(){}});render();};
  const selectSection=id=>{const list=sections(),card=list.props.children(list.props.items.find(item=>item.id===id),null);nodes(card).find(node=>node.type==='button').props.onClick();render();};
  const preview=()=>component('CommissionForm');
  const questions=section=>preview().props.visualEditor.renderQuestions(section,configuration.getCommissionQuestionOrder(draft.commissionForm,section).map(id=>({id,node:{type:'span',props:{children:id}}})));
@@ -42,7 +42,7 @@ test('clicking a preview field opens its inline editor, including custom questio
  const t=fixture();const list=t.questions('contact'),item=list.props.items.find(item=>item.id==='tos');
  const card=list.props.children(item,{type:'button',props:{children:'drag'}});
  nodes(card).find(node=>node.type==='button'&&node.props['aria-label']==='Edit Have you read the terms of service?').props.onClick();t.render();assert.equal(t.component('Field','Question wording').props.value,'Have you read the terms of service?');
- const surface=nodes(card).find(node=>node.props.onClickCapture);let prevented=false;surface.props.onClickCapture({preventDefault(){prevented=true;},stopPropagation(){}});assert.equal(prevented,true);
+ const updated=t.questions('contact'),surface=nodes(updated.props.children(updated.props.items.find(item=>item.id==='tos'),null)).find(node=>node.props.role==='button');surface.props.onClick({stopPropagation(){}});t.render();assert.equal(t.component('Field','Question wording'),undefined);
  t.selectSection('request');t.button('Add custom question').props.onClick();t.render();const id=t.draft.commissionForm.customQuestions[0].id;
  assert.equal(t.questions('request').props.items.some(item=>item.id===id),true);t.h.unmount();
 });
@@ -72,9 +72,9 @@ test('Settings opens dedicated form editor through navigation callback, never th
  const h=harness(),draft=h.load('src/owner/defaults.ts').createDefaultOwnerContent();let navigations=0;
  const Manager=h.load('src/owner/OwnerTemplateManagers.tsx').ContactSettingsManager;
  const render=()=>h.render(Manager,{content:draft,onEdit(){throw Error('No edit on navigation');},onRemove(){},userEmail:'owner@example.test',onSync(){},onEditCommissionForm(){navigations++;}});
- render();h.find(node=>node.type==='button'&&content(node)==='Edit commission form').props.onClick();render();assert.equal(navigations,1);assert.equal(h.find(node=>node.type?.name==='CommissionFormEditor'),undefined);
+ render();h.find(node=>node.type==='button'&&content(node)==='Edit Form').props.onClick();render();assert.equal(navigations,1);assert.equal(h.find(node=>node.type?.name==='CommissionFormEditor'),undefined);
  assert.equal(h.find(node=>node.type?.name==='Dialog'),undefined);
- h.find(node=>node.type==='button'&&content(node)==='Preview commission form').props.onClick();render();assert.equal(h.find(node=>node.type?.name==='Dialog').props.title,'Commission form preview');
+ h.find(node=>node.type==='button'&&content(node)==='Preview Form').props.onClick();render();assert.equal(h.find(node=>node.type?.name==='Dialog').props.title,'Commission form preview');
  assert.deepEqual(h.find(node=>node.type?.name==='CommissionForm').props.configuration,{});h.unmount();
 });
 
@@ -106,9 +106,9 @@ test('Enter inside an inline editor cannot submit or switch the real form into r
 test('question editing uses a top-right labelled pencil while section editing keeps its text button',()=>{
  const t=fixture();const questions=t.questions('contact'),item=questions.props.items.find(item=>item.id==='email'),card=questions.props.children(item,null);
  const pencil=nodes(card).find(n=>n.type==='button'&&n.props['aria-label']==='Edit Email address');
- assert.ok(pencil);assert.equal(content(pencil),'');assert.match(pencil.props.className,/editPencil/);assert.ok(nodes(pencil).some(n=>n.type==='svg'&&n.props['aria-hidden']==='true'));
+ assert.ok(pencil);assert.equal(content(pencil),'');assert.match(pencil.props.className,/editPencil/);const shared=nodes(pencil).find(n=>n.type?.name==='PencilIcon');assert.ok(shared);const svg=shared.type(shared.props);assert.equal(svg.type,'svg');assert.equal(svg.props['aria-hidden'],'true');
  const sections=t.sections(),section=sections.props.children(sections.props.items[0],null);
- assert.ok(nodes(section).some(n=>n.type==='button'&&content(n)==='Edit section'));t.h.unmount();
+ assert.ok(nodes(section).some(n=>n.type==='button'&&content(n)==='Edit Section'));t.h.unmount();
 });
 
 
@@ -117,9 +117,21 @@ test('section toolbar shows its current name and question cards rely on their na
  t.component('Field','Section heading').props.onChange('Contact Taylor');t.render();
  const sectionList=t.sections(),section=sectionList.props.children(sectionList.props.items.find(item=>item.id==='contact'),null);
  const heading=nodes(section).find(node=>node.type==='h3'&&content(node)==='Contact Taylor');assert.ok(heading);
- assert.ok(nodes(section).some(node=>node.type==='button'&&content(node)==='Edit section'));
+ assert.ok(nodes(section).some(node=>node.type==='button'&&content(node)==='Done'));
  const questions=t.questions('contact'),question=questions.props.children(questions.props.items.find(item=>item.id==='email'),null);
  assert.equal(nodes(question).filter(node=>node.type==='h3').length,0,'no repeated heading above the actual field');
- assert.equal(nodes(question).filter(node=>node.props['aria-label']==='Edit Email address').length,1);
+ assert.equal(nodes(question).filter(node=>node.type==='button'&&node.props['aria-label']==='Edit Email address').length,1);
  assert.equal(t.draft.commissionForm.sectionTitles.contact,'Contact Taylor');t.h.unmount();
 });
+
+
+test('question preview header toggles both ways while editable controls do not toggle',()=>{
+ const t=fixture(); const surface=()=>{const q=t.questions('contact');return nodes(q.props.children(q.props.items.find(item=>item.id==='email'),null)).find(n=>n.props.role==='button');};
+ assert.equal(surface().props['aria-expanded'],true);
+ surface().props.onClick({target:{closest:()=>({})},stopPropagation(){throw Error('Control click must be left alone')}});t.render();assert.equal(surface().props['aria-expanded'],true);
+ surface().props.onClick({target:{closest:()=>null},stopPropagation(){}});t.render();assert.equal(surface().props['aria-expanded'],false);
+ const node=surface();let prevented=false;node.props.onKeyDown({key:'Enter',target:node,currentTarget:node,preventDefault(){prevented=true}});t.render();assert.equal(prevented,true);assert.equal(surface().props['aria-expanded'],true);
+ assert.equal(t.edits,0);t.h.unmount();
+});
+
+test('section edit action changes to Done and collapses without mutating the form',()=>{const t=fixture();const sectionButton=()=>{const list=t.sections();return nodes(list.props.children(list.props.items.find(item=>item.id==='contact'),null)).find(n=>n.type==='button');};assert.equal(content(sectionButton()),'Edit Section');const before=t.edits;sectionButton().props.onClick();t.render();assert.equal(content(sectionButton()),'Done');assert.equal(sectionButton().props['aria-expanded'],true);sectionButton().props.onClick();t.render();assert.equal(content(sectionButton()),'Edit Section');assert.equal(t.edits,before);t.h.unmount();});

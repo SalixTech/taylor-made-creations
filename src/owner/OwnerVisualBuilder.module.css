@@ -284,29 +284,31 @@
 .canvasContextMenu{position:fixed;z-index:90;display:grid;min-width:170px;padding:6px;background:var(--owner-surface,#fff);color:var(--owner-ink,#222);border:1px solid var(--owner-control-line,#888);border-radius:8px;box-shadow:0 6px 24px #0003;}
 .canvasContextMenu button{padding:10px 14px;text-align:left;background:transparent;color:inherit;border:0;border-radius:5px;}
 .canvasContextMenu button:hover,.canvasContextMenu button:focus-visible{background:var(--owner-hover,#eee);outline:2px solid var(--owner-accent,#800014);outline-offset:-2px;}
-/* Dedicated builder: one inspector in document flow, never stacked over content. */
-.workspaceStage{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,360px);gap:18px;align-items:start;}
-.workspaceStage .canvas{min-width:0;}
-.workspaceStage .dockedPanel{position:sticky;top:12px;left:auto;right:auto;bottom:auto;width:100%;max-width:none;max-height:calc(100dvh - 24px);transform:none!important;z-index:16;box-shadow:none;}
+/* Dedicated builder inspector opens from the formatting bar. */
+.workspaceBuilder,.workspaceStage .canvas{border-inline:0;}
+.workspaceStage{padding-inline:0;}
+.sectionMenu{position:relative;flex:none;}
+.sectionMenu .dockedPanel{
+  position:absolute;inset:100% 0 auto auto;width:min(430px,calc(100vw - 24px));
+  max-height:min(60dvh,calc(100dvh - var(--owner-toolbar-height,0px) - 60px));
+}
 .dockedPanel .panelHeader{cursor:default}.dockedPanel .panelHeader>button{border:0;background:transparent;color:inherit;box-shadow:none;}
 .canvasTextInput{z-index:14;resize:none!important;min-height:0!important;max-width:none!important;margin:0;padding:0;border:1px solid #1d6fb8;background:var(--site-background,#fff);border-radius:2px;box-shadow:0 0 0 2px #6fafff44;overflow:auto;white-space:pre-wrap;}
 .canvas :global([data-owner-inline-editing="true"]){visibility:hidden;}
 .inlineTextError{position:fixed;bottom:16px;left:16px;z-index:95;max-width:420px;padding:12px;background:var(--owner-surface,#fff);color:var(--owner-ink,#222);border:1px solid var(--owner-accent,#800014);}
-@media(max-width:900px){.workspaceStage{grid-template-columns:minmax(0,1fr);}.workspaceStage .dockedPanel{position:relative;top:auto;max-height:none;grid-row:2;}}
 
 /* 17:45: everyday actions stay visible; advanced controls remain discoverable. */
 .toolbar{position:sticky;top:var(--owner-toolbar-height,0px);z-index:24;background:var(--owner-surface,#fff);border-bottom:1px solid var(--owner-line,#ddd);}
 .moreControls{padding:8px 16px;border-bottom:1px solid var(--owner-line,#ddd);background:var(--owner-surface,#fff);}
 .moreControls>summary,.inspectorMore>summary{cursor:pointer;font-size:12px;font-weight:600;padding:7px 0;}
 .layoutIndicator{padding:6px 20px;font-size:11px;background:var(--owner-surface,#fff);color:var(--owner-muted,#666);}
-.workspaceStage .dockedPanel{top:calc(var(--owner-toolbar-height,0px) + var(--builder-toolbar-height,72px) + 8px);max-height:calc(100dvh - var(--owner-toolbar-height,0px) - var(--builder-toolbar-height,72px) - 16px);}
 .inspectorMore{margin-bottom:14px;border-bottom:1px solid var(--owner-line,#ddd);padding-bottom:8px;}
 .inspectorMore button{margin:5px 5px 5px 0;}
 .boxMore{pointer-events:auto;position:relative;}
 .boxMore>summary{list-style:none;cursor:pointer;min-height:28px;box-sizing:border-box;padding:4px 7px;font-size:10px;line-height:1.5;border:1px solid var(--owner-control-line,#a47885);border-radius:6px;background:var(--owner-surface,#fff);color:var(--owner-ink,#222);}
 .boxMore>div{position:absolute;top:100%;left:0;z-index:1;display:grid;gap:4px;min-width:160px;padding:7px;background:var(--owner-surface,#fff);border:1px solid var(--owner-control-line,#aaa);border-radius:6px;box-shadow:0 5px 16px #0002;}
 .canvas textarea.canvasTextInput{background:transparent!important;color:inherit;box-shadow:none;border:0;border-radius:0;outline:1px solid #1d6fb8;}
-@media(max-width:900px){.workspaceStage .dockedPanel{position:sticky;top:calc(var(--owner-toolbar-height,0px) + var(--builder-toolbar-height,72px) + 8px);max-height:calc(100dvh - var(--owner-toolbar-height,0px) - var(--builder-toolbar-height,72px) - 16px);}.viewToolsGroup{gap:5px;}.toolbar{gap:6px;}}
+@media(max-width:900px){.viewToolsGroup{gap:5px;}.toolbar{gap:6px;}}
 .inlineTextError{top:calc(var(--owner-toolbar-height,0px) + var(--builder-toolbar-height,72px) + 8px);bottom:auto;}
 
 /* Keep the page selector centered inside its own left-hand toolbar area. */
@@ -361,3 +363,5 @@
    or coordinate migration: the scrollport exposes the full-size public layout. */
 .previewViewport{min-width:0;max-width:100%;}
 .previewViewport[data-preview-device="desktop"]{overflow:auto;}
+
+@media(max-width:650px){.textToolbarDock{flex-wrap:wrap;}.sectionMenu{position:static;margin-left:auto;}.sectionMenu .dockedPanel{right:8px;}}

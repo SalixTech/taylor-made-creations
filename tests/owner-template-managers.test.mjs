@@ -14,9 +14,9 @@ function fixture(name, extra = {}) {
     h.render(Manager, { ...props, content: draft });
     for (const node of h.refs.values()) node.scrollIntoView = () => {};
   }
-  const allNodes = () => [...nodes(h.tree), ...h.all(node => node.type?.name === 'OwnerPriceReorderList').flatMap(list => list.props.items.flatMap(item => nodes(list.props.children(item, null))))];
+  const allNodes = () => [...nodes(h.tree), ...h.all(node => node.type?.name === 'Card').flatMap(card => nodes(card.props.action)), ...h.all(node => node.type?.name === 'OwnerPriceReorderList').flatMap(list => list.props.items.flatMap(item => nodes(list.props.children(item, null))))];
   const component = (type, label) => allNodes().find(node => typeof node.type === 'function' && node.type.name === type && (label === undefined || node.props.label === label));
-  const button = label => allNodes().find(node => node.type === 'button' && content(node).trim() === label);
+  const button = label => allNodes().find(node => node.type === 'button' && (content(node).trim() === label || node.props['aria-label'] === label || node.props.title === label));
   const cards = () => allNodes().filter(node => typeof node.type === 'function' && node.type.name === 'Card');
   const cardAction = (card, label) => nodes(card.props.action).find(node => node.type === 'button' && content(node).trim() === label);
   render();
@@ -40,11 +40,15 @@ test('gallery uses template cards, preserves untouched data, and uploads new pho
 
 test('gallery add existing opens familiar fields; display number stays independent of ordering', () => {
   const t = fixture('PhotoGalleryManager');
-  t.button('＋ Add an existing photo').props.onClick(); t.render();
-  const added = t.draft.gallery[0], second = t.draft.gallery[1].id;
+  t.button('Add existing photo').props.onClick(); t.render();
+  const original = structuredClone(t.draft.gallery);
   assert.equal(t.component('Field', 'Photo name').props.value, 'New photo');
   t.component('Field', 'Gallery number (optional)').props.onChange('TMC 42'); t.render();
-  assert.equal(t.draft.gallery[0].displayNumber, 'TMC 42'); assert.equal(t.draft.gallery[0].id, added.id);
+  assert.deepEqual(t.draft.gallery,original);
+  nodes(t.component('Dialog').props.actions).find(n=>content(n)==='Save Photo').props.onClick();t.render();
+  const added=t.draft.gallery[0],second=t.draft.gallery[1].id;
+  assert.equal(added.displayNumber,'TMC 42');
+  t.button(`Edit photo: ${added.name}`).props.onClick();t.render();
   const move = t.component('OwnerPriceReorderList', 'Gallery photos'); move.props.onStep(added.id, 1); t.render();
   assert.equal(t.draft.gallery[0].id, second); assert.equal(t.draft.gallery[1].displayNumber, 'TMC 42');
   t.component('ImagePicker').props.onAlt('A front-facing red fox'); t.render();
@@ -56,8 +60,8 @@ test('gallery add existing opens familiar fields; display number stays independe
 
 test('gallery removal requires parent confirmation and keeps other items', () => {
   const t = fixture('PhotoGalleryManager'); const original = structuredClone(t.draft.gallery);
-  t.button('Remove').props.onClick();
-  assert.deepEqual(t.draft.gallery, original); assert.match(t.confirmation.description, /does not delete the original image file/);
+  t.button(`Remove photo: ${original[0].name || 'Untitled photo'}`).props.onClick();
+  assert.deepEqual(t.draft.gallery, original); assert.match(t.confirmation.description, /original file is not deleted/);
   t.confirmation.remove(); t.render();
   assert.deepEqual(t.draft.gallery, original.slice(1)); t.h.unmount();
 });
@@ -69,10 +73,10 @@ test('hidden shop keeps listings editable; draft switch never invokes shop-only 
   const t = fixture('PremadesManager', shopProps({ onUpdateLiveShop() { updates++; } }));
   t.draft.site.showPremades = false; t.render();
   const beforePrices = structuredClone(t.draft.prices);
-  t.button('＋ Add a premade').props.onClick(); t.render();
+  t.button('Add Premade').props.onClick(); t.render(); t.component('Field','Listing name').props.onChange('New premade'); t.render(); nodes(t.component('Dialog').props.actions).find(n=>content(n)==='Add private draft').props.onClick(); t.render();
   assert.equal(t.draft.premades[0].visible, false); assert.equal(t.component('PremadePhotoEditor').props.item.id, t.draft.premades[0].id);
   t.component('Field', 'Listing name').props.onChange('Fox premade');
-  t.component('Field', 'Price (USD, optional)').props.onChange('321.75'); t.render();
+  t.component('Field', 'Price (USD)').props.onChange('321.75'); t.render();
   assert.equal(t.draft.premades[0].price, 321.75); assert.equal(t.draft.premades[0].name, 'Fox premade');
   t.component('Toggle', 'Show the premade shop').props.onChange(true); t.render();
   assert.equal(updates, 0); assert.equal(t.button('Update live').props.disabled, false);
@@ -83,13 +87,13 @@ test('hidden shop keeps listings editable; draft switch never invokes shop-only 
 
 test('premade photo manager receives unchanged cover/multiple photos and applies its complete patch by id', () => {
   const t = fixture('PremadesManager', shopProps());
-  t.button('＋ Add a premade').props.onClick(); t.render();
+  t.button('Add Premade').props.onClick(); t.render(); t.component('Field','Listing name').props.onChange('New premade'); t.render(); nodes(t.component('Dialog').props.actions).find(n=>content(n)==='Add private draft').props.onClick(); t.render();
   const id = t.draft.premades[0].id;
   const patch = { photos: [{ id: 'one', src: '/images/heads.webp', alt: 'Front' }, { id: 'two', src: '/images/partials.webp', alt: 'Back' }], coverPhotoId: 'two', image: '/images/partials.webp', alt: 'Back', imageFit: 'cover', imagePositionX: 30, imagePositionY: 65 };
   t.component('PremadePhotoEditor').props.onChange(patch); t.render();
   assert.equal(t.component('PremadePhotoEditor').props.item.id, id);
   for (const [key, value] of Object.entries(patch)) assert.deepEqual(t.draft.premades[0][key], value);
-  t.component('Field', 'Price (USD, optional)').props.onChange(''); t.render(); assert.equal(t.draft.premades[0].price, null);
+  t.component('Field', 'Price (USD)').props.onChange(''); t.render(); assert.equal(t.draft.premades[0].price, null);
   t.h.unmount();
 });
 
@@ -113,7 +117,7 @@ test('home manager changes template copy/photo without exposing canvas or sectio
   assert.match(content(t.h.tree), /separate Website builder tab/); t.h.unmount();
 });
 
-test('contact settings retains commission controls, delegates editable ordered socials and only requests Cloud Sync', () => {
+test('contact settings retains commission controls and delegates ordered socials without a redundant workspace card', () => {
   let syncs = 0;
   const t = fixture('ContactSettingsManager', { userEmail: 'owner@example.test', onSync() { syncs++; } });
   const legacy = { telegram: t.draft.site.telegram, tiktok: t.draft.site.tiktok, twitch: t.draft.site.twitch };
@@ -131,8 +135,8 @@ test('contact settings retains commission controls, delegates editable ordered s
   assert.equal(updated.label, 'Message Taylor'); assert.equal(updated.value, '@maker'); assert.equal(updated.url, 'https://t.me/maker');
   assert.deepEqual({ telegram: t.draft.site.telegram, tiktok: t.draft.site.tiktok, twitch: t.draft.site.twitch }, legacy, 'legacy fields are preserved rather than silently rewritten by the new flexible contact list');
   assert.equal(t.draft.site.commissionStatus, 'Closed');
-  assert.equal(syncs, 0); t.button('Cloud Sync').props.onClick(); assert.equal(syncs, 1);
-  assert.match(content(t.h.tree), /owner@example.test/); assert.match(content(t.h.tree), /never silently replaces unsaved work/);
+  assert.equal(syncs, 0); assert.equal(t.button('Cloud Sync'), undefined);
+  assert.doesNotMatch(content(t.h.tree), /owner@example.test|This workspace/); assert.ok(t.component('StudioPreferenceStatus')); assert.ok(t.component('GlobalUpdateCooldown'));
   assert.equal(t.component('OwnerVisualBuilder'), undefined); child.unmount(); t.h.unmount();
 });
 
@@ -140,4 +144,33 @@ test('template managers reuse current upload and multi-photo tools rather than o
   const source = readFileSync(new URL('../src/owner/OwnerTemplateManagers.tsx', import.meta.url), 'utf8');
   assert.match(source, /draft\.gallery\.unshift/); assert.match(source, /<PhotoUpload multiple/); assert.match(source, /<PremadePhotoEditor/);
   assert.doesNotMatch(source, /OwnerVisualBuilder|publishLive|saveDraft|localStorage|fetch\(/);
+});
+
+test('Fox7 premade controls keep decimals editable while spinner steps whole dollars and private draft has one delete action',()=>{
+ const t=fixture('PremadesManager',shopProps());t.button('Add Premade').props.onClick();t.render();t.component('Field','Listing name').props.onChange('New premade');t.render();nodes(t.component('Dialog').props.actions).find(n=>content(n)==='Add private draft').props.onClick();t.render();
+ const price=t.component('Field','Price (USD)');assert.equal(price.props.step,1);price.props.onChange('32.25');t.render();assert.equal(t.draft.premades[0].price,32.25);
+ assert.equal(t.button('Remove listing'),undefined);assert.ok(t.button('Delete draft'));t.h.unmount();
+});
+
+
+test('new existing-photo edits stay local until Save Photo; close, cancel and stale double-click cannot create a card',()=>{
+ const t=fixture('PhotoGalleryManager',{onSavePhotos:()=>saves++});let saves=0;
+ const baseline=structuredClone(t.draft);
+ const action=label=>nodes(t.component('Dialog').props.actions).find(n=>content(n)===label);
+ t.button('Add existing photo').props.onClick();t.render();
+ t.component('Field','Photo name').props.onChange('Private staging');t.render();
+ t.component('ImagePicker').props.onSource('/images/heads.webp');t.render();
+ assert.deepEqual(t.draft,baseline);const staleSave=action('Save Photo').props.onClick;
+ action('Cancel').props.onClick();action('Cancel').props.onClick();t.render();staleSave();t.render();
+ assert.deepEqual(t.draft,baseline);assert.equal(saves,0);assert.equal(t.component('Dialog'),undefined);
+ t.button('Add existing photo').props.onClick();t.render();assert.equal(t.component('Field','Photo name').props.value,'New photo');
+ t.component('Dialog').props.onClose();t.render();assert.deepEqual(t.draft,baseline);
+ t.button('Add existing photo').props.onClick();t.render();t.component('Field','Photo name').props.onChange('Saved staging');t.render();
+ const save=action('Save Photo').props.onClick;save();save();t.render();
+ assert.equal(t.draft.gallery.length,baseline.gallery.length+1);assert.equal(t.draft.gallery[0].name,'Saved staging');assert.equal(saves,1);assert.deepEqual(t.draft.gallery.slice(1),baseline.gallery);t.h.unmount();
+});
+test('leaving a manager with an unaccepted new photo cannot mutate its parent website draft',()=>{
+ const t=fixture('PhotoGalleryManager'),baseline=structuredClone(t.draft);
+ t.button('Add existing photo').props.onClick();t.render();t.component('Field','Photo name').props.onChange('Never accepted');t.render();t.h.unmount();
+ assert.deepEqual(t.draft,baseline);
 });

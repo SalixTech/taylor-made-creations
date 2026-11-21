@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { BackupError, createOwnerBackupService } from '../firebase/functions/owner-backups-core.mjs';
+import { OWNER_UID } from '../firebase/functions/cleanup-core.mjs';
+
 import { readFileSync } from 'node:fs';
 import { dirname, resolve, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +13,7 @@ const root = fileURLToPath(new URL('../src/', import.meta.url));
 function fixture() {
   const documents = new Map(), cache = new Map();
   let reads = 0, commits = 0, queue = Promise.resolve(), beforeRead, beforeCommit, writeError;
-  const user = { uid: 'owner', getIdToken: async () => 'mock-token' }, auth = { currentUser: user }, db = {};
+  const user = { uid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843', getIdToken: async () => 'mock-token' }, auth = { currentUser: user }, db = {};
   const snapshot = (path, value = documents.get(path)) => ({ id: path.split('/').at(-1), exists: () => value !== undefined, data: () => structuredClone(value) });
   const get = async ref => { ++reads; await beforeRead?.(ref.path); return snapshot(ref.path); };
   const sdk = {
@@ -31,6 +34,14 @@ function fixture() {
       queue = pendingOperation.catch(() => {}); return pendingOperation;
     },
   };
+  const toAdmin = snap => ({ exists: snap.exists(), data: () => snap.exists() ? snap.data() : undefined });
+  const adminDb = { doc: path => ({ path, get: async () => toAdmin(await sdk.getDoc({ path })) }), runTransaction: callback => sdk.runTransaction(db, tx => callback({ get: async ref => toAdmin(await tx.get(ref)), set: tx.set, create(ref, value) { assert.equal(documents.has(ref.path), false, `immutable create ${ref.path}`); tx.set(ref, value); } })) };
+  const service = createOwnerBackupService({ db: adminDb });
+  const functions = { getFunctions: () => ({}), httpsCallable: (_functions, name) => async input => {
+    assert.equal(name, 'tmcOwnerPublishContent');
+    try { return { data: await service.publishContent(input, { auth: { uid: OWNER_UID } }) }; }
+    catch (cause) { const error = new Error(cause instanceof BackupError ? cause.message : cause?.name === 'OwnerValidationError' ? 'The website content is invalid. Nothing was saved or published.' : 'This action could not be confirmed.'); error.code = `functions/${cause instanceof BackupError ? cause.code : cause?.name === 'OwnerValidationError' ? 'invalid-argument' : 'unavailable'}`; throw error; }
+  } };
   function load(path) {
     path = resolve(path); if (!extname(path)) path += '.ts';
     if (cache.has(path)) return cache.get(path).exports;
@@ -38,11 +49,11 @@ function fixture() {
     const source = readFileSync(path, 'utf8');
     if (path.endsWith('.json')) { compiledModule.exports = JSON.parse(source); return compiledModule.exports; }
     const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true } }).outputText;
-    const require = name => name === 'firebase/firestore/lite' ? sdk : name.startsWith('.') ? load(resolve(dirname(path), name)) : (() => { throw new Error(`Unexpected import: ${name}`); })();
+    const require = name => name === 'firebase/functions' ? functions : name === 'firebase/firestore/lite' ? sdk : name.startsWith('.') ? load(resolve(dirname(path), name)) : (() => { throw new Error(`Unexpected import: ${name}`); })();
     new Function('require', 'module', 'exports', output)(require, compiledModule, compiledModule.exports); return compiledModule.exports;
   }
   const cloud = load(resolve(root, 'owner/firebase-store.ts')), defaults = load(resolve(root, 'owner/defaults.ts')), model = load(resolve(root, 'owner/model.ts'));
-  return { documents, auth, user, cloud, defaults, model, store: () => cloud.createFirebaseOwnerStore({ db, auth, ownerUid: 'owner' }), stats: () => ({ reads, commits }), beforeRead: value => { beforeRead = value; }, retry: action => { beforeCommit = action; }, failWrite: value => { writeError = value; } };
+  return { documents, auth, user, cloud, defaults, model, store: () => cloud.createFirebaseOwnerStore({ db, auth, ownerUid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843' }), stats: () => ({ reads, commits }), beforeRead: value => { beforeRead = value; }, retry: action => { beforeCommit = action; }, failWrite: value => { writeError = value; } };
 }
 const code = expected => error => error.code === expected;
 const premade = () => ({ id: 'premade-test', name: 'Published premade', image: '/images/example.jpg', alt: 'Example', description: 'Ready for sale', price: 100, visible: true });
@@ -132,7 +143,7 @@ test('failed commits, corrupt registry and orphan identifiers never reset/overwr
 });
 
 test('sign-out, wrong UID and replaced sessions block named and shop APIs', async () => {
-  for (const replacement of [null, { uid: 'stranger' }, { uid: 'owner' }]) {
+  for (const replacement of [null, { uid: 'stranger' }, { uid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843' }]) {
     const f = fixture(), store = f.store(); f.auth.currentUser = replacement;
     for (const action of [() => store.listNamedDrafts(), () => store.listTrashedNamedDrafts(), () => store.saveNamedDraft('No', f.defaults.createDefaultOwnerContent()), () => store.readLiveShopVisibility(), () => store.updateLiveShopVisibility(true, 0)]) await assert.rejects(action(), code('unavailable'));
     assert.deepEqual(f.stats(), { reads: 0, commits: 0 });
@@ -142,7 +153,7 @@ test('sign-out, wrong UID and replaced sessions block named and shop APIs', asyn
 test('Update Live requires first publication and changes only the actual published shop flag', async () => {
   const f = fixture(), store = f.store(), original = f.defaults.createDefaultOwnerContent();
   assert.equal(await store.readLiveShopVisibility(), null);
-  await assert.rejects(store.updateLiveShopVisibility(true, 0), code('not-published')); assert.equal(f.stats().commits, 0);
+  await assert.rejects(store.updateLiveShopVisibility(true, 0), error => error.code === 'write' && error.cause?.code === 'functions/failed-precondition'); assert.equal(f.stats().commits, 0);
   original.premades = [premade()]; original.site.showPremades = true; original.home.title = 'Published title';
   let workspace = await store.publishLive(original, 0);
   const beforePublic = f.cloud.decodePublishedOwnerSnapshot(f.documents.get('site/published'));
@@ -188,4 +199,23 @@ test('permission-denied races are conflicts only after validated revision change
   await assert.rejects(store.renameNamedDraft(saved.id, 'Stale rename', 1), code('conflict'));
   assert.equal(f.stats().commits, 1);
   assert.equal((await store.loadNamedDraft(saved.id)).name, 'Another device');
+});
+
+test("locking a named draft persists through edits and protects stale publication cleanup", async () => {
+  const f = fixture();
+  const first = f.store();
+  const draft = await first.saveNamedDraft("Keep this", f.defaults.createDefaultOwnerContent());
+  const second = f.store();
+  const locked = await second.setNamedDraftLocked(draft.id, draft.revision, true);
+  await assert.rejects(first.deleteNamedDraft(draft.id, draft.revision), code("conflict"));
+  await assert.rejects(first.deleteNamedDraft(draft.id, locked.revision), code("blocked"));
+  const updated = await first.saveNamedDraft("Keep revised", draft.content, {
+    id: draft.id, expectedRevision: locked.revision,
+  });
+  assert.equal(updated.locked, true);
+  assert.equal((await first.listNamedDrafts())[0].locked, true);
+  const unlocked = await second.setNamedDraftLocked(draft.id, updated.revision, false);
+  await first.deleteNamedDraft(draft.id, unlocked.revision);
+  assert.deepEqual(await second.listNamedDrafts(), []);
+  assert.equal((await second.listTrashedNamedDrafts())[0].id, draft.id);
 });

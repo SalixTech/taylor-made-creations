@@ -97,6 +97,6 @@ test('font library refresh is an accessible icon-only button and indicates refre
   h.overrides['./use-cloud-files']={useCloudFiles:()=>library};
   const Library=h.load('src/owner/FontUpload.tsx').OwnerFontLibrary;const render=()=>h.render(Library,{fonts:[],onChange(){}});render();
   const button=()=>h.find(n=>n.type==='button'&&n.props['aria-label']==='Refresh fonts');
-  assert.ok(button());assert.equal(content(button()),'');assert.equal(button().props.title,'Refresh fonts');assert.ok(h.find(n=>n.type==='svg'&&n.props['aria-hidden']==='true'));
+  assert.ok(button());assert.equal(content(button()),'');assert.equal(button().props.title,'Refresh fonts');assert.ok(h.find(n=>n.type?.name==='RefreshIcon'));
   button().props.onClick();assert.equal(calls,1);library.loading=true;render();assert.equal(button().props.disabled,true);assert.equal(button().props['aria-busy'],true);h.unmount();
 });

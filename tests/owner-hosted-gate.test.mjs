@@ -22,6 +22,9 @@ function deferred() {
 }
 function fixture(settings = environment) {
   const h = harness();
+  // Browser coordination is an isolated no-network boundary here; the dedicated
+  // Notes3 security suite exercises real generation/broadcast ordering.
+  h.globals.BroadcastChannel = class { postMessage() {} close() {} };
   h.process.env = { NODE_ENV: 'production', ...settings };
   const auth = { currentUser: null }, db = {}, stores = [];
   const calls = { app: 0, auth: 0, listeners: 0, children: 0, signIn: 0, signOut: 0, reload: 0, token: 0 };
@@ -157,7 +160,7 @@ test('sign-out immediately disposes private storage, deduplicates clicks and sta
     assert.match(content(t.h.tree), /Signing out and locking/);
     if (failure) pending.reject(Error('Mock network unavailable')); else pending.resolve();
     await Promise.all([first, duplicate]); t.render(); t.locked();
-    assert.match(content(t.h.tree), failure ? /Sign-out could not be confirmed/ : /Sign in to Taylor’s Space/);
+    assert.match(content(t.h.tree), failure ? /sign-out could not be confirmed/i : /Sign in to Taylor’s Space/);
     assert.equal(t.stores.length, 1);
     t.h.unmount();
   }
@@ -177,4 +180,19 @@ test('repeated sign-in is locked while pending and input password clears without
   pending.reject({ code: 'auth/network-request-failed' }); await Promise.all([first, duplicate]); t.render(); t.locked();
   assert.match(content(t.h.tree), /Could not reach sign-in/); assert.equal(t.stores.length, 0);
   t.h.unmount();
+});
+
+test('own sign-out and late no-user lock events do not require a second logout; active foreign lock still closes private workspace', async () => {
+  const t=fixture();await t.start();t.emit(t.owner());await flush();t.render();
+  const pending=deferred();t.signOutResult=pending.promise;const operation=t.session().signOut();
+  const lock=()=>{const event=new Event('tmc-hub-session-lock');Object.defineProperty(event,'detail',{value:{role:'owner',uid:ownerUid}});t.h.window.dispatchEvent(event);};
+  lock();t.render();assert.match(content(t.h.tree),/Signing out and locking/);t.emit(null);pending.resolve();await operation;t.render();lock();t.render();
+  assert.match(content(t.h.tree),/Sign in to Taylor’s Space/);assert.equal(t.calls.signOut,1);t.locked();t.h.unmount();
+  const other=fixture();await other.start();other.emit(other.owner());await flush();other.render();const event=new Event('tmc-hub-session-lock');Object.defineProperty(event,'detail',{value:{role:'owner',uid:ownerUid}});other.h.window.dispatchEvent(event);other.render();other.locked();assert.match(content(other.h.tree),/Signed out in another window/);other.h.unmount();
+});
+test('beta gate labels the isolated build without changing authentication controls',async()=>{
+ const t=fixture({...environment,NEXT_PUBLIC_TMC_WEBSITE_WORKSPACE:'beta'});t.h.window.location.href='https://beta.taylormadecreations.dog/';t.h.window.location.host='beta.taylormadecreations.dog';await t.start();t.emit(null);t.render();assert.match(content(t.h.tree),/BETA BUILD/);assert.doesNotMatch(content(t.h.tree),/TAYLOR’S SPACE|Sign in to Taylor’s Space/);assert.equal(t.stores.length,0);t.h.unmount();
+});
+test('second owner receives actual recovery identity and only its own window lock applies',async()=>{
+ const f=fixture();try{await f.start();const user=f.owner();user.uid='VhnIFsEQFqRtS8u98mP921wim4J3';f.emit(user);await flush();f.render();assert.equal(f.session().recoveryIdentity.ownerUid,user.uid);f.session().recoveryIdentity.assertCurrent();const foreign=new Event('tmc-hub-session-lock');Object.assign(foreign,{detail:{role:'owner',uid:ownerUid}});f.h.window.dispatchEvent(foreign);f.render();assert.ok(f.session());const own=new Event('tmc-hub-session-lock');Object.assign(own,{detail:{role:'owner',uid:user.uid}});f.h.window.dispatchEvent(own);f.render();assert.equal(f.session(),null);}finally{f.h.unmount();}
 });

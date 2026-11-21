@@ -85,9 +85,9 @@ function ContentLink({ content, href, children, className, editTarget, appearanc
   const buttonProps=buttonPresentationProps(design);
   if(design)className=`${className??""} ${buttonProps.className}`;
   const presentation=<ContainingLinkContext value={true}><ButtonPresentation appearance={design}>{children}</ButtonPresentation></ContainingLinkContext>;
-  if(design){Object.assign(edit,{"data-button-preset":buttonProps["data-button-preset"]});edit.style={...edit.style,...buttonProps.style};}
+  if(design){Object.assign(edit,{"data-button-preset":buttonProps["data-button-preset"],"data-site-sized-button":editTarget?.startsWith("canvas:layout.block:")&&design.preset!=="plain"?true:undefined});edit.style={...edit.style,...buttonProps.style};}
   const destination = useDestination(content, editTarget?.startsWith("canvas:") ? getElementHref(content,editTarget.slice(7),href) ?? href : href);
-  const wrapped = (element: ReactNode) => <GeometryBox inline={editTarget !== "template-link:home.pricesCard" && editTarget !== "template-link:home.careCard"} appearance={appearance} box={appearance?.box} target={editTarget} editable={mode === "editor" && editable}>{element}</GeometryBox>;
+  const wrapped = (element: ReactNode) => <GeometryBox inline={editTarget !== "template-link:home.pricesCard" && editTarget !== "template-link:home.careCard"} appearance={appearance} box={appearance?.box} target={editTarget} contentMode={editTarget?.startsWith("canvas:layout.block:")&&design&&design.preset!=="plain"?"button":"reflow"} editable={mode === "editor" && editable}>{element}</GeometryBox>;
   if (contained) return <>{children}</>;
   if (!destination) return mode === "public" ? null : wrapped(<span className={styles.muted} {...edit}>{presentation} <small>(destination unavailable)</small></span>);
   if(isWebsiteDocumentHref(destination.href)&&(mode!=="public"||WEBSITE_WORKSPACE==="beta"))return wrapped(<><a {...edit} aria-label={design?.artwork?accessibleLabel:undefined} href={destination.href} className={className} onClick={event=>{event.preventDefault();if(mode==="editor"&&editable)return;void import("@/owner/website-document-client").then(({downloadWebsiteDocument})=>downloadWebsiteDocument(destination.href)).catch(()=>setDocumentError(getTemplateText(content,"site.pdfFailureMessage")));}}>{presentation}</a>{documentError&&<span role="alert">{documentError}</span>}</>);
@@ -262,7 +262,7 @@ function buildContentBlocks({blocks,content,presentation}:BlocksProps,{mode,edit
       if(block.type==="link")return <div {...edit} className={styles.block}><ContentLink content={content} href={block.href} buttonDesignId={block.buttonDesignId} buttonAppearance={block.buttonAppearance} accessibleLabel={block.label} className="text-link" editTarget={`canvas:layout.block:${pageId}:${block.id}:link`} appearance={content.contentOverrides?.styles?.[`layout.block:${pageId}:${block.id}:link`]}><InlineLinkedText content={content} text={block.label} fieldId={`block:${pageId}:${block.id}:label`} links={false}/> →</ContentLink></div>;
       return null;
     })();
-    return <GeometryBox key={block.id} appearance={appearance} box={appearance?.box} target={`block:${block.id}`} editable={mode==="editor"&&editable}>{element}</GeometryBox>;
+    return <GeometryBox key={block.id} appearance={appearance} box={appearance?.box} target={`block:${block.id}`} contentMode={block.type==="link"?"button":"reflow"} editable={mode==="editor"&&editable}>{element}</GeometryBox>;
   });
   return <div className={presentation?styles.structuredBlocks:styles.blocks} data-owner-section-id={mode==="editor"&&editable?"__root":undefined}>{render(null)}</div>;
 }

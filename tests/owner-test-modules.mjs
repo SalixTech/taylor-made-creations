@@ -7,7 +7,7 @@ import {join,dirname} from 'node:path';
 import {createRequire} from 'node:module';
 const directory=mkdtempSync(join(tmpdir(),'tmc-owner-tests-'));
 const root=new URL('../',import.meta.url);
-for(const path of ['components/commission-options.ts','components/commission-form-config.ts','owner/model.ts','owner/site-design.ts','owner/appearance.ts','owner/defaults.ts','owner/storage.ts','owner/settings-cards.ts','owner/preview-model.ts','content/site.ts','content/fursuit-gallery.ts']){
+for(const path of ['owner/button-import.ts','owner/rich-text.ts','owner/inline-links.ts','owner/website-hosts.ts','owner/website-workspace.ts','owner/website-workspace-config.ts','components/commission-options.ts','components/commission-form-config.ts','owner/model.ts','owner/canvas-layout.ts','owner/canvas-node-inventory.ts','owner/header-navigation.ts','owner/social-links.ts','owner/canvas-target-registry.ts','owner/box-geometry.ts','owner/site-design.ts','owner/appearance.ts','owner/defaults.ts','owner/storage.ts','owner/settings-cards.ts','owner/preview-model.ts','content/site.ts','content/fursuit-gallery.ts']){
   const source=readFileSync(new URL(`src/${path}`,root),'utf8');
   const output=join(directory,path.replace(/\.ts$/,'.js'));
   mkdirSync(dirname(output),{recursive:true});

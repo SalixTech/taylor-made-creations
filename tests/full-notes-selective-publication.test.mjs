@@ -1,12 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { BackupError, createOwnerBackupService } from '../firebase/functions/owner-backups-core.mjs';
+import { OWNER_UID } from '../firebase/functions/cleanup-core.mjs';
+
 import { sourceLoader } from './scout-source-loader.mjs';
 
 // Independent two-document Firestore transaction double. No Firebase app, token,
 // live project, network or storage SDK is initialized by these tests.
 function fixture() {
   const documents = new Map(); let commitCount = 0, readCount = 0, writeError, onRead, retry;
-  const db = {}, user = { uid: 'owner', getIdToken: async () => 'inert-qa-token' }, auth = { currentUser: user };
+  const db = {}, user = { uid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843', getIdToken: async () => 'inert-qa-token' }, auth = { currentUser: user };
   const view = path => ({ exists: () => documents.has(path), data: () => structuredClone(documents.get(path)) });
   const api = {
     doc: (database, path) => { assert.equal(database, db); return { path }; },
@@ -21,7 +24,15 @@ function fixture() {
       return value;
     },
   };
-  const load = sourceLoader({ 'firebase/firestore/lite': api });
+  const toAdmin = snap => ({ exists: snap.exists(), data: () => snap.exists() ? snap.data() : undefined });
+  const adminDb = { doc: path => ({ path, get: async () => toAdmin(await api.getDoc({ path })) }), runTransaction: callback => api.runTransaction(db, tx => callback({ get: async ref => toAdmin(await tx.get(ref)), set: tx.set, create(ref, value) { assert.equal(documents.has(ref.path), false, `immutable create ${ref.path}`); tx.set(ref, value); } })) };
+  const service = createOwnerBackupService({ db: adminDb });
+  const functions = { getFunctions: () => ({}), httpsCallable: (_functions, name) => async input => {
+    assert.equal(name, 'tmcOwnerPublishContent');
+    try { return { data: await service.publishContent(input, { auth: { uid: OWNER_UID } }) }; }
+    catch (cause) { const error = new Error(cause instanceof BackupError ? cause.message : cause?.name === 'OwnerValidationError' ? 'The website content is invalid. Nothing was saved or published.' : 'This action could not be confirmed.'); error.code = `functions/${cause instanceof BackupError ? cause.code : cause?.name === 'OwnerValidationError' ? 'invalid-argument' : 'unavailable'}`; throw error; }
+  } };
+  const load = sourceLoader({ 'firebase/firestore/lite': api, 'firebase/functions': functions });
   const fm = load('src/owner/firebase-store.ts'), defaults = load('src/owner/defaults.ts'), model = load('src/owner/model.ts');
   return { fm, defaults, model, auth, user, documents, store: fm.createFirebaseOwnerStore({ db, auth, ownerUid: user.uid }), state: () => ({ commitCount, readCount }), fail: error => writeError = error, onRead: callback => onRead = callback, retry: callback => retry = callback };
 }
@@ -62,7 +73,7 @@ test('full notes: item publish snapshots selection before auth awaits and never 
 });
 
 test('full notes: individual publication refuses first publication, stale revisions and invalid selected data without partial writes', async () => {
-  const empty = fixture(); await assert.rejects(empty.store.publishPremadeLive(item(), 0), error => error.code === 'not-published'); assert.equal(empty.state().commitCount, 0);
+  const empty = fixture(); await assert.rejects(empty.store.publishPremadeLive(item(), 0), error => error.code === 'write' && error.cause?.code === 'functions/failed-precondition'); assert.equal(empty.state().commitCount, 0);
   const f = await setup(), state = f.state(), before = structuredClone([...f.documents]);
   await assert.rejects(f.store.publishPremadeLive(item(), f.workspace.revision - 1), error => error.code === 'conflict');
   for (const bad of [item({ visible: false }), item({ price: -1 }), item({ soldChannel: 'third-party', externalUrl: 'javascript:alert(1)' }), item({ image: 'data:image/png;base64,AAAA' })]) await assert.rejects(f.store.publishPremadeLive(bad, f.workspace.revision));
@@ -85,6 +96,43 @@ test('full notes: auth expiry and transaction failure never report selected item
     if (mode === 'replaced-session') f.onRead(() => f.auth.currentUser = { ...f.user });
     if (mode === 'write-failure') f.fail({ code: 'unavailable' });
     await assert.rejects(f.store.publishPremadeLive(item(), f.workspace.revision));
-    assert.equal(f.state().commitCount, commits); assert.deepEqual([...f.documents], before);
+    if (mode === 'replaced-session') {
+      assert.equal(f.state().commitCount, commits + 1, 'authorized server request can complete after browser session replacement');
+      const publicState=f.fm.decodePublishedOwnerSnapshot(f.documents.get('site/published'));
+      assert.equal(publicState.revision,f.workspace.revision+1);assert.equal(publicState.content.premades.find(value=>value.id==='selected').description,'Selected live edit');
+      assert.doesNotMatch(JSON.stringify(publicState),/PRIVATE_/);assert.equal(f.documents.has(`ownerRecoveryVersions/p-${publicState.revision}`),true);
+      assert.notEqual(f.auth.currentUser,f.user);assert.equal(f.auth.currentUser.uid,f.user.uid);
+    } else { assert.equal(f.state().commitCount, commits); assert.deepEqual([...f.documents], before); }
   }
+});
+
+test('Fox7: Overview Save Live changes only availability and visitor note, preserving unrelated saved and unsaved drafts', async () => {
+  const f = await setup();
+  const beforePublic = f.fm.decodePublishedOwnerSnapshot(f.documents.get('site/published'));
+  const beforePrivate = structuredClone(f.workspace.draft);
+  const edited = structuredClone(beforePrivate);
+  edited.site.commissionStatus = 'Open!';
+  edited.site.statusNote = 'Availability card only';
+  edited.home.title = 'UNSAVED_PRIVATE_HOME';
+  edited.site.name = 'UNSAVED_PRIVATE_BRAND';
+  const result = await f.store.publishSettingsCardLive(edited, 'availability', f.workspace.revision);
+  const after = f.fm.decodePublishedOwnerSnapshot(f.documents.get('site/published'));
+  const expected = structuredClone(beforePublic.content);
+  expected.site.commissionStatus = edited.site.commissionStatus;
+  expected.site.statusNote = edited.site.statusNote;
+  assert.deepEqual(after.content, expected);
+  const expectedPrivate = structuredClone(beforePrivate);
+  expectedPrivate.site.commissionStatus = edited.site.commissionStatus;
+  expectedPrivate.site.statusNote = edited.site.statusNote;
+  assert.deepEqual(result.draft, expectedPrivate);
+});
+
+test('Fox7: Overview Save Draft remains private', async () => {
+  const f = await setup();
+  const published = structuredClone(f.documents.get('site/published'));
+  const edited = structuredClone(f.workspace.draft);
+  edited.site.commissionStatus = 'Open!'; edited.site.statusNote = 'Private availability';
+  const saved = await f.store.saveSettingsCard(edited, 'availability', f.workspace.revision);
+  assert.equal(saved.draft.site.statusNote, 'Private availability');
+  assert.deepEqual(f.documents.get('site/published'), published);
 });

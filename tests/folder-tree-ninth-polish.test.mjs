@@ -16,7 +16,7 @@ test('folder tree has balanced padding and full width despite public header nav 
  for(const sheets of [[globals,compiled],[compiled,globals]])for(const width of [375,700,820,1050,1440]){
   const computed=cascade(sheets,width), actual=computed(nav);
   assert.equal(actual.display,'block');assert.equal(actual.width,'100%');assert.equal(actual['box-sizing'],'border-box');
-  assert.equal(actual.margin,'0');assert.equal(actual.gap,'0');assert.equal(actual.padding,'4px 10px 12px');assert.equal(actual['justify-content'],'flex-start');
-  assert.equal(computed(branch).width,'100%');assert.equal(computed(children)['margin-left'],'12px');
+  assert.equal(actual.margin,'0');assert.equal(actual.gap,'0');assert.equal(actual.padding,'0 0 8px');assert.equal(actual['justify-content'],'flex-start');
+  assert.equal(computed(branch).width,'100%');assert.equal(computed(children)['margin-left'],'9px');
  }
 });

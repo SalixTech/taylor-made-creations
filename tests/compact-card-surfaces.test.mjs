@@ -24,15 +24,15 @@ test('actual owner badge classes retain readable backgrounds in both modes and s
     const manager = element('section', {class:'Inventory_manager'}, root);
     assert.ok(!compute(manager)['background-color'] || compute(manager)['background-color']==='transparent');
     const card = element('section',{class:'OwnerPortal_card'},manager);
-    if(mode==='dark') assert.equal(compute(card)['background-color'],'#242426');
+    if(mode==='dark') assert.equal(compute(card)['background-color'],'#2c2c2d');
   }
 });
-test('contacts collapse as a section without discarding editor and save callbacks', () => {
+test('Socials collapses as its own section without discarding editor and save callbacks', () => {
   const h=harness(), defaults=h.load('src/owner/defaults.ts').createDefaultOwnerContent;
   const Manager=h.load('src/owner/OwnerTemplateManagers.tsx').ContactSettingsManager;
   h.render(Manager,{content:defaults(),onEdit(){},onRemove(){}});
-  const section=h.find(n=>n.type==='details' && content(n).includes('Where people can find you'));
-  assert.ok(section); assert.equal(nodes(section).find(n=>n.type==='summary').props.children,'Where people can find you');
+  const section=h.find(n=>n.type==='details' && content(n).includes('Socials'));
+  assert.ok(section); assert.equal(nodes(section).find(n=>n.type==='summary').props.children,'Socials');
   assert.ok(nodes(section).some(n=>n.type?.name==='OwnerSocialLinksEditor'));
   assert.ok(nodes(section).some(n=>n.type?.name==='SettingsCardActions' && n.props.card==='contacts'));
   h.unmount();

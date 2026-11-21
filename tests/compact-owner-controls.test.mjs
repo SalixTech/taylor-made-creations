@@ -29,7 +29,7 @@ function builderFixture() {
   const Builder = h.load('src/owner/OwnerVisualBuilder.tsx').OwnerVisualBuilder;
   let manage = 0, add = 0;
   const props = { content: value, page: value.pages[0], browsing: false, liveShopVisibility: false, canUpdateLiveShop: false, onUpdateLiveShop() {}, onBrowsingChange() {}, onPageChange() {}, onManagePages() { manage++; }, onAddPage() { add++; }, onPrices() {}, onRemove() {}, onEdit() {} };
-  const render = () => h.render(Builder, props), actions = () => nodes(h.find(n => n.props.className === builderClasses.actionbar)).filter(n => n.type === 'button');
+  const render = () => h.render(Builder, props), actions = () => [builderClasses.actionbar, builderClasses.quickTools].flatMap(className => nodes(h.find(n => n.props.className === className))).filter(n => n.type === 'button');
   const button = label => actions().find(n => content(n) === label);
   render(); return { h, props, render, actions, button, get manage() { return manage; }, get add() { return add; } };
 }
@@ -42,7 +42,7 @@ test('all five builder toolbar actions are shared native buttons with selected, 
   }
   assert.ok(t.button('Design').props.className.includes(buttonClasses.primary));
   assert.ok(t.button('Header & footer').props.className.includes(buttonClasses.secondary));
-  let focused = 0; const trigger = { focus() { focused++; } };
+  let focused = 0; const trigger = { focus() { focused++; }, closest() { return null; } };
   for (const label of ['Design', 'Header & footer', 'Page settings']) {
     assert.equal(t.button(label).props['aria-pressed'], false);
     t.button(label).props.onClick({ currentTarget: trigger }); t.render();
@@ -95,7 +95,7 @@ function listingFixture({ isDraft = false, failure = false } = {}) {
   const card = () => h.find(n => n.type?.name === 'Card' && n.props.title === value.premades[0].name);
   const headerButtons = () => nodes(card().props.action).filter(n => n.type === 'button');
   const saves = () => [headerButtons().find(n => /^(Save as Draft|Saving draft…)$/.test(content(n))), nodes(card()).find(n => n.type === 'button' && /^(Save as Draft|Saving draft…)$/.test(content(n)))];
-  render(); headerButtons().find(n => content(n) === 'Edit listing').props.onClick(); render();
+  render(); headerButtons().find(n => n.props.title === 'Edit listing').props.onClick(); render();
   return { h, props, render, card, saves, release, get raw() { return raw; }, get value() { return value; }, get callbacks() { return callbacks; }, get transactions() { return transactions; } };
 }
 

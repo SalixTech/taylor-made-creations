@@ -1,11 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {createCloudFolderService} from '../firebase/functions/cloud-folders-core.mjs';
+import { OWNER_UID } from '../firebase/functions/cleanup-core.mjs';
 import {sourceLoader} from './scout-source-loader.mjs';
 const ID='11111111-1111-4111-8111-111111111111',FOLDER='22222222-2222-4222-8222-222222222222',CHILD='33333333-3333-4333-8333-333333333333';
 const ISO='2026-10-26T15:00:00.000Z';
 const base=(patch={})=>({id:ID,schemaVersion:1,revision:1,kind:'photo',name:'Photo',parentId:'root',contentType:'image/webp',bytes:3,width:1,height:1,status:'uploading',trashedAt:null,createdAt:ISO,updatedAt:ISO,...patch});
 const persisted=file=>Object.fromEntries(Object.entries(file).filter(([key])=>key!=='id'));
-function fixture(){
+function fixture(gateway,workspace="main"){
   const documents=new Map(),objects=new Map(),uploads=[],writes=[],listeners=new Set();let getHook,commitHook,uploadMode='success',afterStart;
   const user={uid:'owner'},auth={currentUser:user,app:{options:{storageBucket:'taylor-made-creations.firebasestorage.app'}},onAuthStateChanged:callback=>{listeners.add(callback);return()=>listeners.delete(callback);}};
   const session={auth,db:{},token:'private-token',assertCurrent:()=>{if(auth.currentUser!==user)throw Error('Session changed');}};
@@ -26,7 +28,10 @@ function fixture(){
       }};return task;
     },
   };
-  const client=sourceLoader({'firebase/firestore/lite':fs,'firebase/storage':storage,'./taylor-services-client':{taylorOwnerSession:async()=>{session.assertCurrent();return session;}},'./asset-library-client':{notifyPrivateAssetLibraryChanged:()=>{}}})('src/owner/cloud-files-client.ts');
+  const adminDb={doc:path=>({path}),collection:path=>({path}),runTransaction:async run=>{const pending=[];const result=await run({get:async target=>target.path==='ownerFiles'?{docs:[...documents].filter(([path])=>path.startsWith('ownerFiles/')).map(([,data])=>({data:()=>structuredClone(data)}))}:{exists:documents.has(target.path),data:()=>structuredClone(documents.get(target.path))},set:(target,data)=>pending.push([target.path,structuredClone(data)])});for(const [path,data]of pending){documents.set(path,data);writes.push([path,data]);}return result;}};
+  const folderService=createCloudFolderService({db:adminDb,workspace});
+  const functions={getFunctions:()=>({}),httpsCallable:(_functions,name)=>async input=>({data:name==='tmcOwnerWebsiteAssets'?await gateway(input,documents):await folderService[name==='tmcOwnerEnsureCloudFolders'?'ensureCloudFolders':'changeCloudFolder'](Object.fromEntries(Object.entries(input).filter(([key])=>key!=='workspace')),{auth:{uid:OWNER_UID}})})};
+  const client=sourceLoader({'./website-workspace-config':{WEBSITE_WORKSPACE:workspace,workspaceDocument:p=>workspace==='beta'?'websiteWorkspaces/beta/'+p:p,workspaceObject:p=>workspace==='beta'?'website-workspaces/beta/'+p:p,workspaceBrowserKey:p=>workspace==='beta'?'tmc-beta:'+p:p,workspaceCallableInput:v=>workspace==='beta'?{...v,workspace}:v},'firebase/functions':functions,'firebase/firestore/lite':fs,'firebase/storage':storage,'./taylor-services-client':{taylorOwnerSession:async()=>{session.assertCurrent();return session;}},'./asset-library-client':{notifyPrivateAssetLibraryChanged:()=>{}}})('src/owner/cloud-files-client.ts');
   return {client,documents,objects,uploads,writes,auth,session,setGetHook:fn=>{getHook=fn;},setCommitHook:fn=>{commitHook=fn;},setUploadMode:value=>{uploadMode=value;},setAfterStart:fn=>{afterStart=fn;},signOut:()=>{auth.currentUser=null;for(const listener of listeners)listener(null);}};
 }
 test('stale file revision and session loss before a metadata write never commit',async()=>{
@@ -40,7 +45,7 @@ test('folder concurrent revision and moving a parent into its descendant fail wi
   f.documents.set('ownerFileFolders/current',{...registry,revision:2});
   await assert.rejects(f.client.changeCloudFolder(registry,FOLDER,{name:'Stale'}),/changed/);
   f.documents.set('ownerFileFolders/current',registry);
-  await assert.rejects(f.client.changeCloudFolder(registry,FOLDER,{parentId:CHILD}),/cycle/);assert.equal(f.writes.length,0);
+  await assert.rejects(f.client.changeCloudFolder(registry,FOLDER,{parentId:CHILD}),/invalid/);assert.equal(f.writes.length,0);
 });
 test('upload recovery rejects mismatched object metadata without activating the record',async()=>{
   const f=fixture(),file=base();f.documents.set(`ownerFiles/${ID}`,persisted(file));
@@ -108,17 +113,17 @@ test('default Fonts folder is stable and cannot be moved, renamed or trashed',as
  const f=fixture(),fonts=await f.client.ensureCloudFontsFolder();const id='00000000-0000-4000-8000-000000000001';
  assert.deepEqual(fonts.folders[id],{name:'Fonts',parentId:'root',trashedAt:null});
  assert.equal((await f.client.ensureCloudFontsFolder()).revision,fonts.revision);
- for(const change of [{name:'Other'},{parentId:FOLDER},{trashedAt:ISO}])await assert.rejects(f.client.changeCloudFolder(fonts,id,change),/default Fonts/);
+ for(const change of [{name:'Other'},{parentId:FOLDER},{trashedAt:ISO}])await assert.rejects(f.client.changeCloudFolder(fonts,id,change),/protected/);
 });
 test('server-reserved deleting files cannot be edited or restored',async()=>{
  const f=fixture(),file=base({status:'deleting',trashedAt:ISO});f.documents.set(`ownerFiles/${ID}`,persisted(file));
- await assert.rejects(f.client.changeCloudFile(file,{trashedAt:null}),/permanently deleted/);assert.equal(f.writes.length,0);
+ await assert.rejects(f.client.changeCloudFile(file,{trashedAt:null}),/being (?:permanently )?deleted/);assert.equal(f.writes.length,0);
 });
 
 test('folder restore cannot race a reserved child deletion',async()=>{
  const f=fixture(),registry={schemaVersion:1,revision:1,folders:{[FOLDER]:{name:'Old projects',parentId:'root',trashedAt:ISO}}};
  f.documents.set('ownerFileFolders/current',registry);f.documents.set(`ownerFiles/${ID}`,persisted(base({parentId:FOLDER,status:'deleting',trashedAt:ISO})));
- await assert.rejects(f.client.changeCloudFolder(registry,FOLDER,{trashedAt:null}),/permanently deleted/);assert.equal(f.writes.length,0);
+ await assert.rejects(f.client.changeCloudFolder(registry,FOLDER,{trashedAt:null}),/being (?:permanently )?deleted/);assert.equal(f.writes.length,0);
 });
 
 test('saved order is private metadata only and rejects stale, cross-folder and unknown identities',async()=>{
@@ -151,4 +156,61 @@ test('font uploads need no checkbox assertion but retain authenticated binary va
   globalThis.fetch=async()=>new Response('{}',{status:400});const denied=fixture();await assert.rejects(denied.client.uploadCloudFont(file),/safely validated/);assert.equal(denied.writes.length,0);assert.equal(denied.uploads.length,0);
   const invalid=fixture();await assert.rejects(invalid.client.uploadCloudFont(new File(['x'],'Script.svg')),/WOFF/);await assert.rejects(invalid.client.uploadCloudFont(new File([],'Empty.woff2')),/4 MB/);assert.equal(invalid.writes.length,0);
  }finally{globalThis.fetch=previous;}
+});
+
+test('manual cleanup readiness rejects legacy available=true and requires explicit configured backend handshake', async t => {
+  const previous = globalThis.fetch;
+  t.after(() => { globalThis.fetch = previous; });
+  const f = fixture();
+  for (const [payload, expected] of [
+    [{ok:true,available:true,message:'Cleanup is available'},false],
+    [{ok:true,available:true,manualDeletionConfigured:false},false],
+    [{ok:true,available:false,manualDeletionConfigured:true},false],
+    [{ok:true,available:true,manualDeletionConfigured:true},true],
+  ]) {
+    globalThis.fetch = async () => ({ok:true,json:async()=>payload});
+    const status=await f.client.readCloudCleanupStatus();assert.equal(status.available,expected);if(payload.manualDeletionConfigured!==true)assert.match(status.message,/held for approved setup/);
+  }
+  assert.equal(f.writes.length,0); assert.equal(f.uploads.length,0);
+});
+
+
+test('explicit main website PDF uploads use immutable tokenless gateway and never direct Storage',async()=>{const calls=[];const f=fixture(async(input,documents)=>{calls.push(input);const data=documents.get('ownerFiles/'+input.fileId);const file={id:input.fileId,...data,status:'ready',revision:2};documents.set('ownerFiles/'+input.fileId,Object.fromEntries(Object.entries(file).filter(([k])=>k!=='id'&&k!=='generation')));return{file,generation:'123'};});const file=new File(['%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n'],'Care.pdf',{type:'application/pdf'});const saved=await f.client.uploadCloudFile(file,{websiteDocument:true});assert.equal(saved.kind,'document');assert.equal(saved.status,'ready');assert.equal(saved.revision,2);assert.equal(calls.length,1);assert.equal(calls[0].workspace,'main');assert.equal(calls[0].action,'upload');assert.equal(calls[0].expectedRevision,1);assert.equal(Buffer.from(calls[0].base64,'base64').toString(),await file.text());assert.equal(f.uploads.length,0);assert.equal(f.writes.filter(([path])=>path==='ownerFiles/'+saved.id).length,1,'client reserves once; gateway alone finalizes ready');});
+
+const retryPDF = () => new File(['%PDF-1.7\nexact immutable retry bytes\n%%EOF\n'], 'Retry.pdf', {type:'application/pdf'});
+test('gateway lost receipt retries same UUID exact bytes and revision without reserving a second file',async()=>{
+ const calls=[];let lose=true;const f=fixture(async(input,documents)=>{calls.push(structuredClone(input));const data=documents.get('ownerFiles/'+input.fileId);const file={id:input.fileId,...data,status:'ready',revision:2};documents.set('ownerFiles/'+input.fileId,persisted(file));if(lose){lose=false;throw Error('lost response');}return{file,generation:'123'};});
+ await assert.rejects(f.client.uploadCloudFile(retryPDF(),{websiteDocument:true}),/lost response/);
+ const [pending]=f.client.pendingWebsiteUploads();assert.ok(pending);assert.equal(pending.running,false);
+ await assert.rejects(f.client.uploadCloudFile(retryPDF(),{websiteDocument:true}),/original upload.*retained/);assert.equal(calls.length,1);
+ const saved=await f.client.retryWebsiteUpload(pending.id);assert.equal(saved.id,pending.id);assert.deepEqual(calls[0],calls[1]);assert.equal(f.writes.filter(([p])=>p.startsWith('ownerFiles/')).length,1);assert.deepEqual(f.client.pendingWebsiteUploads(),[]);assert.equal(f.uploads.length,0);
+});
+test('gateway retry recovers lost reservation acknowledgement but rejects changed metadata and revoked session',async()=>{
+ const calls=[];const f=fixture(async(input,documents)=>{calls.push(input);return{file:{id:input.fileId,...documents.get('ownerFiles/'+input.fileId),status:'ready',revision:2}};});
+ let lost=true;f.setCommitHook(()=>{if(lost){lost=false;throw Error('lost reservation');}});
+ await assert.rejects(f.client.uploadCloudFile(retryPDF(),{websiteDocument:true,parentId:'root'}),/lost reservation/);
+ const [pending]=f.client.pendingWebsiteUploads();assert.equal(calls.length,0);await f.client.retryWebsiteUpload(pending.id);assert.equal(calls.length,1);assert.equal(f.writes.length,1);
+ const g=fixture(async()=>{throw Error('transient');});await assert.rejects(g.client.uploadCloudFile(retryPDF(),{websiteDocument:true,parentId:'root'}));const [other]=g.client.pendingWebsiteUploads();g.documents.get('ownerFiles/'+other.id).name='Different';await assert.rejects(g.client.retryWebsiteUpload(other.id),/record changed/);g.signOut();await assert.rejects(g.client.retryWebsiteUpload(other.id),/Session/);assert.deepEqual(g.client.pendingWebsiteUploads(),[]);
+});
+test('same gateway attempt cannot run concurrently and late response after signout is not accepted',async()=>{
+ let resolve;const wait=new Promise(r=>{resolve=r;});const f=fixture(async(input,documents)=>{await wait;return{file:{id:input.fileId,...documents.get('ownerFiles/'+input.fileId),status:'ready',revision:2}};});
+ const first=f.client.uploadCloudFile(retryPDF(),{websiteDocument:true,parentId:'root'});while(!f.client.pendingWebsiteUploads().length)await new Promise(r=>setTimeout(r,0));const [pending]=f.client.pendingWebsiteUploads();await assert.rejects(f.client.retryWebsiteUpload(pending.id),/already being checked/);f.signOut();resolve();await assert.rejects(first,/Session/);assert.deepEqual(f.client.pendingWebsiteUploads(),[]);
+});
+
+test('beta upload retries remain scoped to beta and retained bytes cannot migrate to another session',async()=>{
+ const calls=[];let lost=true;const f=fixture(async(input,documents)=>{calls.push(structuredClone(input));if(lost){lost=false;throw Error('503');}const file={id:input.fileId,...documents.get('websiteWorkspaces/beta/ownerFiles/'+input.fileId),status:'ready',revision:2};return{file};},'beta');
+ const font=new File(['wOF2exactfontbytes'],'Beta.woff2',{type:'font/woff2'});
+ await assert.rejects(f.client.uploadCloudFile(font,{parentId:'root'}),/503/);const [pending]=f.client.pendingWebsiteUploads();assert.equal(f.writes.filter(([path])=>path.startsWith('websiteWorkspaces/beta/ownerFiles/')).length,1);assert.equal(f.writes.filter(([path])=>path==='websiteWorkspaces/beta/ownerFileFolders/current').length,1);assert.equal(f.documents.get('websiteWorkspaces/beta/ownerFiles/'+pending.id).parentId,'00000000-0000-4000-8000-000000000001');
+ const saved=await f.client.retryWebsiteUpload(pending.id);assert.equal(saved.id,pending.id);assert.deepEqual(calls[0],calls[1]);assert.equal(calls[0].workspace,'beta');assert.equal(f.uploads.length,0);assert.deepEqual(f.client.pendingWebsiteUploads(),[]);
+});
+
+test('historical pending upload without retained bytes blocks same-name reselection without guessing or writing',async()=>{
+ const calls=[];const f=fixture(input=>{calls.push(input);},'beta');f.documents.set('websiteWorkspaces/beta/ownerFiles/'+ID,persisted(base({name:'Beta.woff2',kind:'font',contentType:'font/woff2',width:0,height:0})));
+ await assert.rejects(f.client.uploadCloudFile(new File(['wOF2differentbytes'],'Beta.woff2',{type:'font/woff2'}),{parentId:'root'}),/pending cloud upload already has this name/);assert.equal(calls.length,0);assert.equal(f.writes.length,0);assert.deepEqual(f.client.pendingWebsiteUploads(),[]);assert.equal(f.documents.size,1);
+});
+test('beta website photo defaults to Site Photos while explicit Gallery classification stays separate',async()=>{
+ const previousImage=globalThis.createImageBitmap,previousDocument=globalThis.document;
+ globalThis.createImageBitmap=async()=>({width:20,height:10,close(){}});globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>({drawImage(){}}),toBlob:callback=>callback(new Blob(['normalized'],{type:'image/webp'}))})};
+ try{for(const parentId of ['root','00000000-0000-4000-8000-000000000002']){const f=fixture(async(input,documents)=>({file:{id:input.fileId,...documents.get('websiteWorkspaces/beta/ownerFiles/'+input.fileId),status:'ready',revision:2}}),'beta');if(parentId!=='root')await f.client.ensureCloudSystemFolders();const saved=await f.client.uploadCloudFile(new File(['image'],'New.png',{type:'image/png'}),{parentId});assert.equal(saved.parentId,parentId==='root'?'00000000-0000-4000-8000-000000000007':parentId);assert.equal(f.uploads.length,0);assert.equal([...f.documents.keys()].some(key=>!key.startsWith('websiteWorkspaces/beta/')),false);}}
+ finally{globalThis.createImageBitmap=previousImage;globalThis.document=previousDocument;}
 });

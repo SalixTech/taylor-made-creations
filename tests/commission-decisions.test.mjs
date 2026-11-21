@@ -27,9 +27,33 @@ test('confirmation is cancellable, double-click locked, failure retains original
   const h=harness();let decisions=0,reject;const wait=new Promise((_,r)=>{reject=r;});
   h.overrides['./taylor-services-client']={taylorOwnerSession:async()=>({db:{},assertCurrent(){}}),serviceReadError:e=>e.message};
   h.overrides['./commission-requests-client']={decideCommissionRequest:async()=>{decisions++;return wait;},readCommissionHistory:async()=>[]};
-  h.overrides['firebase/firestore/lite']={collection:()=>({}),limit:()=>({}),query:()=>({}),getDocs:async()=>({docs:[{id:'real',data:()=>({name:'Real request'})}]})};
-  const Component=h.load('src/owner/CommissionRequests.tsx').CommissionRequests,render=()=>h.render(Component),button=label=>h.find(n=>n.type==='button'&&content(n)===label),dialog=()=>h.find(n=>typeof n.type==='function'&&n.type.name==='Dialog');
+  h.overrides['firebase/firestore/lite']={collection:()=>({}),limit:()=>({}),query:()=>({}),orderBy:()=>({}),documentId:()=>"__name__",startAfter:()=>({}),getDocs:async()=>({docs:[{id:'real',data:()=>({name:'Real request'})}]})};
+  const Component=h.load('src/owner/CommissionRequests.tsx').CommissionRequests,render=()=>h.render(Component),button=label=>nodes(h.find(n=>typeof n.type==='function'&&n.type.name==='IntakeHubAction')?.props.actions).find(n=>n.type==='button'&&content(n)===label),dialog=()=>h.find(n=>typeof n.type==='function'&&n.type.name==='Dialog');
   render();await flush();render();button('Approve').props.onClick();render();assert.equal(decisions,0);assert.match(content(dialog()),/No email, customer reply, contract, or charge/);dialog().props.onClose();render();assert.equal(dialog(),undefined);
-  button('Deny').props.onClick();render();let save=nodes(dialog().props.actions).find(n=>n.type==='button'&&content(n)==='Save decision');save.props.onClick();save.props.onClick();render();assert.equal(decisions,1);assert.equal(dialog().props.dismissDisabled,true);
-  reject(Error('Denied; no decision saved'));await flush();render();assert.match(content(h.tree),/Denied; no decision saved/);assert.match(content(h.tree),/Received/);assert.doesNotMatch(content(h.tree),/saved privately/);h.unmount();
+  button('Deny').props.onClick();render();let save=nodes(dialog().props.actions).find(n=>n.type==='button'&&content(n)==='Save');save.props.onClick();save.props.onClick();render();assert.equal(decisions,1);assert.equal(dialog().props.dismissDisabled,true);
+  reject(Error('Denied; no decision saved'));await flush();render();assert.match(content(h.tree),/Denied; no decision saved/);assert.equal(h.find(n=>typeof n.type==='function'&&n.type.name==='IntakeHubAction').props.request.status,'received');assert.match(content(h.find(n=>typeof n.type==='function'&&n.type.name==='IntakeHubAction').props.triggerContent),/Received/);assert.doesNotMatch(content(h.tree),/saved privately/);h.unmount();
+});
+
+test('metadata denial transport explicitly confirms the decision and rejects unverified acknowledgements',async t=>{
+ const h=harness(),calls=[];let result={status:'denied',version:5};
+ h.overrides['./taylor-services-client']={taylorOwnerSession:async()=>({auth:{app:{}},assertCurrent(){}})};
+ h.overrides['firebase/functions']={getFunctions:()=>({}),httpsCallable:(_functions,name)=>async input=>{calls.push({name,input});return{data:result}}};
+ const client=h.load('src/owner/intake-client.ts');t.after(()=>h.unmount());
+ assert.deepEqual(await client.denyCommissionRequest('request-one',4),{status:'denied',version:5});
+ assert.deepEqual(calls,[{name:'tmcDenyCommissionRequest',input:{requestId:'request-one',expectedVersion:4,confirmDenial:true}}]);
+ for(const bad of [{status:'approved',version:5},{status:'denied',version:3},{status:'denied',version:6},{status:'denied',version:4.5},{status:'denied',version:5,referencePurge:{status:'unknown'}}]){result=bad;await assert.rejects(client.denyCommissionRequest('request-one',4));}
+ result={status:'denied',version:4};assert.deepEqual(await client.denyCommissionRequest('request-one',4),result);
+});
+
+test('request with pictures can be denied without cleanup capability and copy promises retention',async t=>{
+ const h=harness();let decisions=0;
+ h.overrides['./taylor-services-client']={taylorOwnerSession:async()=>({db:{},assertCurrent(){}}),serviceReadError:e=>e.message};
+ h.overrides['./intake-client']={readIntakeCapabilities:async()=>{throw Error('Must not gate a decision on cleanup')}};
+ h.overrides['./commission-requests-client']={decideCommissionRequest:async(request,status)=>{decisions++;assert.equal(status,'denied');return{status:'denied',version:1}},readCommissionHistory:async()=>[]};
+ h.overrides['firebase/firestore/lite']={collection:()=>({}),limit:()=>({}),query:()=>({}),orderBy:()=>({}),documentId:()=>"__name__",startAfter:()=>({}),getDocs:async()=>({docs:[{id:'pictures',data:()=>({name:'Fox with pictures',references:[{index:0,fileName:'Fox.jpg'}]})}]})};
+ const Component=h.load('src/owner/CommissionRequests.tsx').CommissionRequests,render=()=>h.render(Component);t.after(()=>h.unmount());
+ render();await flush();render();const detail=h.find(n=>n.type?.name==='IntakeHubAction');assert.equal(detail.props.request.referenceCount,1);
+ const deny=nodes(detail.props.actions).find(n=>n.type==='button'&&content(n)==='Deny');assert.equal(deny.props.disabled,false);deny.props.onClick();render();
+ const dialog=h.find(n=>n.type?.name==='Dialog');assert.match(content(dialog),/Nothing is deleted/);assert.doesNotMatch(content(dialog),/permanently delete|cleanup is not enabled/);
+ const save=nodes(dialog.props.actions).find(n=>n.type==='button'&&content(n)==='Save');assert.equal(save.props.disabled,false);save.props.onClick();await flush();render();assert.equal(decisions,1);assert.match(content(h.tree),/Reference pictures and history are kept/);
 });

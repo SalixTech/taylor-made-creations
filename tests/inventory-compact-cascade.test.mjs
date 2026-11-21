@@ -25,3 +25,10 @@ test('compiled inventory styles remove inherited label and field margins in eith
 });
 
 test('inventory action toolbar has no extra surface strip in either theme or stylesheet order',()=>{for(const mode of ['light','dark'])for(const sheets of [[...base,inventory],[inventory,...base]]){const root=element('div',{'data-owner-portal':'','data-color-mode':mode,class:'OwnerPortal_portal'}),inventoryRoot=element('div',{class:'OwnerInventory_root'},root),toolbar=element('div',{class:'OwnerInventory_toolbar'},inventoryRoot);assert.equal(cascade(sheets)(toolbar)['background-color'],'transparent');}});
+
+test('inventory refresh uses remaining right space without changing wrapping or action order',()=>{
+ for(const mode of ['light','dark'])for(const width of [320,390,768,1176,1440])for(const sheets of [[...base,inventory],[inventory,...base]]){
+  const portal=element('div',{'data-owner-portal':'','data-color-mode':mode,class:'OwnerPortal_portal'}),root=element('div',{class:'OwnerInventory_root'},portal),toolbar=element('div',{class:'OwnerInventory_toolbar'},root),refresh=element('button',{class:'OwnerInventory_toolbarRefresh'},toolbar),action=element('button',{},toolbar),get=cascade(sheets,width);
+  assert.equal(get(refresh)['margin-left'],'auto');assert.equal(get(toolbar)['flex-wrap'],'wrap');assert.notEqual(get(action)['margin-left'],'auto');assert.equal(get(refresh).order,undefined);
+ }
+});

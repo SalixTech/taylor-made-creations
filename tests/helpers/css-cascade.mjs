@@ -92,7 +92,11 @@ export function cascade(sheets, width = 1280) {
   const rules = [];
   for (const sheet of sheets) postcss.parse(sheet).walkRules(rule => {
     if (rule.selector === ':export') return;
-    for (let parent = rule.parent; parent; parent = parent.parent) if (parent.type === 'atrule' && parent.name === 'media') {
+    for (let parent = rule.parent; parent; parent = parent.parent) {
+      // Animation offsets are not element selectors. This evaluator deliberately
+      // models the non-animated cascade, not interpolation or elapsed time.
+      if (parent.type === 'atrule' && /^(?:-\w+-)?keyframes$/i.test(parent.name)) return;
+      if (parent.type !== 'atrule' || parent.name !== 'media') continue;
       if (/prefers-|forced-colors/.test(parent.params)) return;
       const min = parent.params.match(/min-width:\s*(\d+)px/), max = parent.params.match(/max-width:\s*(\d+)px/);
       if (min && width < +min[1] || max && width > +max[1]) return;

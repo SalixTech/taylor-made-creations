@@ -6,6 +6,7 @@ import { harness, content, nodes } from './owner-ui-harness.mjs';
 const flush = () => new Promise(resolve => setImmediate(resolve));
 async function portalFixture() {
   const h = harness();
+  h.window.location.href = "/taylor/pages";
   h.overrides['./HelpButton'] = { HelpButton: () => null };
   h.overrides['./TaylorServices'] = { TaylorServices: () => null };
   h.overrides['./CommissionRequests'] = { CommissionRequests: () => null };
@@ -78,13 +79,14 @@ test('workspace view/edit preference survives keyed page navigation instead of s
   t.h.unmount();
 });
 
-test('repeated exit and re-entry preserve unsaved changes without saving, publishing, or opening a discard prompt', async () => {
+test('repeated exit and re-entry preserve unsaved changes with explicit exit confirmation, without saving, publishing, or discarding', async () => {
   const t = await portalFixture();
   t.builder().props.onBrowsingChange(false); t.render();
   t.builder().props.onEdit(draft => { draft.home.title = 'KEEP UNSAVED PRIVATE WORK'; }); t.render();
   const edited = structuredClone(t.builder().props.content);
   for (const browsing of [true, true, false, false, true]) {
     t.builder().props.onBrowsingChange(browsing); t.render();
+    if (browsing && t.h.find(node => node.type?.name === 'Dialog')) { const confirmation=t.h.find(node=>node.type?.name==='Dialog');assert.equal(confirmation.props.title,'Leave edit mode?');nodes(confirmation.props.actions).find(node=>node.type==='button'&&content(node)==='Exit edit mode').props.onClick();t.render(); }
     assert.equal(t.builder().props.browsing, browsing);
     assert.deepEqual(t.builder().props.content, edited);
     assert.equal(t.h.find(node => node.type?.name === 'Dialog'), undefined);
@@ -95,25 +97,37 @@ test('repeated exit and re-entry preserve unsaved changes without saving, publis
 });
 
 test('management tabs stay standalone and returning to Website builder keeps the chosen view mode', async () => {
-  const t = await portalFixture();
-  for (const label of ['Photos', 'Premades', 'Home page', 'Prices & options']) {
-    t.button(label).props.onClick(); t.render();
-    assert.equal(t.builder(), undefined, label);
+  for (const browsing of [true, false]) {
+    const t = await portalFixture();
+    t.builder().props.onBrowsingChange(browsing); t.render();
+    for (const label of ['Photos', 'Premades', 'Home page', 'Prices & options']) {
+      t.button(label).props.onClick(); t.render();
+      assert.equal(t.builder(), undefined, label);
+    }
+    const separateBuilder = t.button('Website builder');
+    assert.equal(separateBuilder.props.href, 'https://build.taylormadecreations.dog');
+    assert.equal(separateBuilder.props.target, '_blank');
+    // Back returns to the already-open main editor; the sidebar intentionally
+    // opens a different tab and must not mutate this tab's chosen view mode.
+    const length = t.h.window.history.length;
+    t.h.window.history.go(-4); await flush(); t.render();
+    assert.equal(t.h.window.location.href, '/taylor/pages');
+    assert.equal(t.builder().props.browsing, browsing);
+    assert.equal(t.h.window.history.length, length); assert.equal(t.loads, 1); assert.equal(t.writes, 0);
+    t.h.unmount();
   }
-  t.button('Website builder').props.onClick(); t.render();
-  assert.equal(t.builder().props.browsing, true); assert.equal(t.writes, 0);
-  t.h.unmount();
 });
 
 test('normal website view has navigation and sizing but no editor targets, mutation controls, or editing panels', () => {
   const t = builderFixture();
   assert.equal(t.frame().props.editable, false);
-  assert.equal(t.button('View website').props['aria-pressed'], true);
+  assert.equal(t.button('View website'), undefined);
+  assert.equal(t.button('Exit edit mode'), undefined);
   assert.ok(t.button('Edit website'));
   assert.ok(t.h.find(node => node.type?.name === 'OwnerSelect' && node.props.label === 'Viewing page'));
   assert.ok(t.h.find(node => node.props['aria-label'] === 'Desktop view'));
   assert.ok(t.h.find(node => node.props['aria-label'] === 'Mobile view'));
-  for (const label of ['Design', 'Header & footer', 'Page settings', 'Manage pages', '＋ New page', 'Page content', '＋ Add a section']) assert.equal(t.button(label), undefined, label);
+  for (const label of ['Design', 'Header & footer', 'Page settings', 'Manage pages', '＋ New page', 'Page content', '＋ Add Item']) assert.equal(t.button(label), undefined, label);
   assert.equal(t.h.find(node => node.type?.name === 'OwnerHeaderEditor'), undefined);
   assert.equal(t.h.find(node => node.type === 'aside'), undefined);
   const canvas = t.h.find(node => node.props.onClickCapture), dom = canvas.props.ref.current;
@@ -162,6 +176,7 @@ test('closing the full preview returns to the same view or edit mode and preserv
     t.builder().props.onBrowsingChange(false); t.render();
     t.builder().props.onEdit(draft => { draft.home.title = 'KEEP THROUGH MODAL'; }); t.render();
     t.builder().props.onBrowsingChange(browsing); t.render();
+    if (browsing && t.h.find(node => node.type?.name === 'Dialog')) { const confirmation=t.h.find(node=>node.type?.name==='Dialog');assert.equal(confirmation.props.title,'Leave edit mode?');nodes(confirmation.props.actions).find(node=>node.type==='button'&&content(node)==='Exit edit mode').props.onClick();t.render(); }
     for (const closeWithButton of [false, true]) {
       t.button('Preview').props.onClick(); t.render();
       const dialog = t.h.find(node => node.type?.name === 'Dialog');
@@ -187,4 +202,47 @@ test('workspace-level upload lock rejects a stale mode-toggle callback before th
   t.builder().props.onBrowsingChange(false); t.render();
   assert.equal(t.builder().props.browsing, false); assert.equal(t.writes, 0);
   t.h.unmount();
+});
+
+
+test('Fox17 unchanged builder session exits without prompting while pre-existing private work remains dirty', async () => {
+  const t = await portalFixture();
+  t.builder().props.onEdit(draft => { draft.home.title = 'Earlier private work'; }); t.render();
+  const before = structuredClone(t.builder().props.content);
+  t.builder().props.onBrowsingChange(false); t.render();
+  t.builder().props.onBrowsingChange(false); t.render();
+  t.builder().props.onBrowsingChange(true); t.render();
+  assert.equal(t.builder().props.browsing, true);
+  assert.equal(t.h.find(n => n.type?.name === 'Dialog'), undefined);
+  assert.deepEqual(t.builder().props.content, before);
+  assert.match(content(t.h.tree), /unsaved changes/);
+  assert.equal(t.writes, 0);
+  t.h.unmount();
+});
+
+test('Fox17 repeated Edit mode intent cannot reset the entry baseline or hide new unsaved edits', async () => {
+  const t = await portalFixture();
+  t.builder().props.onBrowsingChange(false); t.render();
+  t.builder().props.onEdit(draft => { draft.home.title = 'New edit in this session'; }); t.render();
+  t.builder().props.onBrowsingChange(false); t.render();
+  t.builder().props.onBrowsingChange(true); t.render();
+  const dialog = t.h.find(n => n.type?.name === 'Dialog');
+  assert.equal(dialog.props.title, 'Leave edit mode?');
+  dialog.props.onClose(); t.render();
+  assert.equal(t.builder().props.browsing, false);
+  assert.equal(t.builder().props.content.home.title, 'New edit in this session');
+  assert.equal(t.writes, 0);
+  t.h.unmount();
+});
+
+test('Fox17 returning exactly to entry content needs no mode-exit warning', async () => {
+  const t = await portalFixture();
+  const title = t.builder().props.content.home.title;
+  t.builder().props.onBrowsingChange(false); t.render();
+  t.builder().props.onEdit(draft => { draft.home.title = 'Temporary edit'; }); t.render();
+  t.builder().props.onEdit(draft => { draft.home.title = title; }); t.render();
+  t.builder().props.onBrowsingChange(true); t.render();
+  assert.equal(t.builder().props.browsing, true);
+  assert.equal(t.h.find(n => n.type?.name === 'Dialog'), undefined);
+  assert.equal(t.writes, 0); t.h.unmount();
 });

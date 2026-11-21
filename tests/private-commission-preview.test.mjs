@@ -26,6 +26,6 @@ test('private request keeps owner gate and passes draft form/terms directly with
   const route=readFileSync(new URL('../src/owner/OwnerSitePreview.tsx',import.meta.url),'utf8');
   assert.match(route,/getPreviewCommissionPage/);assert.match(route,/previewContent=\{content\}/);assert.match(route,/configuration=\{content\.commissionForm \?\? \{\}\}/);
   const entry=readFileSync(new URL('../src/owner/OwnerPreviewEntry.tsx',import.meta.url),'utf8');assert.match(entry,/FirebaseOwnerGate/);
-  const form=readFileSync(new URL('../src/components/CommissionForm.tsx',import.meta.url),'utf8');assert.match(form,/disabled aria-describedby="commission-send-hint"/);
+  const form=readFileSync(new URL('../src/components/CommissionForm.tsx',import.meta.url),'utf8');assert.match(form,/disabled=\{sending\|\|publication\.status!=='published'\|\|!!previewContent\|\|!!visualEditor\}/);assert.match(form,/sendPending\.current\|\|visualEditor\|\|previewContent\|\|publication\.status!=='published'/);
   assert.doesNotMatch(route,/publishLive\(/);
 });

@@ -19,11 +19,12 @@ test('inline hyperlinks support safe internal, external, email and anchor destin
   assert.equal(makeInlineLink('Section','#care'), '[Section](#care)');
 });
 
-test('image frame dimensions are bounded independently of image fit and section layout', () => {
-  assert.deepEqual(getImageFrameStyle({imageWidthPercent:50,imageHeightPx:320}),{width:'50%',maxWidth:'100%',marginInline:'auto',height:'320px',minHeight:0,aspectRatio:'auto'});
+test('image frame dimensions accept finite positive overflow independently of image fit and section layout', () => {
+  assert.deepEqual(getImageFrameStyle({imageWidthPercent:50,imageHeightPx:320}),{width:'50%',marginInline:'auto',height:'320px',minHeight:0,aspectRatio:'auto'});
   assert.deepEqual(getImageFrameStyle(),{});
-  for(const value of [NaN,Infinity,-1,0,'50',null,101]) assert.deepEqual(getImageFrameStyle({imageWidthPercent:value}),{});
-  for(const value of [NaN,Infinity,-1,0,'50',null,2001]) assert.deepEqual(getImageFrameStyle({imageHeightPx:value}),{});
+  for(const value of [NaN,Infinity,-1,0,'50',null]) assert.deepEqual(getImageFrameStyle({imageWidthPercent:value}),{});
+  for(const value of [NaN,Infinity,-1,0,'50',null]) assert.deepEqual(getImageFrameStyle({imageHeightPx:value}),{});
+  assert.deepEqual(getImageFrameStyle({imageWidthPercent:101,imageHeightPx:2001}),{width:'101%',marginInline:'auto',height:'2001px',minHeight:0,aspectRatio:'auto'});
   assert.deepEqual(getImageFrameStyle({widthPercent:40,heightPercent:80,imageFit:'cover'}),{});
 });
 
@@ -36,25 +37,28 @@ test('image dimension edits validate and survive public projection without chang
   assert.ok(project,'public projection is available');
   assert.deepEqual(project(value).contentOverrides.styles['home.image'],{imageWidthPercent:55,imageHeightPx:410});
   value.contentOverrides.styles['home.image'].imageWidthPercent=1000;
-  assert.equal(model.validateOwnerContent(value).valid,false);
+  assert.equal(model.validateOwnerContent(value).valid,true);
+  assert.equal(project(value).contentOverrides.styles['home.image'].imageWidthPercent,1000);
+  for(const invalid of [0,-1,NaN,Infinity,-Infinity]){value.contentOverrides.styles['home.image'].imageWidthPercent=invalid;assert.equal(model.validateOwnerContent(value).valid,false);}
 });
 
-test('hyperlink insertion replaces a selection and protects against a stale changed field', () => {
+test('hyperlink insertion replaces a selection and protects against a stale changed field', async () => {
   const h=harness(), {OwnerLinkedTextField}=h.load('src/owner/OwnerLinkedTextField.tsx');
-  const props={label:'Text',value:'See prices today',onChange(value){props.value=value;},multiline:true};
+  const props={label:'Text',contextKey:'fixture:text',value:'See prices today',onChange(value){props.value=value;},multiline:true};
   const render=()=>h.render(OwnerLinkedTextField,props); render();
   const field=h.find(n=>n.type==='textarea').props.ref;
   // Callback refs are populated by React in the browser; this focused fixture sets it explicitly.
   field({selectionStart:4,selectionEnd:10,focus(){}});
+  h.find(n=>n.type==='textarea').props.onSelect();
   const click=text=>h.find(n=>n.type==='button'&&content(n).includes(text)).props.onClick();
   click('Add hyperlink');render();
   let inputs=h.all(n=>n.type==='input'); assert.equal(inputs[0].props.value,'prices');
-  inputs[1].props.onChange({target:{value:'/prices'}});render();click('Insert link');
+  inputs[1].props.onChange({target:{value:'/prices'}});render();click('Insert link');await new Promise(resolve=>setTimeout(resolve,5));
   assert.equal(props.value,'See [prices](/prices) today');render();
-  field({selectionStart:0,selectionEnd:3,focus(){}});click('Add hyperlink');render();
+  h.find(n=>n.type==='textarea').props.ref({selectionStart:0,selectionEnd:3,focus(){}});h.find(n=>n.type==='textarea').props.onSelect();click('Add hyperlink');render();
   inputs=h.all(n=>n.type==='input');inputs[0].props.onChange({target:{value:'Contact'}});inputs[1].props.onChange({target:{value:'/contact'}});render();
   props.value='Updated elsewhere';render();click('Insert link');
-  assert.equal(props.value,'Updated elsewhere [Contact](/contact)');
+  assert.equal(props.value,'Updated elsewhere', 'Stale selection must refuse instead of silently appending to another revision');render();assert.match(content(h.tree),/changed while the link controls/);
 });
 
 test('theme toggle is a single labeled circular icon with stable browser preference',()=>{
@@ -66,8 +70,8 @@ test('theme toggle is a single labeled circular icon with stable browser prefere
   const css=fs.readFileSync(new URL('../src/app/color-modes.css',import.meta.url),'utf8');
   assert.match(css,/\.color-mode-toggle\s*\{[^}]*position:fixed;[^}]*bottom:[^;]+;[^}]*border-radius:50%/);
   assert.doesNotMatch(css,/\[class\*="badge"\]/);
-  assert.match(css,/--owner-button-primary-bg:#800014/);
-  assert.match(css,/\.site-header \{ background:#800014!important/);
+  assert.match(css,/--owner-button-primary-bg:#7f0011/);
+  assert.match(css,/\.site-header \{ background:#7f0011!important/);
 });
 
 test('public and private renderers emit real safe hyperlinks and sized image frames',async()=>{
@@ -88,7 +92,7 @@ test('public and private renderers emit real safe hyperlinks and sized image fra
     assert.match(html,/href="mailto:maker@example.com"/);
     assert.doesNotMatch(html,/href="javascript:|<script>/);
     assert.match(html,/\[Unsafe\]\(javascript:alert\)/);
-    assert.match(html,/width:55%;max-width:100%;margin-inline:auto;height:410px;min-height:0;aspect-ratio:auto/);
+    assert.match(html,/width:55%;margin-inline:auto;height:410px;min-height:0;aspect-ratio:auto/);
   }
 });
 

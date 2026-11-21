@@ -8,7 +8,7 @@ import { layoutSize } from "@/owner/box-affine";
 /** Saved legacy dimensions remain readable. Text/cards now reflow at their
  * chosen width instead of anisotropically stretching glyphs. A stable original
  * flow slot and visible overflow deliberately permit overlap outside sections. */
-export function GeometryBox({ box: rawBox, children: rawChildren, target, editable, inline = false, contentMode = "reflow", appearance }: { box?: ElementBox; children: ReactNode; target?: string; editable?: boolean; inline?: boolean; contentMode?: "reflow" | "image"; appearance?: AppearanceValues }) {
+export function GeometryBox({ box: rawBox, children: rawChildren, target, editable, inline = false, contentMode = "reflow", appearance }: { box?: ElementBox; children: ReactNode; target?: string; editable?: boolean; inline?: boolean; contentMode?: "reflow" | "image" | "button"; appearance?: AppearanceValues }) {
   const scene=useCanvasSceneNode(target),placement=scene?.placement;
   const box:ElementBox|undefined=placement?{widthPercent:100,referenceParentPx:placement.widthPx,heightPx:placement.heightPx,baseWidthPx:placement.widthPx,baseHeightPx:placement.heightPx,xPercent:0,yPx:0,rotationDeg:0,aspectLocked:placement.aspectLocked??false,layout:"reflow",...(placement.contentOffset?{contentOffset:placement.contentOffset}:{})}:rawBox;
   const normalize=(child:ReactNode)=>isValidElement(child)?cloneElement(child as ReactElement<{style?:CSSProperties}>,{style:{...(child.props as {style?:CSSProperties}).style,width:"100%",minHeight:undefined,marginTop:0,marginRight:0,marginBottom:0,marginLeft:0}}):child;
@@ -86,12 +86,15 @@ export function GeometryBox({ box: rawBox, children: rawChildren, target, editab
     transformOrigin: "center center",
   };
   const contentX=(box.contentOffset?.xPx??0)*responsiveScale,contentY=(box.contentOffset?.yPx??0)*responsiveScale;
-  const contentStyle:CSSProperties|undefined=box.contentOffset&&[contentX,contentY].every(Number.isFinite)?{"--box-content-offset-x":`${contentX}px`,"--box-content-offset-y":`${contentY}px`} as CSSProperties:undefined;
+  const offsetStyle:CSSProperties|undefined=box.contentOffset&&[contentX,contentY].every(Number.isFinite)?{"--box-content-offset-x":`${contentX}px`,"--box-content-offset-y":`${contentY}px`} as CSSProperties:undefined;
+  const contentStyle = contentMode === "button" && Number.isFinite(minHeight)
+    ? { ...offsetStyle, "--site-button-frame-height": `${minHeight}px` } as CSSProperties
+    : offsetStyle;
   // A parent may mix direct text with nested editable elements. Neutral inline
   // spans preserve text wrapping while making those text nodes compensatable.
-  const renderedChildren=contentStyle&&typeof children==="object"&&children!==null&&isValidElement(children)&&typeof children.type==="string"?cloneElement(children as ReactElement<{children?:ReactNode}>,{},Children.map((children as ReactElement<{children?:ReactNode}>).props.children,child=>(typeof child==="string"||typeof child==="number")?<span data-owner-compensated-text="true" style={{position:"relative",left:"var(--box-content-offset-x,0px)",top:"var(--box-content-offset-y,0px)"}}>{child}</span>:child)):children;
+  const renderedChildren=offsetStyle&&typeof children==="object"&&children!==null&&isValidElement(children)&&typeof children.type==="string"?cloneElement(children as ReactElement<{children?:ReactNode}>,{},Children.map((children as ReactElement<{children?:ReactNode}>).props.children,child=>(typeof child==="string"||typeof child==="number")?<span data-owner-compensated-text="true" style={{position:"relative",left:"var(--box-content-offset-x,0px)",top:"var(--box-content-offset-y,0px)"}}>{child}</span>:child)):children;
   const childSlot=scene?.childSlot&&isValidElement(scene.childSlot)?cloneElement(scene.childSlot as ReactElement<{style?:CSSProperties}>,{style:{...(scene.childSlot.props as {style?:CSSProperties}).style,...(box.contentOffset?{translate:`${contentX}px ${contentY}px`}:{})}}):scene?.childSlot;
-  const frameContents = <Tag ref={node=>{contentsRef.current=node;}} style={contentStyle} className={`${styles.contents} ${contentStyle?styles.compensatedContents:""} ${contentMode === "image" ? styles.imageContents : ""}`}>{renderedChildren}</Tag>;
+  const frameContents = <Tag ref={node=>{contentsRef.current=node;}} style={contentStyle} className={`${styles.contents} ${offsetStyle?styles.compensatedContents:""} ${contentMode==="button"?styles.buttonContents:""} ${contentMode === "image" ? styles.imageContents : ""}`}>{renderedChildren}</Tag>;
   if (box.flow) {
     const slotWidthPercent = box.baseWidthPx / box.referenceParentPx * 100;
     const slotHeight = box.baseHeightPx * responsiveScale;

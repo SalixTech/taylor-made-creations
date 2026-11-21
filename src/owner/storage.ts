@@ -53,6 +53,7 @@ export interface OwnerStore {
   saveNamedDraft(name: string, content: OwnerContent, options?: SaveNamedDraftOptions): Promise<OwnerNamedDraft>;
   renameNamedDraft(id: string, name: string, expectedRevision: number): Promise<OwnerNamedDraft>;
   deleteNamedDraft(id: string, expectedRevision: number): Promise<void>;
+  setNamedDraftLocked?(id: string, expectedRevision: number, locked: boolean): Promise<OwnerNamedDraft>;
   /** An explicit named version must commit atomically with the working draft. */
   saveDraft(content: OwnerContent, expectedRevision: number, version?: { id: string; name: string }): Promise<OwnerWorkspace>;
   /** Save only this listing privately; never publishes or saves unrelated form edits. */
@@ -72,6 +73,7 @@ export interface OwnerStore {
   publishPremadeLive?(item: OwnerPremade, expectedRevision: number): Promise<OwnerWorkspace>;
   /** Actual current public flag; null means the site has never been published. */
   readLiveShopVisibility?(): Promise<boolean | null>;
+  readMainCommissionStatus?(): Promise<OwnerContent["site"]["commissionStatus"] | null>;
   /** Changes only an already-published shop flag, never publishes draft edits. */
   updateLiveShopVisibility?(showPremades: boolean, expectedRevision: number): Promise<OwnerWorkspace>;
   /** Minimal live gate, independent of workspace/publication. Missing config is ON, revision zero. */
@@ -106,7 +108,7 @@ function readNamedDrafts(raw: unknown[], archived = false): OwnerNamedDraft[] {
     return structuredClone(raw) as OwnerNamedDraft[];
   } catch (cause) { throw new OwnerStorageError("corrupt", "Saved drafts could not be read safely. They have not been overwritten.", { cause }); }
 }
-function createNamedDraftMethods(adapter?: NamedDraftStorageAdapter): Pick<OwnerStore, "listNamedDrafts" | "loadNamedDraft" | "saveNamedDraft" | "renameNamedDraft" | "deleteNamedDraft" | "listTrashedNamedDrafts" | "restoreNamedDraft"> {
+function createNamedDraftMethods(adapter?: NamedDraftStorageAdapter): Pick<OwnerStore, "listNamedDrafts" | "loadNamedDraft" | "saveNamedDraft" | "renameNamedDraft" | "deleteNamedDraft" | "setNamedDraftLocked" | "listTrashedNamedDrafts" | "restoreNamedDraft"> {
   const available = () => {
     if (!adapter) throw new OwnerStorageError("unavailable", "Named drafts are unavailable in this storage adapter. Your working draft has not changed.");
     return adapter;
@@ -164,14 +166,29 @@ function createNamedDraftMethods(adapter?: NamedDraftStorageAdapter): Pick<Owner
       if (options.id !== undefined && (!Number.isSafeInteger(options.expectedRevision) || (options.expectedRevision ?? 0) < 1) || options.id === undefined && options.expectedRevision !== undefined) throw new OwnerValidationError([{ path: "draft.revision", message: "Select the saved draft and its latest revision before replacing it." }]);
       return (await change(id, options.expectedRevision, previous => {
         const now = new Date().toISOString();
-        return { id, name: normalizedName, revision: (previous?.revision ?? 0) + 1, createdAt: previous?.createdAt ?? now, updatedAt: now, content: snapshot };
+        return { id, name: normalizedName, revision: (previous?.revision ?? 0) + 1, createdAt: previous?.createdAt ?? now, updatedAt: now, content: snapshot, ...(previous?.locked ? { locked: true } : {}) };
       }))!;
     },
     async renameNamedDraft(id, name, expectedRevision) {
       assertOwnerDraftId(id); const normalizedName = normalizeOwnerDraftName(name);
       return (await change(id, expectedRevision, previous => ({ ...previous!, name: normalizedName, revision: previous!.revision + 1, updatedAt: new Date().toISOString() })))!;
     },
-    async deleteNamedDraft(id, expectedRevision) { assertOwnerDraftId(id); await change(id, expectedRevision, () => null); },
+    async setNamedDraftLocked(id, expectedRevision, locked) {
+      assertOwnerDraftId(id);
+      return (await change(id, expectedRevision, previous => {
+        const next = { ...previous!, revision: previous!.revision + 1, updatedAt: new Date().toISOString() };
+        if (locked) next.locked = true;
+        else delete next.locked;
+        return next;
+      }))!;
+    },
+    async deleteNamedDraft(id, expectedRevision) {
+      assertOwnerDraftId(id);
+      await change(id, expectedRevision, previous => {
+        if (previous!.locked) throw new OwnerStorageError("blocked", "Unlock this saved draft before archiving it.");
+        return null;
+      });
+    },
   };
 }
 export function createOwnerStore(adapter: OwnerStorageAdapter): OwnerStore {

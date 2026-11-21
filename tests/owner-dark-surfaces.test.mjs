@@ -22,8 +22,8 @@ async function compile(name) {
 const property = (rule, name) => rule.nodes.find(node => node.type === 'decl' && node.prop === name)?.value;
 const declarations = rule => Object.fromEntries(rule.nodes.filter(node => node.type === 'decl').map(node => [node.prop, node.value]));
 const global = postcss.parse(fs.readFileSync(new URL('../src/app/color-modes.css', import.meta.url), 'utf8'));
-let palette;
-global.walkRules(rule => { if (rule.selector === '[data-owner-portal][data-color-mode="dark"]') palette = declarations(rule); });
+let palette={};
+global.walkRules(rule => { if (rule.selector === '[data-owner-portal][data-color-mode="dark"]') Object.assign(palette,declarations(rule)); });
 function resolve(value, tokens = palette) {
   if (!value.startsWith('var(')) return value;
   const [,name,fallback] = value.match(/^var\((--[\w-]+)(?:,\s*([^)]*))?\)$/);
@@ -48,7 +48,7 @@ test('dark surfaces compile against the exact classes used by text blocks and ap
   for(const [module,key] of [[portal,'block'],[design,'appearance']]) {
     const base=module.rules.find(rule=>rule.selector===`.${module.classes[key]}`);
     assert.equal(property(base,'background'),'var(--owner-surface, #fff)');
-    assert.equal(resolve(property(base,'background')),'#242426');
+    assert.equal(resolve(property(base,'background')),'#2c2c2d');
     assert.equal(resolve(property(base,'background'),{}),'#fff','light-mode fallback stays white');
     assert.ok(contrast(palette['--owner-ink'],resolve(property(base,'background')))>=4.5);
     assert.ok(contrast(palette['--owner-muted'],resolve(property(base,'background')))>=4.5);

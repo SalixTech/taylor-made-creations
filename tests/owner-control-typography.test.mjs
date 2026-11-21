@@ -26,8 +26,8 @@ for(const mode of ['light','dark']) test(`owner ${mode} fields use neutral borde
   for(const kind of ['input','textarea','select','button'])for(const state of ['idle','hover','focus-visible']){
    const control=element(kind,{...(kind==='button'?{role:'combobox',class:'SiteSelect_control'}:{})},selectRoot);if(state!=='idle')control.states.add(state);
    const style=compute(control);assert.equal(style['border-color'],mode==='dark'?'#85858c':'#c5c5ca');assert.equal(style['box-shadow'],'none');
-   if(state==='focus-visible'){assert.equal(style['outline-color'],mode==='dark'?'#a1a1aa':'#64748b');assert.ok(contrast(style['outline-color'],mode==='dark'?'#242426':'#fff')>=3);}
-   control.attrs['aria-invalid']='true';assert.equal(compute(control)['border-color'],mode==='dark'?'#d46c80':'#a30e2a');
+   if(state==='focus-visible'){assert.equal(style['outline-color'],mode==='dark'?'#72a9e5':'#2563eb');assert.ok(contrast(style['outline-color'],mode==='dark'?'#2c2c2d':'#fff')>=3);}
+   control.attrs['aria-invalid']='true';assert.equal(compute(control)['border-color'],mode==='dark'?'#d0d0d0':'#a30e2a');
   }
   const canvas=element('div',{'data-site-render-mode':'preview'},root),publicField=element('input',{class:'saved-field'},canvas);publicField.states.add('focus-visible');
   const untouched=cascade([...sheets,'.saved-field { border-color:#123456; outline:2px solid #456789; }'])(publicField);assert.equal(untouched['border-color'],'#123456');assert.equal(untouched['outline-color'],'#456789');

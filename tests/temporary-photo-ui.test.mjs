@@ -57,7 +57,7 @@ test('unmount aborts pending Trash and ignores late confirmation', async () => {
 test('File Hub removes legacy presentation without deleting legacy files or disabling their readers', () => {
   const h = harness(), Hub = h.load('src/owner/TemporaryFileHub.tsx').TemporaryFileHub; h.render(Hub);
   assert.doesNotMatch(content(h.tree), /Shared files, private by default|Temporary development-server photos/); assert.equal(h.find(n => n.type?.name === 'AssetLibrary').props.manager, true); assert.doesNotMatch(content(h.tree), /home.drive|2 TB|8 TB/i); h.unmount();
-  const assetSource = readFileSync(new URL('../src/owner/AssetLibrary.tsx', import.meta.url), 'utf8'); assert.match(assetSource, /return <CloudFileHub \{\.\.\.props\} \/>/); assert.match(assetSource, /export function LegacyAssetLibrary/);
+  const assetSource = readFileSync(new URL('../src/owner/AssetLibrary.tsx', import.meta.url), 'utf8'); assert.match(assetSource, /<CloudFileHub \{\.\.\.props\}/); assert.match(assetSource, /export function LegacyAssetLibrary/);
   const t = setup({ props: { manager: true, onSelect: undefined } }); assert.equal(t.button(`Use photo: ${photo.name}`), undefined); assert.equal(t.h.find(n => n.type?.name === 'PhotoUpload').props.libraryOnly, true); t.button('List').props.onClick(); t.render(); assert.match(t.h.find(n => n.type === 'ul').props.className, /detailsList/); assert.equal(t.button('List').props['aria-pressed'], true); t.button('Grid').props.onClick(); t.render(); assert.doesNotMatch(t.h.find(n => n.type === 'ul').props.className, /detailsList/); t.h.unmount();
 });
 test('unavailable hosted library hides upload controls and never shows fake cloud success', () => {

@@ -135,9 +135,10 @@ test("hidden premades and photos are editable only in editor, never public or pr
     if (article) { assert.equal(article.props["data-owner-edit"], "premade:blue"); assert.equal(article.props.tabIndex, 0); }
     t.h.unmount();
     const gallery = renderPage(mode, "gallery", data => { data.gallery = [{ id: "hidden", name: "Hidden", src: "/images/heads.webp", alt: "Hidden photo", width: 200, height: 200, visible: false }]; });
-    const grid = gallery.h.find(n => typeof n.type === "function" && n.type.name === "FursuitGallery");
-    assert.equal(Boolean(grid), mode === "editor");
-    if (grid) { gallery.h.render(grid.type, grid.props); assert.equal(gallery.h.find(n => n.type === "figure").props["data-owner-edit"], "gallery:hidden"); }
+    // GalleryPreview now uses the real gallery hook directly so the scene can own card identities.
+    const figure = gallery.h.find(n => n.type === "figure");
+    assert.equal(Boolean(figure), mode === "editor");
+    if (figure) assert.equal(figure.props["data-owner-edit"], "gallery:hidden");
     gallery.h.unmount();
   }
 });

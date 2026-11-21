@@ -44,15 +44,18 @@ test("public chrome uses edited logo, tagline, labels and safe destinations with
   assert.equal(brand.props.privateMedia, undefined);
   h.render(PublicFooter);
   assert.match(textContent(h.tree), /Your character, your way/);
-  const terms = h.find(n => typeof n.type === "function" && n.props.field === "site.footerTerms");
-  const contact = h.find(n => typeof n.type === "function" && n.props.field === "site.footerContact");
-  h.render(contact.type, contact.props);
-  assert.equal(h.tree.props.href, "https://example.com/hello");
-  assert.equal(h.tree.props.rel, "noopener noreferrer");
-  assert.equal(textContent(h.tree), "Say hello");
+  const terms = h.find(n => typeof n.type === "function" && n.props.target === "template-link:site.footerTerms");
+  const contact = h.find(n => typeof n.type === "function" && n.props.target === "template-link:site.footerContact");
+  // The explicit geometry marker contains the actual link; inspect its native destination.
+  const contactAnchor = contact.props.children;
+  assert.equal(contactAnchor.type, "a");
+  assert.equal(contactAnchor.props.href, "https://example.com/hello");
+  assert.equal(contactAnchor.props.rel, "noopener noreferrer");
+  assert.equal(textContent(contactAnchor), "Say hello");
   content.pages.find(p => p.builtinKey === "terms").trashedAt = "2026-10-25T10:00:00.000Z";
-  h.render(terms.type, terms.props);
-  assert.equal(h.tree, null);
+  h.render(PublicFooter);
+  assert.equal(h.find(n => typeof n.type === "function" && n.props.target === "template-link:site.footerTerms"), undefined);
+  assert.ok(terms, "terms link existed before its page was trashed");
 });
 
 test("brand authenticates uploaded logos only in private previews, with no unauthorized URL fallback", () => {

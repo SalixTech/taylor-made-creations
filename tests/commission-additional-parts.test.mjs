@@ -161,11 +161,11 @@ test('owner toggle edits the draft only, previews its unsaved setting, and Close
   const button=label=>h.find(n=>n.type==='button'&&content(n)===label);
   render();assert.ok(h.find(n=>n.props.id==='construction-card'));assert.equal(toggle().props.checked,false);
   toggle().props.onChange(true);render();assert.equal(owner.site.additionalPartsQuantities,true);assert.equal(edits,1);assert.equal(syncs,0);
-  button('Preview commission form').props.onClick();render();
+  button('Preview Form').props.onClick();render();
   assert.equal(h.find(n=>n.type?.name==='CommissionForm').props.additionalPartsQuantities,true);
   let dialog=h.find(n=>n.type?.name==='Dialog');assert.equal(dialog.props.maximizable,true);assert.match(content(dialog),/does not save a request/);
   dialog.props.onClose();render();assert.equal(h.find(n=>n.type?.name==='Dialog'),undefined);
-  toggle().props.onChange(false);render();button('Preview commission form').props.onClick();render();
+  toggle().props.onChange(false);render();button('Preview Form').props.onClick();render();
   assert.equal(h.find(n=>n.type?.name==='CommissionForm').props.additionalPartsQuantities,false);assert.equal(syncs,0);h.unmount();
 });
 

@@ -57,12 +57,34 @@ test('root, builtins, custom routes, direct product and commission requests retu
   }
 });
 
-test('every current public page uses the server publication boundary; owner entrypoints stay independent', () => {
+test('storefront pages use the publication boundary; private owner and client entries stay independent', () => {
   const walk = directory => readdirSync(new URL(`../${directory}`, import.meta.url), { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? walk(`${directory}/${entry.name}`) : entry.name === 'page.tsx' ? [`${directory}/${entry.name}`] : []);
-  const routes = walk('src/app').filter(file => !/^src\/app\/(?:taylor|owner)(?:\/|$)/.test(file));
+  const privateWorkspaceEntry = 'src/app/website-workspace-entry/page.tsx';
+  const routes = walk('src/app').filter(file => file !== privateWorkspaceEntry && !file.startsWith('src/app/client-hub/') && file !== 'src/app/hub-window/page.tsx' && !/^src\/app\/(?:taylor|owner)(?:\/|$)/.test(file));
   assert.ok(routes.length > 10);
   for (const file of routes) assert.match(read(file), /PublishedRoute/, file);
-  assert.match(read('src/app/layout.tsx'), /const initialState = await getPublishedSite\(\)/);
+  // This exact new route is private, not a storefront exception wildcard.
+  // Each possible rendering branch still mounts the existing owner gate.
+  const privateEntry = read(privateWorkspaceEntry);
+  assert.match(privateEntry, /websiteDeployment\(requestHeaders\.get\("host"\)\)/);
+  assert.match(privateEntry, /if \(deployment\.workspace !== "beta"\) notFound\(\);/);
+  assert.match(privateEntry, /<OwnerLivePreviewEntry \/>/);
+  assert.match(privateEntry, /<OwnerWorkspaceEntry fullPageBuilder \/>/);
+  assert.match(privateEntry, /<BetaWebsiteEntry pathname=\{pathname\} \/>/);
+  assert.doesNotMatch(privateEntry, /getPublishedSite|readPublishedSite|loadProjectWorkspace/);
+  for (const file of ['BetaWebsiteEntry', 'OwnerWorkspaceEntry', 'OwnerLivePreview']) {
+    assert.match(read(`src/owner/${file}.tsx`), /<FirebaseOwnerGate>/, file);
+  }
+  const layout = read('src/app/layout.tsx');
+  // Theme/cookie reads may run concurrently, but publication state must still
+  // come from the fail-closed server boundary and feed the public provider.
+  assert.match(layout, /const\s+\[initialState,\s*theme,\s*cookieJar\]\s*=\s*await Promise\.all\(\[getPublishedSite\(\),\s*getPublicTheme\(\),\s*cookies\(\)\]\)/);
+  assert.match(layout, /<PublicSiteProvider initialState=\{initialState\}>/);
+  assert.match(layout, /initialState\.status !== "locked" &&/);
+  assert.match(read('src/app/hub-window/page.tsx'), /<HubWindowRoute/);
+  assert.match(read('src/client-hub/HubWindowRoute.tsx'), /<FirebaseOwnerGate/);
+  assert.match(read('src/client-hub/HubWindowRoute.tsx'), /<ClientHub/);
+  assert.doesNotMatch(read('src/app/hub-window/page.tsx'), /getClientDetail|loadProjectWorkspace/);
   for (const file of ['src/app/taylor/page.tsx', 'src/app/taylor/preview/[[...slug]]/page.tsx']) {
     assert.doesNotMatch(read(file), /PublishedRoute|redirect\(/);
   }
@@ -80,12 +102,12 @@ test('malformed and deeper public paths return the construction gate before the 
   }
 });
 
-test('construction page preserves original branding and provides only canonical Owner Login; no redirect loop', () => {
+test('construction page preserves branding and canonical owner login without a client CTA or redirect loop', () => {
   const h = harness(), Gate = h.load('src/components/UnderConstruction.tsx').UnderConstruction;
   h.render(Gate);
   assert.equal(h.tree.props['data-site-locked'], 'true');
   assert.match(content(h.tree), /Pardon the fluff\.This den is getting a makeover\./);
-  assert.match(content(h.tree), /Owner Login/);
+  assert.match(content(h.tree), /Maker Login/);
   const links = h.all(node => node.type === 'Link');
   assert.deepEqual(links.map(node => node.props.href), ['/taylor']);
   assert.equal(links[0].props.prefetch, false);
@@ -152,14 +174,20 @@ test('private preview passes the existing verified owner session only, renders r
   h.unmount();
 });
 
-test('Firestore publication is conditional on safe live access; exact owner and write checks remain intact', () => {
+test('Firestore publication keeps safe live reads while browser writes require the exact-owner backup callable', () => {
   const rules = read('firebase/firestore.rules');
   const publication = rules.slice(rules.indexOf('match /site/published'), rules.indexOf('function validDraftId'));
   assert.match(publication, /allow get: if isOwner\(\) \|\| \(isPublicSiteOpen\(\) && validWorkspace\(resource\.data\)\);/);
   assert.doesNotMatch(publication, /allow get: if true|allow read:/);
-  assert.match(rules, /request\.auth\.uid == 'a4ARjp0z8ZOByKlC2AfGzmMRj843'/);
-  assert.match(publication, /allow create: if isOwner\(\) && validWorkspace/);
-  assert.match(publication, /allow update: if isOwner\(\) && validWorkspace/);
-  assert.match(publication, /publishingWithDraft\(request\.resource\.data\.revision\)/);
-  assert.match(publication, /allow list, delete: if false/);
+  assert.match(rules, /request\.auth\.uid in \['a4ARjp0z8ZOByKlC2AfGzmMRj843', 'VhnIFsEQFqRtS8u98mP921wim4J3'\]/);
+  assert.match(publication, /allow list, write: if false;/);
+  assert.doesNotMatch(publication, /allow (?:create|update|delete):/);
+  const assets = rules.slice(rules.indexOf('match /site/publishedAssets'), rules.indexOf('function validCloudId'));
+  assert.match(assets, /allow get: if isOwner\(\);/);
+  assert.match(assets, /allow list, write: if false;/);
+  const callable = read('firebase/functions/owner-backups.mjs');
+  assert.match(callable, /!isStudioOwnerUid\(request\.auth\?\.uid\)/);
+  assert.match(callable, /verifyIdToken\(header\.slice\(7\),true\)/);
+  assert.match(callable, /!isStudioOwnerUid\(verified\.uid\)\|\|verified\.uid!==request\.auth\.uid/);
+  assert.match(callable, /tmcOwnerPublishContent=onCall\(\{\.\.\.options,timeoutSeconds:120,memory:'512MiB',concurrency:1\},ownerBackupHandler\('publishContent'\)\)/);
 });

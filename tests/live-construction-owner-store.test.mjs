@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { BackupError, createOwnerBackupService } from '../firebase/functions/owner-backups-core.mjs';
+import { OWNER_UID } from '../firebase/functions/cleanup-core.mjs';
+
 import { sourceLoader } from './scout-source-loader.mjs';
 
 // SDK calls are isolated below. These tests never initialize Firebase or contact
@@ -9,7 +12,7 @@ function fixture() {
   const db = {};
   let tokenCalls = 0, transactions = 0, commits = 0;
   const controls = { token: null, afterRead: null, beforeCommit: null, afterCommit: null, readError: null, writeError: null, retry: null };
-  const user = { uid: 'owner-fixture', async getIdToken() { tokenCalls++; await controls.token?.(); return 'fixture-token'; } };
+  const user = { uid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843', async getIdToken() { tokenCalls++; await controls.token?.(); return 'fixture-token'; } };
   const auth = { currentUser: user };
   const snapshot = value => ({ exists: () => value !== undefined, data: () => structuredClone(value) });
   async function get(ref) {
@@ -39,7 +42,15 @@ function fixture() {
       return result;
     },
   };
-  const load = sourceLoader({ 'firebase/firestore/lite': lite, 'firebase/auth': {} });
+  const toAdmin = snap => ({ exists: snap.exists(), data: () => snap.exists() ? snap.data() : undefined });
+  const adminDb = { doc: path => ({ path, get: async () => toAdmin(await lite.getDoc({ path })) }), runTransaction: callback => lite.runTransaction(db, tx => callback({ get: async ref => toAdmin(await tx.get(ref)), set: tx.set, create(ref, value) { assert.equal(documents.has(ref.path), false, `immutable create ${ref.path}`); tx.set(ref, value); } })) };
+  const service = createOwnerBackupService({ db: adminDb });
+  const functions = { getFunctions: () => ({}), httpsCallable: (_functions, name) => async input => {
+    assert.equal(name, 'tmcOwnerPublishContent');
+    try { return { data: await service.publishContent(input, { auth: { uid: OWNER_UID } }) }; }
+    catch (cause) { const error = new Error(cause instanceof BackupError ? cause.message : cause?.name === 'OwnerValidationError' ? 'The website content is invalid. Nothing was saved or published.' : 'This action could not be confirmed.'); error.code = `functions/${cause instanceof BackupError ? cause.code : cause?.name === 'OwnerValidationError' ? 'invalid-argument' : 'unavailable'}`; throw error; }
+  } };
+  const load = sourceLoader({ 'firebase/firestore/lite': lite, 'firebase/auth': {}, 'firebase/functions': functions });
   const backend = load('src/owner/firebase-store.ts');
   const access = load('src/owner/site-access.ts');
   const defaults = load('src/owner/defaults.ts');

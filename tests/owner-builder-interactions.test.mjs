@@ -57,9 +57,10 @@ test('inline navigation edits labels and enables More only in the draft',()=>{
 });
 test('navigation keyboard move resolves current order using a stable page identity',()=>{
   const t=navigationSetup(); const first=t.value.pages[0].id;
-  const move=t.h.find(n=>n.type?.name==='MoveButtons'&&n.props.index===0).props.onMove;
+  assert.equal(t.h.find(n=>n.type?.name==='MoveButtons'),undefined, 'navigation-card arrows were removed');
+  const move=t.h.find(n=>n.props['data-nav-card']===first).props.onKeyDown;
   t.props.onEdit(draft=>{const pages=draft.pages.filter(p=>!p.trashedAt);pages.reverse().forEach((page,index)=>{page.order=index;});});
-  move(-1); const order=t.value.pages.filter(p=>!p.trashedAt).sort((a,b)=>a.order-b.order); assert.equal(order.at(-2).id,first);
+  const card={};move({key:'ArrowUp',target:card,currentTarget:card,preventDefault(){}}); const order=t.value.pages.filter(p=>!p.trashedAt).sort((a,b)=>a.order-b.order); assert.equal(order.at(-2).id,first);
 });
 test('navigation drag rejects foreign/native drops and accepts only its own active pointer and local target',()=>{
   const t=navigationSetup(); const original=t.value.pages.map(p=>[p.id,p.order]);
@@ -109,12 +110,11 @@ function builderSetup(key='home') {
   const event=(target,x=0,y=0)=>({target,clientX:x,clientY:y,dataTransfer:{setData(){}},preventDefault(){},stopPropagation(){}});
   return {h,props,render,canvas,node,event,get value(){return value;}};
 }
-test('canvas section drag reorders blocks but does not accept foreign or cross-page drops',()=>{
-  const t=builderSetup();t.props.onEdit(draft=>{draft.pages[0].blocks=['a','b','c'].map(id=>({id,type:'text',heading:'',body:id}));});t.render();
-  const a=t.node({ownerEdit:'block:a'}),c=t.node({ownerEdit:'block:c'});
-  t.canvas().props.onDrop(t.event(c,0,90));assert.deepEqual(t.value.pages[0].blocks.map(b=>b.id),['a','b','c']);
-  t.canvas().props.onDragStartCapture(t.event(a));t.canvas().props.onDrop(t.event(c,0,90));assert.deepEqual(t.value.pages[0].blocks.map(b=>b.id),['b','c','a']);
-  t.render();t.canvas().props.onDragStartCapture(t.event(a));t.props.page=t.value.pages.find(p=>p.builtinKey==='terms');t.render();t.canvas().props.onDrop(t.event(c,0,90));assert.deepEqual(t.value.pages[0].blocks.map(b=>b.id),['b','c','a']);
+test('native section drags do not group or attach; explicit canvas More order uses graph and rejects stale scope',()=>{
+ const t=builderSetup();t.props.onEdit(d=>{d.pages[0].blocks=['a','b','c'].map(id=>({id,type:'heading',text:id}));});t.render();const graph=t.h.load('src/owner/canvas-layout.ts');graph.initializeCanvasMobileLayouts(t.props.content);const beforeMobile=structuredClone(t.props.page.canvasLayout.mobile);t.render();
+ const order=()=>{const map=graph.resolveCanvasLayout(t.value,t.value.pages[0]);return t.value.pages[0].blocks.map(b=>b.id).sort((a,b)=>map[`block:${a}`].order-map[`block:${b}`].order);};
+ const a=t.node({ownerEdit:'block:a',ownerLayoutId:'block:a',ownerLayoutScope:'page'}),c=t.node({ownerEdit:'block:c',ownerLayoutId:'block:c',ownerLayoutScope:'page'});a.closest=selector=>['[data-owner-edit]','[data-owner-layout-id]'].includes(selector)?a:null;t.canvas().props.onDrop(t.event(c,0,90));t.canvas().props.onDragStartCapture(t.event(a));t.canvas().props.onDrop(t.event(c,0,90));assert.deepEqual(order(),['a','b','c']);
+ t.canvas().props.onClickCapture(t.event(a,0,0));t.render();const move=()=>t.h.find(n=>n.type?.name==='OwnerCanvasBoxTools')?.props.sectionOrder;assert.ok(move());move().onMove(1);t.render();assert.deepEqual(order(),['b','a','c']);assert.deepEqual(t.value.pages[0].canvasLayout.mobile,beforeMobile);const oldRevision=move().onMove;t.props.onEdit(d=>{d.home.title='Unrelated new revision';});t.render();oldRevision(1);assert.deepEqual(order(),['b','a','c']);const stale=move().onMove;t.props.page=t.value.pages.find(p=>p.builtinKey==='terms');t.render();stale(1);t.canvas().props.onDrop(t.event(c,0,90));assert.deepEqual(order(),['b','a','c']);t.h.unmount();
 });
 test('actual top-bar links support drag reorder and upload lock prevents it',()=>{
   const t=builderSetup();const original=t.value.pages.filter(p=>!p.trashedAt).sort((a,b)=>a.order-b.order);const first=t.node({ownerNavPage:original[0].id}),third=t.node({ownerNavPage:original[2].id});
@@ -164,8 +164,6 @@ test('More summary remains a working disclosure in edit mode instead of opening 
   for(const key of [undefined,'Enter',' ']){const event={target:summary,preventDefault(){prevented++;},stopPropagation(){},...(key?{key}:{detail:1})};(key?t.canvas().props.onKeyDownCapture:t.canvas().props.onClickCapture)(event);t.render();assert.equal(t.h.find(n=>n.type==='aside'&&n.props['aria-label']==='Header & footer'),undefined);}
   assert.equal(prevented,0,'native details activation is not swallowed');
 });
-test('native canvas drag uses whole-section ghost, stable placeholder and cancels without a draft write',()=>{
-  const t=builderSetup();t.props.onEdit(draft=>{draft.pages[0].blocks=['a','b','c'].map(id=>({id,type:'text',heading:'',body:id}));});t.render();const a=t.node({ownerEdit:'block:a'});let ghost;
-  const event=t.event(a,10,25);event.dataTransfer.setDragImage=(node,x,y)=>{ghost={node,x,y};};t.canvas().props.onDragStartCapture(event);assert.equal(ghost.node,a);assert.equal(a.dataset.ownerDragging,'true');assert.deepEqual(t.value.pages[0].blocks.map(b=>b.id),['a','b','c']);
-  t.canvas().props.onDragEnd();assert.equal(a.dataset.ownerDragging,undefined);assert.deepEqual(t.value.pages[0].blocks.map(b=>b.id),['a','b','c']);let blocked=0;t.canvas().props.onClickCapture({target:a,detail:1,preventDefault(){blocked++;},stopPropagation(){}});assert.equal(blocked,1);
+test('native canvas drag never creates an automatic whole-section ghost or changes the saved draft',()=>{
+ const t=builderSetup();t.props.onEdit(d=>{d.pages[0].blocks=['a','b','c'].map(id=>({id,type:'text',heading:'',body:id}));});t.render();const a=t.node({ownerEdit:'block:a'});let ghost,prevented=0;const before=structuredClone(t.value),event=t.event(a,10,25);event.preventDefault=()=>prevented++;event.dataTransfer.setDragImage=(...args)=>{ghost=args;};t.canvas().props.onDragStartCapture(event);assert.equal(ghost,undefined);assert.equal(prevented,1);assert.equal(a.dataset.ownerDragging,undefined);t.canvas().props.onDragEnd();assert.deepEqual(t.value,before);t.h.unmount();
 });

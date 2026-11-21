@@ -13,7 +13,7 @@ export function sourceLoader(overrides={}) {
     if(!path)throw Error('Source not found');
     if(cache.has(path))return cache.get(path).exports;
     const compiledModule={exports:{}};cache.set(path,compiledModule);
-    const source=readFileSync(path,'utf8');if(path.endsWith('.json')){compiledModule.exports=JSON.parse(source);return compiledModule.exports;}
+    const source=readFileSync(path,'utf8');if(path.endsWith('.css')){compiledModule.exports=new Proxy({}, {get:(_target,key)=>key==='__esModule'?false:String(key)});return compiledModule.exports;}if(path.endsWith('.json')){compiledModule.exports=JSON.parse(source);return compiledModule.exports;}
     const output=ts.transpileModule(source,{fileName:path,compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
     const customRequire=name=>Object.hasOwn(overrides,name)?overrides[name]:name==='server-only'?{}:name.startsWith('.')?load(resolve(dirname(path),name)):name.startsWith('@/')?load('src/'+name.slice(2)):appRequire(name);
     new Function('require','module','exports',output)(customRequire,compiledModule,compiledModule.exports);return compiledModule.exports;

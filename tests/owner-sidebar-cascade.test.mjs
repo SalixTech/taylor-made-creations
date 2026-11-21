@@ -61,14 +61,14 @@ test('service quick view keeps icon beside text instead of inheriting the saved-
   }
 });
 
-test('native hrefs, disabled visual state, Help blue and slim scroll rail remain independent', () => {
+test('native hrefs, disabled visual state, neutral Help and slim scroll rail remain independent', () => {
   for (const mode of ['light', 'dark']) {
     const t = fixture(mode), computed = cascade(css); t.link.attrs['aria-disabled'] = 'true';
     assert.equal(t.link.attrs.href, '/taylor/pages'); assert.equal(computed(t.link).opacity, '.5');
     for (const state of ['idle', 'hover', 'focus-visible']) {
       t.help.states = new Set([state]);
-      assert.equal(computed(t.help)['background-color'], '#54a6eb');
-      assert.ok(contrast(computed(t.help).color, '#54a6eb') >= 4.5);
+      assert.equal(computed(t.help)['background-color'], '#2c2c2d');
+      assert.ok(contrast(computed(t.help).color, '#2c2c2d') >= 4.5);
     }
     assert.equal(computed(t.nav)['overflow-y'], 'auto'); assert.equal(computed(t.nav)['overflow-x'], 'hidden');
     assert.equal(computed(t.nav)['scrollbar-gutter'], 'stable');

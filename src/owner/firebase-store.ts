@@ -455,6 +455,13 @@ export function createFirebaseOwnerStore({ db, auth, ownerUid }: { db: Firestore
         throw new OwnerStorageError("write", "The Construction Mode update was not confirmed. Check the live setting again before retrying. No private draft was published.", { cause });
       }
     },
+    async readMainCommissionStatus() {
+      try {
+        await confirmOwner();
+        const snapshot = await getDoc(doc(db, "site/published")); requireOwner();
+        return snapshot.exists() ? decodePublishedOwnerSnapshot(snapshot.data()).content.site.commissionStatus : null;
+      } catch (error) { throw cloudError(error, "read"); }
+    },
     async readLiveShopVisibility() {
       try {
         await confirmOwner();

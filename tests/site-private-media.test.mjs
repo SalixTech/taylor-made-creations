@@ -50,15 +50,16 @@ test("gallery page forwards private media separately from editing, and both card
     t.h.render(t.site.ContentPage, { content: t.data, page, mode, editable: false });
     const body = t.h.tree.props.children; t.h.render(body.type, body.props);
     const galleryPage = t.h.tree; t.h.render(galleryPage.type, galleryPage.props);
-    const gallery = t.h.find(n => typeof n.type === "function" && n.type.name === "FursuitGallery");
-    assert.equal(gallery.props.privateMedia, mode !== "public");
-    assert.equal(Boolean(gallery.props.editor), false);
-    t.h.render(gallery.type, gallery.props);
+    // GalleryPreview owns useFursuitGalleryView directly; test its real images and dialog state.
+    const gallery = galleryPage;
     const cardImage = t.h.find(n => typeof n.type === "function" && n.type.name === "GalleryImage");
+    assert.equal(cardImage.props.privateMedia, mode !== "public");
+    assert.equal(t.h.all(n => n.props["data-owner-edit"]).length, 0);
     t.h.find(n => n.type === "button" && n.props["aria-haspopup"] === "dialog").props.onClick({ currentTarget: { focus() {} } });
     t.h.render(gallery.type, gallery.props);
     const expandedImage = t.h.find(n => typeof n.type === "function" && n.type.name === "GalleryImage" && n.props.expanded);
     assert.ok(expandedImage);
+    assert.equal(expandedImage.props.privateMedia, mode !== "public");
     t.h.unmount();
     for (const imageNode of [cardImage, expandedImage]) {
       const image = renderLeaf(t, imageNode);
@@ -88,7 +89,16 @@ test("private image loading and permission errors do not fall back to unauthenti
     else t.h.render(t.h.load("src/components/FursuitGallery.tsx").FursuitGallery, { photos: [{ name: "Private", src: source, alt: "Private photo", width: 300, height: 200 }], privateMedia: true });
     const imageNode = t.h.find(n => typeof n.type === "function" && /^(?:PreviewImage|GalleryImage)$/.test(n.type.name));
     assert.equal(renderLeaf(t, imageNode), undefined);
-    assert.match(content(t.h.tree), result.error ? /unavailable|could not be displayed/ : /Loading photo/);
+    assert.equal(t.h.tree.props.role, "status");
+    if (result.error) assert.match(content(t.h.tree), /unavailable|could not be displayed/);
+    else {
+      const loading = t.h.find(n => n.type?.name === "PhotoLoading");
+      assert.ok(loading, "pending private media uses the real loading presentation");
+      t.h.render(loading.type, loading.props);
+      assert.match(content(t.h.tree), /Loading photo/);
+      assert.ok(t.h.find(n => n.props["aria-hidden"] === "true"), "spinner decoration is hidden from assistive text");
+      assert.equal(t.h.find(n => n.type === "Image" || n.type === "img"), undefined);
+    }
     assert.equal(t.calls.at(-1).enabled, true);
     t.h.unmount();
   }

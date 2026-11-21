@@ -20,19 +20,21 @@ function setup(t, component, options = {}) {
   h.overrides['firebase/firestore/lite'] = {
     doc(_db, path) { assert.equal(path, 'ownerWorkspace/current'); return path; },
     async getDoc() { reads++; if (options.read) return options.read(); return { exists: () => true }; },
-    collection(_db, name) { assert.equal(name, 'commissionRequests'); return name; },
-    limit(value) { assert.equal(value, 50); return value; }, query(...args) { return args; },
+    collection(_db, name) { assert.ok(['commissionRequests','hubClients'].includes(name)); return name; },
+    limit(value) { assert.ok([50,1].includes(value)); return value; }, query(...args) { return args; },
+    documentId() { return '__name__'; }, orderBy(field) { assert.equal(field, '__name__'); return { orderBy: field }; },
+    startAfter(snapshot) { assert.ok(snapshot); return { startAfter: snapshot }; },
     async getDocs() { reads++; if (options.read) return options.read(); return { docs: [] }; },
   };
   const Component = h.load(`src/owner/${component}.tsx`)[component];
   const render = (props = {}) => h.render(Component, props);
-  const button = label => h.find(node => node.type === 'button' && content(node).trim().endsWith(label));
+  const button = label => h.find(node => node.type === 'button' && content(node).trim().endsWith(label) || node.type?.name === 'RefreshButton' && (node.props.label === label || label === 'Checking…' && node.props.busy));
   return { h, render, button, options, get reads() { return reads; }, get sessions() { return sessions; }, get requests() { return requests; }, endSession() { ownerActive = false; } };
 }
 
 test('service refresh checks real mocked auth/read evidence and never sends a test email', async t => {
   const view = setup(t, 'TaylorServices'); view.render(); await flush(); view.render();
-  assert.equal(view.reads, 1); assert.equal(view.requests.length, 1);
+  assert.equal(view.reads, 2); assert.equal(view.requests.length, 1);
   assert.equal(view.requests[0].url, '/api/taylor/services');
   assert.equal(view.requests[0].init.method, undefined);
   assert.equal(view.requests[0].init.headers.Authorization, 'Bearer mock-id-token');
@@ -53,15 +55,15 @@ test('failed refresh replaces old green read state and preserves uncertainty', a
   const view = setup(t, 'TaylorServices'); view.render(); await flush(); view.render();
   view.options.read = async () => { throw Object.assign(new Error('Denied'), { code: 'permission-denied' }); };
   view.options.fetch = async () => Response.json({ ok: false, message: 'Owner verification unavailable' }, { status: 503 });
-  view.button('Check again').props.onClick(); await flush(); view.render();
+  view.button('Refresh service checks').props.onClick(); await flush(); view.render();
   assert.doesNotMatch(content(view.h.tree), /Read confirmed|Session verified/);
   assert.match(content(view.h.tree), /Not connected/); assert.match(content(view.h.tree), /Could not verify/);
 });
 
 test('inbox empty means a confirmed read, not a missing collection permission', async t => {
   const view = setup(t, 'CommissionRequests'); view.render(); await flush(); view.render();
-  assert.equal(view.reads, 1); assert.match(content(view.h.tree), /No requests yet/); assert.match(content(view.h.tree), /read successfully and is empty/);
-  assert.match(content(view.h.tree), /Public request submission is not connected yet/);
+  assert.equal(view.reads, 1); assert.match(content(view.h.tree), /No requests yet/); assert.match(content(view.h.tree), /read successfully and this list is empty/);
+  assert.match(content(view.h.tree), /A private place for incoming commission requests/);
   view.options.read = async () => { throw Object.assign(new Error('Denied'), { code: 'permission-denied' }); };
   view.button('Refresh inbox').props.onClick(); await flush(); view.render();
   assert.doesNotMatch(content(view.h.tree), /No requests yet/);
@@ -71,11 +73,16 @@ test('inbox empty means a confirmed read, not a missing collection permission', 
 test('inbox displays only returned records, treats HTML as text, and does not reply or write', async t => {
   const view = setup(t, 'CommissionRequests', { read: async () => ({ docs: [{ id: 'real-doc', data: () => ({ name: '<script>test</script>', email: 'customer@example.test', description: 'A blue wolf.', createdAt: '2026-10-01T12:00:00Z' }) }] }) });
   view.render(); await flush(); view.render();
-  assert.match(content(view.h.tree), /<script>test<\/script>/); assert.match(content(view.h.tree), /A blue wolf/); assert.match(content(view.h.tree), /real-doc/);
+  const detail=view.h.find(node=>node.type?.name==='IntakeHubAction');
+  const card=detail.props.triggerContent;
+  assert.match(content(card), /<script>test<\/script>/); assert.match(content(card), /customer@example.test/);
+  assert.equal(detail.props.request.description, 'A blue wolf.'); assert.equal(detail.props.request.id,'real-doc');
   assert.equal(view.requests.length, 0); assert.equal(view.h.all(node => node.props?.dangerouslySetInnerHTML).length, 0);
-  assert.equal(view.h.all(node => node.type === 'button').length, 5);
-  assert.ok(view.button('Approve')); assert.ok(view.button('Deny')); assert.ok(view.button('Waitlist'));
-  assert.match(content(view.h.tree), /do not send replies, create contracts, or charge customers/);
+  assert.equal(card.props.dangerouslySetInnerHTML,undefined); assert.equal(detail.props.triggerClassName,'requestOpen');
+  assert.match(content(detail.props.actions),/Approve/); assert.match(content(detail.props.actions),/Deny/); assert.match(content(detail.props.actions),/Waitlist/);
+  assert.doesNotMatch(content(card), /A blue wolf|Approve|Deny|Waitlist/);
+  assert.doesNotMatch(content(view.h.tree), /do not send replies, create contracts, or charge customers/);
+  assert.equal(view.requests.length, 0);
 });
 
 test('inbox repeated refresh is locked and session changes fail closed', async t => {

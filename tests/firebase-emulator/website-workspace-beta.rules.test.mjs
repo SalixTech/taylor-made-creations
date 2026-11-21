@@ -1,0 +1,28 @@
+import {test,before,after,beforeEach} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+import {initializeTestEnvironment,assertFails,assertSucceeds} from '@firebase/rules-unit-testing';
+import {doc,setDoc,getDoc,collection,getDocs,writeBatch} from 'firebase/firestore';import {ref,uploadBytes,getBytes,getMetadata,getDownloadURL} from 'firebase/storage';
+if(process.env.FIRESTORE_EMULATOR_HOST!=='127.0.0.1:18080'||process.env.FIREBASE_STORAGE_EMULATOR_HOST!=='127.0.0.1:19199')throw Error('Loopback emulators required');
+let env,owner,anon,client;const ID='11111111-1111-4111-8111-111111111111',B='websiteWorkspaces/beta/',ISO='2026-10-31T00:00:00.000Z';
+const file=(patch={})=>({schemaVersion:1,revision:1,kind:'photo',name:'Photo',parentId:'root',contentType:'image/webp',bytes:3,width:2,height:2,status:'uploading',trashedAt:null,createdAt:ISO,updatedAt:ISO,...patch});
+before(async()=>{env=await initializeTestEnvironment({projectId:'demo-tmc-beta-rules',firestore:{host:'127.0.0.1',port:18080,rules:readFileSync(new URL('../../firebase/firestore.rules',import.meta.url),'utf8')},storage:{host:'127.0.0.1',port:19199,rules:readFileSync(new URL('../../firebase/storage.rules',import.meta.url),'utf8')}});owner=env.authenticatedContext('a4ARjp0z8ZOByKlC2AfGzmMRj843');anon=env.unauthenticatedContext();client=env.authenticatedContext('hub:TMC-0000000000000001',{hubRole:'client',hubClientId:'TMC-0000000000000001',hubAuthVersion:1});});beforeEach(()=>env.clearFirestore());after(()=>env.cleanup());
+const seed=(path,value)=>env.withSecurityRulesDisabled(ctx=>setDoc(doc(ctx.firestore(),path),value));
+test('beta public-shaped docs remain owner-only and unknown namespaces deny even owner',async()=>{
+ for(const path of ['site/published','site/publishedAssets','site/access','site/constructionWhimsy','ownerWorkspace/current','ownerGallery/current']){await seed(B+path,{schemaVersion:1,revision:1,payload:'{}',constructionMode:false,enabled:true,ids:[ID]});await assertSucceeds(getDoc(doc(owner.firestore(),B+path)));for(const ctx of [anon,client])await assertFails(getDoc(doc(ctx.firestore(),B+path)));}
+ for(const path of ['websiteWorkspaces/main/ownerWorkspace/current','websiteWorkspaces/other/site/published',B+'paypalInvoices/private',B+'hubClients/private']){await assertFails(getDoc(doc(owner.firestore(),path)));await assertFails(setDoc(doc(owner.firestore(),path),{schemaVersion:1,revision:1,payload:'{}'}));}
+});
+test('beta draft and named-draft CAS use only beta registry, never main registry',async()=>{
+ const db=owner.firestore(),wrapper={schemaVersion:1,revision:1,payload:'{}'};await assertSucceeds(setDoc(doc(db,B+'ownerWorkspace/current'),wrapper));await assertFails(setDoc(doc(db,B+'ownerWorkspace/current'),wrapper));await assertSucceeds(setDoc(doc(db,B+'ownerWorkspace/current'),{...wrapper,revision:2}));assert.equal((await getDoc(doc(db,'ownerWorkspace/current'))).exists(),false);
+ const batch=writeBatch(db);batch.set(doc(db,B+'ownerDraftIndex/current'),{schemaVersion:1,revision:1,drafts:{'beta-draft':1},changedDraftId:'beta-draft'});batch.set(doc(db,B+'ownerDrafts/beta-draft'),wrapper);await assertSucceeds(batch.commit());
+ await assertFails(setDoc(doc(db,'ownerDrafts/beta-draft'),wrapper));await assertFails(getDocs(collection(db,B+'ownerDrafts')));
+});
+test('beta cloud metadata is isolated and immutable-kind guarded; receipts/pins are backend-only',async()=>{
+ await assertSucceeds(setDoc(doc(owner.firestore(),B+`ownerFiles/${ID}`),file()));assert.equal((await getDoc(doc(owner.firestore(),`ownerFiles/${ID}`))).exists(),false);
+ await assertFails(setDoc(doc(owner.firestore(),B+`ownerFiles/${ID}`),file({revision:2,kind:'document',contentType:'application/pdf',width:0,height:0})));
+ for(const collection of ['ownerAssetUploads','ownerRecoveryVersions','ownerRecoveryState','ownerPublicationOperations','ownerMediaPins'])for(const ctx of [owner,client,anon]){await assertFails(setDoc(doc(ctx.firestore(),B+collection+'/test'),{schemaVersion:1}));await assertFails(getDoc(doc(ctx.firestore(),B+collection+'/test')));}
+});
+test('beta Storage and new main documents deny every direct owner/public upload/read/token operation',async()=>{
+ await seed(B+`ownerFiles/${ID}`,file());await seed(`ownerFiles/${ID}`,file({kind:'document',contentType:'application/pdf',width:0,height:0}));await seed('site/access',{schemaVersion:1,revision:1,constructionMode:false});await seed('site/publishedAssets',{schemaVersion:1,revision:1,ids:[ID]});
+ for(const path of [`website-workspaces/beta/photos/${ID}.webp`,`website-workspaces/beta/documents/${ID}.pdf`,`documents/${ID}.pdf`])for(const ctx of [owner,client,anon]){const object=ref(ctx.storage(),path);await assertFails(uploadBytes(object,new Uint8Array([1,2,3]),{contentType:'image/webp',contentDisposition:'inline',customMetadata:{fileId:ID}}));await assertFails(getBytes(object));await assertFails(getMetadata(object));await assertFails(getDownloadURL(object));}
+});
+
+test('only gateway can finalize beta assets and new main documents; legacy main photo finalize remains compatible',async()=>{const db=owner.firestore();await seed(B+`ownerFiles/${ID}`,file());await assertFails(setDoc(doc(db,B+`ownerFiles/${ID}`),file({revision:2,status:'ready'})));await assertSucceeds(setDoc(doc(db,B+`ownerFiles/${ID}`),file({revision:2,name:'Renamed'})));const pdf=file({kind:'document',contentType:'application/pdf',width:0,height:0});await seed(`ownerFiles/${ID}`,pdf);await assertFails(setDoc(doc(db,`ownerFiles/${ID}`),{...pdf,revision:2,status:'ready'}));await seed(`ownerFiles/${ID}`,file());await assertSucceeds(setDoc(doc(db,`ownerFiles/${ID}`),file({revision:2,status:'ready'})));});

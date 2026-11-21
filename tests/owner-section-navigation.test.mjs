@@ -12,6 +12,7 @@ async function fixture({ section = 'overview', pageId, href } = {}) {
   const Portal = h.load('src/owner/OwnerPortal.tsx').default;
   let saved = h.load('src/owner/defaults.ts').createInitialOwnerWorkspace(), saves = 0, loads = 0, failSave = false, saveGate;
   const store = {
+    readGallery: async () => null,
     async load() { loads++; return structuredClone(saved); }, subscribe: () => () => {},
     async saveDraft(draft) { saves++; if (saveGate) await saveGate; if (failSave) throw Error('Save failed; your draft stays here.'); saved = { ...saved, draft: structuredClone(draft), revision: saved.revision + 1 }; return structuredClone(saved); },
   };
@@ -41,6 +42,11 @@ test('all 13 owner sections have unique real hrefs; /taylor opens Overview witho
 test('every deep link passes its destination through the exact owner gate; invalid sections are 404s', async () => {
   const h = harness();
   for (const name of ['firebase/auth', 'firebase/app', 'firebase/firestore/lite']) h.overrides[name] = {};
+  let callableAttempts = 0;
+  // Importing a route can import the adapter, but cannot initialize or invoke a
+  // callable before the owner gate grants access. Never use the real SDK here.
+  const forbiddenCallable = () => { callableAttempts++; throw new Error('A deep-link route must not initialize or invoke cloud callables.'); };
+  h.overrides['firebase/functions'] = { getFunctions: forbiddenCallable, httpsCallable: forbiddenCallable };
   for (const name of ['HelpButton', 'TaylorServices', 'CommissionRequests']) h.overrides[`./${name}`] = { [name]: () => null };
   const route = h.load('src/app/taylor/[section]/page.tsx');
   assert.deepEqual(route.metadata.robots, { index: false, follow: false });
@@ -57,6 +63,7 @@ test('every deep link passes its destination through the exact owner gate; inval
   for (const section of ['preview', 'unknown', 'files', 'clients', 'pages/other', '__proto__']) await assert.rejects(route.default({ params: Promise.resolve({ section }), searchParams: Promise.resolve({}) }), /MOCK_NOT_FOUND_404/);
   assert.equal(model.ownerDestinationFromUrl('/taylor/preview/gallery'), null);
   assert.equal(model.ownerDestinationFromUrl('/taylor/preview'), null);
+  assert.equal(callableAttempts, 0);
   h.unmount();
 });
 
@@ -162,12 +169,16 @@ test('unknown or trashed bookmarked builder page falls back safely and repairs o
 });
 
 test('rapid and repeated Back requests cannot bypass a dirty navigation guard', async () => {
-  const t = await fixture(); t.click('photos'); t.click('prices'); t.click('pages'); t.edit('RAPID BACK');
+  const t = await fixture(); t.click('photos'); t.click('prices');
+  // The sidebar now deliberately opens the separate builder tab. Use the
+  // supported main Overview management card to enter this existing main editor.
+  t.click('overview'); assert.equal(t.link('pages').props.href, '/taylor/pages'); t.click('pages'); t.edit('RAPID BACK');
+  assert.equal(t.h.window.history.length, 5);
   t.h.window.history.back(); t.h.window.history.back(); await flush(); t.render();
   assert.equal(t.h.window.location.href, '/taylor/pages'); assert.ok(t.dialog()); assert.equal(t.builder().props.content.home.title, 'RAPID BACK');
   t.action('Keep editing').props.onClick(); t.render();
-  await t.travel(-3); assert.equal(t.h.window.location.href, '/taylor/pages'); assert.ok(t.dialog());
-  t.action('Keep editing').props.onClick(); t.render(); assert.equal(t.h.window.history.length, 4); assert.equal(t.saves, 0); t.h.unmount();
+  await t.travel(-4); assert.equal(t.h.window.location.href, '/taylor/pages'); assert.ok(t.dialog());
+  t.action('Keep editing').props.onClick(); t.render(); assert.equal(t.h.window.history.length, 5); assert.equal(t.builder().props.content.home.title, 'RAPID BACK'); assert.equal(t.loads, 1); assert.equal(t.saves, 0); t.h.unmount();
 });
 
 

@@ -4,19 +4,22 @@ import fs from 'node:fs';
 import { harness, content } from './owner-ui-harness.mjs';
 const pure = harness();
 const { resizeImageFrame, moveImageCrop } = pure.load('src/owner/image-interactions.ts');
-test('corner resizing bounds freeform and preserves locked ratio at bounds', () => {
+test('corner resizing permits intentional overflow and preserves locked ratio without aesthetic bounds', () => {
   const g={width:400,height:200,parentWidth:800};
   assert.deepEqual(resizeImageFrame(g,50,90,'se',false),{imageWidthPercent:62.5,imageHeightPx:290});
   assert.deepEqual(resizeImageFrame(g,50,10,'se',true),{imageWidthPercent:62.5,imageHeightPx:250});
   assert.deepEqual(resizeImageFrame(g,-50,-10,'nw',true),{imageWidthPercent:62.5,imageHeightPx:250});
-  const max=resizeImageFrame(g,10000,10000,'se',true); assert.equal(max.imageWidthPercent,100);assert.equal(max.imageHeightPx,400);
-  const min=resizeImageFrame(g,-10000,-10000,'se',true);assert.equal(min.imageHeightPx,20);assert.equal(min.imageWidthPercent,5);
+  const max=resizeImageFrame(g,10000,10000,'se',true); assert.equal(max.imageWidthPercent,2550);assert.equal(max.imageHeightPx,10200);
+  const min=resizeImageFrame(g,-10000,-10000,'se',true);assert.deepEqual(min,{});
+  assert.deepEqual(resizeImageFrame(g,-199,-199,'se',false),{imageWidthPercent:.25,imageHeightPx:1});
+  for(const bad of [NaN,Infinity,-Infinity]){assert.deepEqual(resizeImageFrame(g,bad,0,'se',true),{});assert.deepEqual(resizeImageFrame({...g,parentWidth:bad},1,1,'se',false),{});}
+  assert.deepEqual(resizeImageFrame(g,Number.MAX_VALUE,0,'se',false),{});
   assert.deepEqual(moveImageCrop({},10000,-10000,g),{imageFit:'cover',imagePositionX:0,imagePositionY:100});
 });
 function setup(value={}) {
   const h=harness(), {OwnerCanvasImageTools}=h.load('src/owner/OwnerCanvasImageTools.tsx');
   let rect={left:10,top:60,width:400,height:200};
-  const image={style:{cssText:'original-image'}}, frame={style:{cssText:'original-frame'},querySelector:()=>image,getBoundingClientRect:()=>rect,parentElement:{getBoundingClientRect:()=>({width:800})}};
+  const image={style:{cssText:'original-image'}}, frame={style:{cssText:'original-frame'},querySelector:()=>image,getBoundingClientRect:()=>rect,parentElement:{getBoundingClientRect:()=>({left:0,top:0,width:800,height:400})}};
   const canvas={scrollTop:0,scrollLeft:0,querySelectorAll:()=>[{dataset:{ownerEdit:'home-image'},querySelector:()=>frame}],getBoundingClientRect:()=>({left:0,top:0,width:800})};
   const changes=[], props={canvasRef:{current:canvas},target:'home-image',value,disabled:false,onChange(v){changes.push(v);props.value=v;}};
   const render=()=>h.render(OwnerCanvasImageTools,props); render();render();
@@ -62,7 +65,18 @@ test('builder wires selected hero and template image framing to the same draft, 
   const props={content:value,page:value.pages[0],browsing:false,onBrowsingChange(v){props.browsing=v;},onEdit(change){value=structuredClone(value);change(value);props.content=value;props.page=value.pages[0];},onPageChange(){},onManagePages(){},onAddPage(){},onPrices(){},onRemove(){},liveShopVisibility:false,canUpdateLiveShop:false,onUpdateLiveShop(){}};
   const render=()=>h.render(OwnerVisualBuilder,props);render();
   h.find(n=>n.type==='button'&&content(n)==='Main photo').props.onClick({});render();
+  assert.ok(h.find(n=>typeof n.type==='function'&&n.type.name==='OwnerCanvasBoxTools'), 'Whole content box is the initial image selection mode');
+  // The framing controls are a context value rendered by ImagePicker after its library launcher.
+  const framingContext=h.load('src/owner/OwnerFields.tsx').ImagePickerFramingContext;
+  const provider=h.find(n=>n.type===framingContext.Provider&&n.props.value?.props?.children?.[0]?.props?.['aria-label']==='Image editing target');
+  assert.ok(provider,'Actual ImagePicker framing provider is present');
+  const framingButtons=provider.props.value.props.children[0].props.children;
+  framingButtons.find(n=>n.type==='button'&&content(n)==='Photo framing').props.onClick();render();
   const tools=h.find(n=>typeof n.type==='function'&&n.type.name==='OwnerCanvasImageTools');assert.equal(tools.props.target,'home-image');tools.props.onChange({imageWidthPercent:70,imageHeightPx:300,imageAspectLocked:false});render();
   assert.deepEqual(value.contentOverrides.styles['home.image'],{imageWidthPercent:70,imageHeightPx:300,imageAspectLocked:false});assert.equal(value.home.image.src,original);
   h.find(n=>n.type==='button'&&content(n)==='Exit edit mode').props.onClick();render();assert.equal(h.find(n=>typeof n.type==='function'&&n.type.name==='OwnerCanvasImageTools'),undefined);h.unmount();
+});
+
+test('actual photo pointer can exceed section width and 2000 pixels without changing crop or source',()=>{
+ const t=setup({imageAspectLocked:false,imagePositionX:25,imagePositionY:60});t.corner().props.onPointerDown(t.event());t.corner().props.onPointerMove(t.event({clientX:600,clientY:2500}));assert.equal(t.frame.style.width,'200%');assert.equal(t.frame.style.height,'2700px');t.corner().props.onPointerUp(t.event());assert.equal(t.changes.length,1);assert.deepEqual(t.props.value,{imageAspectLocked:false,imagePositionX:25,imagePositionY:60,imageWidthPercent:200,imageHeightPx:2700});t.h.unmount();
 });

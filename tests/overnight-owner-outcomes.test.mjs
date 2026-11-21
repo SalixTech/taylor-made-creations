@@ -1,0 +1,63 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { harness,content,nodes } from './owner-ui-harness.mjs';
+const flush=()=>new Promise(resolve=>setImmediate(resolve));
+function noticeFixture(kind='success',persistent=false){
+ const h=harness(),timers=[];h.window.setTimeout=(fn,delay)=>{const t={fn,delay};timers.push(t);return t;};h.window.clearTimeout=t=>{t.cancelled=true;};const {useOutcomeNotice}=h.load('src/owner/use-outcome-notice.tsx');let state;const props={kind,persistent};const C=()=>{state=useOutcomeNotice(props.kind,props.persistent);return state[2]('notice');};const render=()=>h.render(C);render();return{h,timers,props,render,set:(text,keep)=>state[1](text,keep),text:()=>state[0]};
+}
+test('success outcomes last5s, typed transient errors8s, and X immediately dismisses with a centered SVG',()=>{
+ for(const kind of ['success','error']){const t=noticeFixture(kind);t.set('Saved result');t.render();assert.equal(t.timers.at(-1).delay,kind==='error'?8000:5000);assert.equal(t.h.tree.props.role,kind==='error'?'alert':'status');const close=t.h.find(n=>n.type==='button');assert.equal(close.props.type,'button');assert.equal(close.props['aria-label'],kind==='error'?'Dismiss error':'Dismiss notification');assert.equal(nodes(close).filter(n=>n.type==='svg').length,1);assert.equal(content(close),'');close.props.onClick();t.render();assert.equal(t.h.tree,null);assert.equal(t.timers[0].cancelled,true);t.h.unmount();}
+});
+test('the same outcome shown again restarts its lifetime; queued old timers cannot clear a newer message',()=>{
+ const t=noticeFixture();t.set('Saved');t.render();const old=t.timers[0],key=t.h.tree.key;t.set('Saved');t.render();assert.notEqual(t.h.tree.key,key);assert.equal(old.cancelled,true);assert.equal(t.timers.length,2);old.fn();t.render();assert.equal(t.text(),'Saved');t.timers.at(-1).fn();t.render();assert.equal(t.h.tree,null);t.h.unmount();
+});
+test('persistent setup, validation and uncertain outcomes have no timeout, fade or X; unmount clears disposable timers',()=>{
+ const t=noticeFixture('error',true);t.set('Check existing payment before retrying');t.render();assert.equal(t.timers.length,0);assert.equal(t.h.tree.props['data-transient-outcome'],undefined);assert.equal(t.h.find(n=>n.type==='button'),undefined);t.set('Temporary read problem',false);t.render();assert.equal(t.timers.at(-1).delay,8000);const timer=t.timers.at(-1);t.h.unmount();assert.equal(timer.cancelled,true);
+});
+test('only typed temporary read failures opt into8s; credential/setup/conflict errors remain actionable',()=>{
+ const h=harness(),{temporaryReadFailure}=h.load('src/owner/use-outcome-notice.tsx');for(const code of ['functions/unavailable','auth/network-request-failed','firestore/deadline-exceeded'])assert.equal(temporaryReadFailure({code}),true);for(const code of ['functions/unauthenticated','permission-denied','failed-precondition','aborted','invalid-argument'])assert.equal(temporaryReadFailure({code}),false);assert.equal(temporaryReadFailure(Error('Provider acknowledgement unknown')),false);h.unmount();
+});
+test('private-save Enter ignores composition/keyCode229/repeat and never reaches non-input controls',()=>{
+ const h=harness(),{localSaveOnEnter}=h.load('src/owner/use-outcome-notice.tsx');let saved=0,prevented=0;const base={key:'Enter',target:{tagName:'INPUT'},nativeEvent:{isComposing:false,keyCode:13},preventDefault(){prevented++;}};localSaveOnEnter(base,true,()=>saved++);assert.equal(saved,1);assert.equal(prevented,1);for(const extra of [{repeat:true},{shiftKey:true},{nativeEvent:{isComposing:true}},{nativeEvent:{keyCode:229}},{keyCode:229},{target:{tagName:'TEXTAREA'}},{target:{tagName:'BUTTON'}}])localSaveOnEnter({...base,...extra},true,()=>saved++);assert.equal(saved,1);localSaveOnEnter(base,false,()=>saved++);assert.equal(saved,1);h.unmount();
+});
+function emailFixture(){const h=harness(),timers=[],calls=[];h.window.setTimeout=(fn,delay)=>{const t={fn,delay};timers.push(t);return t;};h.window.clearTimeout=t=>t.cancelled=true;let failure=null;const template={templateId:'one',name:'Welcome',subject:'Hello',body:'Private template',version:1};h.overrides['./taylor-services-client']={taylorOwnerSession:async()=>({db:{},auth:{app:{}},assertCurrent(){}}),serviceReadError:e=>e.message};h.overrides['./client-hub-client']={listClients:async()=>[],getClientDetail:async()=>({projects:[]})};h.overrides['firebase/firestore/lite']={collection:()=>({}),query:()=>({}),limit:()=>({}),getDocs:async()=>{if(failure)throw failure;return{docs:[{data:()=>template}]};}};h.overrides['firebase/functions']={getFunctions:()=>({}),httpsCallable:(_f,name)=>async input=>{calls.push({name,input});return{data:{template:{...template,...input,version:2}}};}};const C=h.load('src/owner/EmailStudio.tsx').EmailStudio,render=()=>h.render(C);const button=label=>h.find(n=>n.type==='button'&&content(n)===label);render();return{h,timers,calls,render,button,setFailure:e=>failure=e,async load(){button('Load email studio').props.onClick();await flush();render();}};}
+test('email loaded/template-saved outcomes expire without discarding content; Enter saves only the private template',async()=>{
+ const t=emailFixture();await t.load();assert.equal(t.timers.at(-1).delay,5000);t.button('Welcome').props.onClick();t.render();const input=t.h.find(n=>n.type==='input'&&n.props.maxLength===100);input.props.onKeyDown({key:'Enter',target:{tagName:'INPUT'},nativeEvent:{},preventDefault(){}});input.props.onKeyDown({key:'Enter',target:{tagName:'INPUT'},nativeEvent:{},preventDefault(){}});await flush();t.render();assert.equal(t.calls.length,1);assert.equal(t.calls[0].name,'tmcStudioSaveEmailTemplate');t.timers.at(-1).fn();t.render();assert.equal(t.h.find(n=>n.props.role==='status'),undefined);assert.equal(t.h.find(n=>n.type==='textarea').props.value,'Private template');t.h.unmount();
+});
+test('read-only network failures fade8s but authorization/setup errors remain in email studio',async()=>{
+ const t=emailFixture();t.setFailure(Object.assign(Error('Temporarily offline'),{code:'functions/unavailable'}));await t.load();assert.equal(t.timers.at(-1).delay,8000);t.timers.at(-1).fn();t.render();assert.equal(t.h.find(n=>n.props.role==='alert'),undefined);t.setFailure(Object.assign(Error('Owner access must be repaired'),{code:'permission-denied'}));await t.load();assert.equal(t.h.find(n=>n.props.role==='alert').props['data-transient-outcome'],undefined);assert.match(content(t.h.tree),/must be repaired/);t.h.unmount();
+});
+test('all audited owner surfaces opt into shared outcome lifetime without changing provider-action or recovery boundaries',()=>{
+ const read=p=>readFileSync(new URL('../src/owner/'+p,import.meta.url),'utf8');for(const name of ['EmailStudio','PayPalStudio','TrelloStudio','NamedDraftsDialog','ConstructionModeSettings','HelpButton'])assert.match(read(name+'.tsx'),/useOutcomeNotice/);
+ const pay=read('PayPalStudio.tsx');assert.match(pay,/invoice.status!=="draft"/);assert.match(pay,/!\["sent","partially-paid","paid"\]\.includes\(invoice.status\)/);assert.match(pay,/Uncertain does not mean failed or paid/);assert.doesNotMatch(pay,/localSaveOnEnter|onKeyDown/);
+ const trello=read('TrelloStudio.tsx');assert.match(trello,/a queued job is not a confirmed transfer.", true/);assert.match(trello,/registration result is uncertain/);assert.doesNotMatch(trello,/localSaveOnEnter|onKeyDown/);
+ const construction=read('ConstructionModeSettings.tsx');assert.match(construction,/{error && <p className={ui.error} role="alert">{error}<\/p>}/);assert.match(construction,/uncertain acknowledgement must be read back/);
+ const intake=read('IntakeInbox.tsx');assert.match(intake,/useRequestBanner/);assert.match(intake,/setCode\(result.signInCode \?\? null\)/);assert.match(intake,/{code && <div className={inbox.code}/);assert.match(intake,/attempted && !code/);assert.match(intake,/This code is shown once/);assert.match(intake,/if \(active.current && seq === sequence.current\) setConfirmed/);
+ const css=read('OutcomeNotice.module.css');assert.match(css,/display:inline-grid; place-items:center/);assert.match(css,/\.close svg \{ display:block/);assert.match(css,/prefers-reduced-motion:reduce/);assert.match(css,/animation:none/);
+});
+test('actual OwnerPortal HelpButton feedback keeps unconfirmed send errors persistent, without making later generic errors sticky',async()=>{
+ const h=harness(),timers=[];const timeout=(fn,delay)=>{const t={fn,delay};timers.push(t);return t;},clear=t=>t.cancelled=true;h.globals.setTimeout=timeout;h.globals.clearTimeout=clear;h.window.setTimeout=timeout;h.window.clearTimeout=clear;
+ h.overrides['./HelpButton']={HelpButton:function HelpButton(){return null;}};h.overrides['./TaylorServices']={TaylorServices:()=>null};h.overrides['./CommissionRequests']={CommissionRequests:()=>null};const initial=h.load('src/owner/defaults.ts').createInitialOwnerWorkspace();let failRead=false;
+ const store=h.load('src/owner/storage.ts').createOwnerStore({read:async()=>{if(failRead)throw Error('Read interrupted');return structuredClone(initial);},update:async()=>{throw Error('No write authorized in test');}}),props={store,mode:'cloud',userEmail:'owner@example.test',onSignOut:async()=>{}},C=h.load('src/owner/OwnerPortal.tsx').default,render=()=>h.render(C,props);render();await flush();render();
+ const feedback=()=>h.find(n=>n.type?.name==='HelpButton').props.onFeedback;feedback()({kind:'error',message:'Help email acceptance was not confirmed. Retry checks the same request.'});render();const alert=h.find(n=>n.props.role==='alert');assert.equal(alert.props['data-transient-feedback'],undefined);assert.equal(timers.some(t=>t.delay===8000),false);assert.match(content(alert),/same request/);
+ feedback()({kind:'success',message:'Help request accepted for sending, not confirmed delivered.'});render();assert.ok(timers.some(t=>t.delay===5000));assert.equal(h.find(n=>n.props.role==='alert'),undefined);
+ failRead=true;h.window.dispatchEvent(new Event('focus'));await flush();render();assert.equal(h.find(n=>n.props.role==='alert').props['data-transient-feedback'],true);assert.ok(timers.some(t=>t.delay===8000));h.unmount();assert.ok(timers.filter(t=>[5000,8000].includes(t.delay)).every(t=>t.cancelled));
+});
+
+test('request six-second visual error expiry retains attempted-reset recovery and never enables a blind reset',async()=>{
+ const h=harness(),timers=[];delete h.overrides['./IntakeInbox'];let resets=0;h.overrides['./intake-client']={callOwnerIntake:async()=>{throw Error('No request mutation authorized');},referenceDisplayName:()=>''};
+ h.window.setTimeout=(fn,delay)=>{const timer={fn,delay};timers.push(timer);return timer;};h.window.clearTimeout=timer=>{timer.cancelled=true;};
+ const request={requestId:'00000000-0000-4000-8000-000000000001',name:'Fox',email:'fox@example.test',message:'Help',status:'open',resolution:null,trashedAt:null,version:1,createdAt:'2026-10-29T00:00:00Z'};
+ h.overrides['./taylor-services-client']={taylorOwnerSession:async()=>({db:{},assertCurrent(){}}),serviceReadError:e=>e.message};
+ h.overrides['firebase/firestore/lite']={collection:()=>({}),query:()=>({}),limit:()=>({}),getDocs:async()=>({docs:[{id:request.requestId,data:()=>request}]})};
+ h.overrides['./client-hub-client']={listClients:async()=>[{clientId:'TMC-ONE',displayName:'Verified Fox',status:'active',authVersion:7}],resetClientLoginCode:async()=>{resets++;throw Error('Owner response not confirmed');}};
+ const C=h.load('src/owner/IntakeInbox.tsx').CodeRecoveryInbox,render=()=>h.render(C),button=name=>h.find(n=>n.type==='button'&&content(n)===name);
+ try {
+ render();await flush();render();h.find(n=>n.props.className==='recoveryCard').props.onClick();await flush();render();
+ h.find(n=>n.props.id==='verified-recovery-client').props.onChange('TMC-ONE');render();h.find(n=>n.type==='input'&&n.props.type==='checkbox').props.onChange({target:{checked:true}});render();
+ button('Generate replacement code').props.onClick();render();const reset=button('Replace code now').props.onClick;reset();reset();await flush();render();assert.equal(resets,1);assert.match(content(h.tree),/outcome may be uncertain/);
+ const timer=timers.findLast(timer=>timer.delay===6000);assert.ok(timer);timer.fn();render();
+ assert.equal(h.find(n=>n.props.role==='alert'),undefined);assert.match(content(h.tree),/Code replacement has been attempted/);assert.match(content(h.tree),/will not repeat it automatically/);assert.equal(button('Generate replacement code'),undefined);assert.equal(button('Replace code now'),undefined);assert.equal(resets,1);
+ } finally {h.unmount();}
+});

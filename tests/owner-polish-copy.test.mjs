@@ -20,7 +20,7 @@ test('Sold Here is the on-site label while persisted channel values and purchase
   const card = h.find(node => typeof node.type === 'function' && node.type.name === 'Card' && node.props.title === 'Premade');
   assert.match(content(card.props.action), /Sold Here/);
   assert.doesNotMatch(content(card.props.action), /Sold on TMC/);
-  const edit = nodes(card.props.action).find(node => node.type === 'button' && content(node) === 'Edit listing');
+  const edit = nodes(card.props.action).find(node => node.type === 'button' && node.props.title === 'Edit listing');
   edit.props.onClick(); h.render(PremadesManager, props);
   const select = h.find(node => typeof node.type === 'function' && node.type.name === 'OwnerSelect' && node.props.label === 'Where is this sold?');
   assert.deepEqual(select.props.options[0], { value: 'tmc', label: 'Sold Here' });

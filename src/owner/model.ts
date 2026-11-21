@@ -89,7 +89,7 @@ export type OwnerContent = {
 };
 export const MAX_NAMED_DRAFTS = 10;
 export const MAX_DRAFT_NAME_LENGTH = 80;
-export type OwnerNamedDraftSummary = { id: string; name: string; revision: number; createdAt: string; updatedAt: string };
+export type OwnerNamedDraftSummary = { id: string; name: string; revision: number; createdAt: string; updatedAt: string; locked?: true };
 export type OwnerNamedDraft = OwnerNamedDraftSummary & { content: OwnerContent };
 export type SaveNamedDraftOptions = { id?: string; expectedRevision?: number };
 export type LocalPublication = { content: OwnerContent; publishedAt: string };
@@ -501,15 +501,16 @@ export function normalizeOwnerDraftName(name: unknown): string {
   return name.trim();
 }
 export function assertOwnerNamedDraft(value: unknown): asserts value is OwnerNamedDraft {
-  if (!value || typeof value !== "object" || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some(key => !["id", "name", "revision", "createdAt", "updatedAt", "content"].includes(key))) throw new OwnerValidationError([{ path: "draft", message: "This saved draft is not valid." }]);
+  if (!value || typeof value !== "object" || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype || Object.keys(value).some(key => !["id", "name", "revision", "createdAt", "updatedAt", "content", "locked"].includes(key))) throw new OwnerValidationError([{ path: "draft", message: "This saved draft is not valid." }]);
   const draft = value as Partial<OwnerNamedDraft>;
   assertOwnerDraftId(draft.id);
   if (normalizeOwnerDraftName(draft.name) !== draft.name || !Number.isSafeInteger(draft.revision) || (draft.revision ?? 0) < 1 || typeof draft.createdAt !== "string" || !isIsoDate(draft.createdAt) || typeof draft.updatedAt !== "string" || !isIsoDate(draft.updatedAt)) throw new OwnerValidationError([{ path: "draft", message: "This saved draft’s name, revision or dates are not valid." }]);
+  if (draft.locked !== undefined && draft.locked !== true) throw new OwnerValidationError([{ path: "draft.locked", message: "This saved draft has an invalid lock." }]);
   assertOwnerContent(draft.content);
 }
 export function namedDraftSummary(draft: OwnerNamedDraft): OwnerNamedDraftSummary {
-  const { id, name, revision, createdAt, updatedAt } = draft;
-  return { id, name, revision, createdAt, updatedAt };
+  const { id, name, revision, createdAt, updatedAt, locked } = draft;
+  return { id, name, revision, createdAt, updatedAt, ...(locked ? { locked } : {}) };
 }
 
 function updatedPages(content: OwnerContent, pages: OwnerPage[]): OwnerContent {

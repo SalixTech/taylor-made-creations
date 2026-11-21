@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sourceLoader } from './scout-source-loader.mjs';
-const load=sourceLoader(),model=load('src/owner/model.ts'),defaults=load('src/owner/defaults.ts'),adapter=load('src/owner/firebase-store.ts');
+const load=sourceLoader({ 'firebase/functions': { getFunctions(){throw Error('Serializer tests cannot call Firebase')}, httpsCallable(){throw Error('Serializer tests cannot call Firebase')} } }),model=load('src/owner/model.ts'),defaults=load('src/owner/defaults.ts'),adapter=load('src/owner/firebase-store.ts');
 const basic=()=>defaults.createDefaultOwnerContent();
 const allBlocks=()=>[
 {id:'heading',type:'heading',text:'Heading',level:2},{id:'list',type:'list',style:'numbered',items:['One','Two']},{id:'divider',type:'divider'},{id:'space',type:'spacer',size:'medium'},

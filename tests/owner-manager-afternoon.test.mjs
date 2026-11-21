@@ -65,13 +65,13 @@ test('draft listing deletion requires confirmation and acknowledgement; errors k
   const props = { content: draft, liveShopKnown: true, liveShopVisibility: false, onEdit() {}, onRemove() {}, onRetryLiveShop() {}, onUpdateLiveShop() {}, canDeletePremadeDraft: true, onDeletePremadeDraft: async id => { calls++; assert.equal(id, 'draft-one'); return new Promise(r => { resolve = r; }); } };
   const render = () => h.render(Manager, props); render();
   const card = h.find(n => n.type?.name === 'Card' && n.props.title === 'Keep me');
-  assert.ok(!nodes(card.props.action).some(n => n.type === 'button' && content(n) === 'Delete draft'), 'delete is no longer in the heading');
-  const footer = nodes(card).find(n => n.type === 'div' && n.props.className === 'listingFooter');
-  const deleteButton = nodes(footer).find(n => n.type === 'button' && content(n) === 'Delete draft');
-  assert.equal(deleteButton.props.className, 'danger');
+  assert.ok(nodes(card.props.action).some(n => n.type === 'button' && n.props.title === 'Delete draft'), 'delete is an accessible icon beside Edit in the heading');
+  const deleteButton = nodes(card.props.action).find(n => n.type === 'button' && n.props.title === 'Delete draft');
+  assert.match(deleteButton.props.className, /trashButton/);
+  assert.equal(deleteButton.props['aria-label'], 'Delete draft: Keep me');
   deleteButton.props.onClick(); render(); assert.equal(calls, 0);
   let dialog = h.find(n => n.type?.name === 'Dialog'); dialog.props.onClose(); render(); assert.equal(calls, 0);
-  nodes(card).find(n => n.type === 'button' && content(n) === 'Delete draft').props.onClick(); render(); dialog = h.find(n => n.type?.name === 'Dialog');
+  nodes(card.props.action).find(n => n.type === 'button' && n.props.title === 'Delete draft').props.onClick(); render(); dialog = h.find(n => n.type?.name === 'Dialog');
   const click = nodes(dialog.props.actions).find(n => n.type === 'button' && content(n) === 'Delete draft').props.onClick; click(); click(); assert.equal(calls, 1); resolve(false); await flush(); render();
   assert.equal(draft.premades.length, 1); assert.match(content(h.find(n => n.type?.name === 'Dialog')), /not deleted/); h.unmount();
 });

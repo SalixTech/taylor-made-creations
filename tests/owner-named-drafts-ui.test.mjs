@@ -35,7 +35,7 @@ test('failed initial cloud read cannot masquerade as an empty library or enable 
   assert.equal(t.button('Save as new draft').props.disabled, true);
   assert.match(content(t.h.tree), /Cloud draft index unavailable/);
   assert.doesNotMatch(content(t.h.tree), /A little room for your ideas|0\/10/);
-  t.failRead = false; t.button('Refresh').props.onClick(); await flush(); t.render();
+  t.failRead = false; t.h.find(n=>n.type?.name==='RefreshButton'&&n.props.label==='Refresh drafts').props.onClick(); await flush(); t.render();
   assert.equal(t.button('Save as new draft').props.disabled, false); assert.match(content(t.h.tree), /1\/10/);
 });
 

@@ -79,16 +79,16 @@ test('More rotates only while open and uses compact, theme-safe surfaces and vis
     assert.equal(css(t.arrow).transform, undefined); assert.equal(css(t.menu).display, 'none');
     t.details.attrs.open = ''; assert.equal(css(t.arrow).transform, 'rotate(180deg)'); assert.equal(css(t.menu).display, 'flex');
     assert.equal(css(t.menu)['border-radius'], '7px'); assert.equal(css(t.menu)['box-shadow'], '0 4px 12px #0002');
-    assert.equal(css(t.menu)['background-color'], dark ? '#242426' : '#fff');
-    assert.equal(css(t.link).color, dark ? '#f4edf0' : '#302c2c');
+    assert.equal(css(t.menu)['background-color'], dark ? '#2c2c2d' : '#fff');
+    assert.equal(css(t.link).color, dark ? '#d0d0d0' : '#302c2c');
     assert.ok(contrast(css(t.link).color, css(t.menu)['background-color']) > 7);
-    assert.equal(css(t.summary).color, dark ? '#f4edf0' : '#fff');
+    assert.equal(css(t.summary).color, dark ? '#d0d0d0' : '#fff');
     assert.equal(css(t.link).border, '0'); assert.equal(css(t.link)['border-radius'], '3px');
     t.summary.states.add('focus-visible'); assert.equal(css(t.summary).outline, '2px solid currentColor');
     t.link.states.add('focus-visible'); assert.equal(css(t.link).outline, '2px solid currentColor'); assert.equal(css(t.link)['outline-offset'], '-2px');
     assert.equal(css(t.link)['background-color'], 'color-mix(in srgb,currentColor 10%,transparent)');
     t.link.states.clear(); t.link.attrs['aria-current'] = 'page';
-    assert.equal(css(t.link)['font-weight'], '600'); assert.equal(css(t.link).color, dark ? '#f4edf0' : '#302c2c');
+    assert.equal(css(t.link)['font-weight'], '600'); assert.equal(css(t.link).color, dark ? '#d0d0d0' : '#302c2c');
   }
   assert.match(globals, /@media\(prefers-reduced-motion:reduce\)\{\.selected-design \.nav-more-chevron\{transition:none\}\}/);
 });

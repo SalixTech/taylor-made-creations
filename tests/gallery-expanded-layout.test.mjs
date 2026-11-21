@@ -18,7 +18,7 @@ test('gallery editing opens a compact dialog without expanding grid cards or cha
   const draft=h.load('src/owner/defaults.ts').createDefaultOwnerContent();draft.gallery[0].displayNumber='007';const before=structuredClone(draft.gallery);let saves=0;
   const render=()=>h.render(Manager,{content:draft,onEdit:fn=>fn(draft),onRemove(){},onSavePhotos:()=>saves++});
   const list=()=>h.find(n=>n.type?.name==='OwnerPriceReorderList');
-  const edit=id=>nodes(list().props.children(draft.gallery.find(p=>p.id===id),null)).find(n=>n.type==='button'&&content(n)==='Edit photo');
+  const edit=id=>nodes(list().props.children(draft.gallery.find(p=>p.id===id),null)).find(n=>n.type==='button'&&n.props['aria-label']?.startsWith('Edit photo:'));
   render();assert.equal(list().props.disabled,false);assert.equal(h.find(n=>n.type?.name==='Dialog'),undefined);
   edit(draft.gallery[0].id).props.onClick();render();assert.equal(list().props.disabled,true);assert.equal(list().props.expandedItemId,undefined);
   let dialog=h.find(n=>n.type?.name==='Dialog');assert.equal(dialog.props.title,'Edit photo');assert.equal(dialog.props.wide,undefined);

@@ -104,7 +104,8 @@ test('full notes: odd gallery layout preserves all cards, order and lightbox ent
     h.hooks = []; h.render(FursuitGallery, { photos });
     const figures = h.all(node => node.type === 'figure');
     assert.equal(figures.length, count);
-    assert.deepEqual(figures.map(node => nodes(node).find(child => child.type === 'figcaption').props.children[0].props.children), photos.map(photo => photo.name));
+    assert.deepEqual(figures.map(node => nodes(node).find(child => child.type === 'button' && child.props['aria-haspopup'] === 'dialog').props['aria-label']), photos.map(photo => `Enlarge ${photo.name} fursuit photos`), 'card identities and order remain accessible without visible photo names');
+    assert.deepEqual(figures.map(node => nodes(node).find(child => child.type === 'figcaption').props.children.props.children), photos.map((_, index) => String(count - index).padStart(2, '0')), 'captions now contain only the requested photo number');
     if (count) {
       const open = h.all(node => node.type === 'button' && node.props['aria-haspopup'] === 'dialog').at(-1);
       open.props.onClick({ currentTarget: { focus() {} } }); h.render(FursuitGallery, { photos });

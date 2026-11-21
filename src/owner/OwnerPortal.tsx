@@ -9,7 +9,7 @@ import { beginPanelEditSession, endPanelEditSession } from "./panel-edit-session
 import { InvoiceBusinessSettings } from "./InvoiceBusinessSettings";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type MouseEvent, type CSSProperties } from "react";
-import { COMMISSION_STATUSES, getPageNavPlacement, createCustomPage, movePage, restorePage, slugifyTitle, trashPage, validateOwnerContent, validatePageSlug, OwnerValidationError, normalizeOwnerDraftName, type OwnerContent, type OwnerPage, type OwnerWorkspace, type OwnerPremade, type ValidationIssue } from "./model";
+import { COMMISSION_STATUSES, getPageNavPlacement, createCustomPage, movePage, restorePage, slugifyTitle, trashPage, validateOwnerContent, validatePageSlug, OwnerValidationError, normalizeOwnerDraftName, type OwnerContent, type OwnerPage, type OwnerWorkspace, type OwnerPremade, type OwnerNamedDraftSummary, type ValidationIssue } from "./model";
 import { applySettingsCard, SETTINGS_CARD_LABELS, type SettingsCardId } from "./settings-cards";
 import { SettingsCardActions } from "./SettingsCardActions";
 import type { OwnerStore } from "./storage";
@@ -110,6 +110,26 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
   useLayoutEffect(()=>{if(!fullPageBuilder)return;const bar=toolbarRef.current;if(!bar)return;const measure=()=>{const height=Math.ceil(bar.getBoundingClientRect().height);if(Number.isFinite(height)&&height>0)setToolbarHeight(height);};measure();const observer=typeof ResizeObserver!=="undefined"?new ResizeObserver(measure):null;observer?.observe(bar);window.addEventListener("resize",measure);return()=>{observer?.disconnect();window.removeEventListener("resize",measure);};},[fullPageBuilder]);
   const [editorColorMode,setEditorColorMode]=useState<"dark"|"light">("dark");
   const [importIntent,setImportIntent]=useState<{editVersion:number;revision:number;galleryTarget?:WebsitePromotionTarget}|null>(null);
+  const [mainCommissionStatus, setMainCommissionStatus] = useState<OwnerContent["site"]["commissionStatus"] | null>(null);
+  useEffect(() => {
+    if (WEBSITE_WORKSPACE !== "beta" || !fullPageBuilder || !store.readMainCommissionStatus) return;
+    let active = true;
+    let request = 0;
+    const refresh = async () => {
+      const current = ++request;
+      try {
+        const status = await store.readMainCommissionStatus!();
+        if (active && current === request) setMainCommissionStatus(status);
+      } catch {
+        if (active && current === request) setMainCommissionStatus(null);
+      }
+    };
+    void refresh();
+    window.addEventListener("focus", refresh);
+    const interval = window.setInterval(refresh, 60_000);
+    return () => { active = false; window.removeEventListener("focus", refresh); window.clearInterval(interval); };
+  }, [store, fullPageBuilder]);
+  const promotionDrafts = useRef<OwnerNamedDraftSummary[] | null>(null);
   const [promotionIntent,setPromotionIntent]=useState<{editVersion:number;revision:number;target:WebsitePromotionTarget}|null>(null);
   const importLock=useRef<object|null>(null);
   // A sign-out/sign-in can remount the gate after same-document navigation.
@@ -396,8 +416,16 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
     if (destination.section === section && destination.pageId === pageId) return;
     if (dirtyRef.current && !recovery.flush()) setPending(destination); else arrive(destination);
   }
-  async function saveDraft(preparedContent?:OwnerContent): Promise<OwnerWorkspace | null> {
-    const savingContent=preparedContent??content;
+  function withHubStatus(value: OwnerContent): OwnerContent {
+    if (!mainCommissionStatus || value.site.commissionStatus === mainCommissionStatus) return value;
+    const next = structuredClone(value);
+    next.site.commissionStatus = mainCommissionStatus;
+    if (reconcileCanvasLayouts(value, next).length) return value;
+    return next;
+  }
+  async function saveDraft(preparedContent?:OwnerContent, named = true): Promise<OwnerWorkspace | null> {
+    const pending = preparedContent ?? content;
+    const savingContent = pending ? withHubStatus(pending) : pending;
     if (!savingContent || !workspace || operationRef.current || uploadBusyRef.current || loading) return null;
     const result = validateOwnerContent(savingContent);
     if (!result.valid) { setIssues(result.issues); setError("A few details need your attention before this draft can be saved."); window.scrollTo({ top: 0, behavior: "smooth" }); return null; }
@@ -411,12 +439,12 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
         pendingDraftVersion.current = { key, version: { id, name: chosenName ?? `Draft ${new Date().toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" })} · ${id.slice(-6)}` } };
       }
       const attempt = pendingDraftVersion.current;
-      const saved = await store.saveDraft(savingContent, workspace.revision, attempt.version);
+      const saved = await store.saveDraft(savingContent, workspace.revision, named ? attempt.version : undefined);
       if (!mountedRef.current) return null;
       if (pendingDraftVersion.current === attempt) pendingDraftVersion.current = null;
       workspaceRevisionRef.current = saved.revision; dirtyRef.current = false;
       setWorkspace(saved); setContent(structuredClone(saved.draft));
-      setNotice(`Private cloud draft saved in Drafts as “${attempt.version.name}”. Your current workspace is saved too. Your live website has not changed.`);
+      if (named) setNotice(`Private cloud draft saved in Drafts as “${attempt.version.name}”. Your current workspace is saved too.`);
       // The working draft is already committed. Recovery has its own pending,
       // retry and owner-session lifecycle; it must not keep Save or the builder
       // locked while its separate network acknowledgment is outstanding.
@@ -424,6 +452,21 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
       return saved;
     } catch (error) { if (mountedRef.current) setError(errorMessage(error), true); return null; }
     finally { operationRef.current = false; if (mountedRef.current) setBusy(false); }
+  }
+  async function draftsBeforePublication(): Promise<OwnerNamedDraftSummary[] | null> {
+    if (!store.setNamedDraftLocked) return [];
+    try { return (await store.listNamedDrafts()).filter(draft => !draft.locked); }
+    catch { return null; }
+  }
+  async function archivePublishedDrafts(drafts: OwnerNamedDraftSummary[] | null): Promise<string> {
+    if (!drafts) return " Saved drafts could not be checked and were kept.";
+    let retained = 0;
+    for (const draft of drafts) {
+      try { await store.deleteNamedDraft(draft.id, draft.revision); }
+      catch { retained++; }
+    }
+    if (retained) return " Some saved drafts were kept because they changed or could not be archived.";
+    return drafts.length ? " Unlocked saved drafts moved to Archived." : "";
   }
   async function reviewLivePublication(target:WebsitePromotionTarget="live",galleryContent?:OwnerContent) {
     if (WEBSITE_WORKSPACE !== "beta" || !fullPageBuilder || !store.websitePromotion || !recoveryIdentity || !workspace || operationRef.current || uploadBusyRef.current || loadingRef.current) return;
@@ -433,11 +476,13 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
       // commit must never be replaced by a new operation or a different source.
       const pendingPromotion = readPendingWebsitePromotion(recoveryIdentity.ownerUid, recoveryIdentity.projectId);
       if (!pendingPromotion && !galleryContent) { setSaveChoice(false); setImportIntent({editVersion:editVersionRef.current,revision:workspaceRevisionRef.current,galleryTarget:target}); return; }
-      const saved = pendingPromotion ? null : await saveDraft(galleryContent);
+      const saved = pendingPromotion ? null : await saveDraft(galleryContent, false);
       if (!pendingPromotion && !saved) return;
       recoveryIdentity.assertCurrent();
       if (!mountedRef.current || operationRef.current || uploadBusyRef.current) return;
       operationRef.current = true; ++loadRequestRef.current; setSyncing(false); setBusy(true);
+      promotionDrafts.current = pendingPromotion ? [] : await draftsBeforePublication();
+      if (!mountedRef.current) return;
       setSaveChoice(false); setError(null);
       setPromotionIntent({ target: pendingPromotion ? pendingPromotion.target??"live" : target, revision: pendingPromotion?.sourceRevision ?? saved!.revision, editVersion: editVersionRef.current });
     } catch (cause) { if (mountedRef.current) setError(errorMessage(cause), true); }
@@ -445,7 +490,12 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
   async function reconcileWebsitePublication(receipt:PromotionSummary) {
     recoveryIdentity?.assertCurrent();
     if (!mountedRef.current) throw new Error("The owner workspace is closed.");
-    if (receipt.target !== "both") { setNotice("The reviewed website was published to live. Your beta publication and main private draft were not changed."); return; }
+    if (receipt.target !== "both") {
+      const result = await archivePublishedDrafts(promotionDrafts.current);
+      promotionDrafts.current = [];
+      if (mountedRef.current) setNotice(`The reviewed website was published to live.${result}`);
+      return;
+    }
     // Receipt proves publication, not that the source workspace is still latest.
     // Re-read it while retaining the publication lock and any newer unsaved edits.
     const editVersion = editVersionRef.current, request = ++loadRequestRef.current;
@@ -459,7 +509,9 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
     if (!keepUnsaved) { dirtyRef.current = false; setContent(structuredClone(saved.draft)); }
     setLastCheckedAt(new Date().toISOString()); setLiveShopRetry(value => value + 1);
     recovery.cloud.acknowledgePublication(); notifyPublicSitePublished();
-    setNotice("The reviewed website was published to Beta and Live in one operation. The Beta workspace is refreshed; the main private draft was not changed.");
+    const result = await archivePublishedDrafts(promotionDrafts.current);
+    promotionDrafts.current = [];
+    if (mountedRef.current) setNotice(`The reviewed website was published to Beta and Live. The Beta workspace is refreshed.${result}`);
   }
   function closeLivePublication() {
     operationRef.current = false;
@@ -474,12 +526,17 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
     operationRef.current = true; ++loadRequestRef.current; setSyncing(false); setBusy(true); setPublishing(true); setPublished(false); setError(null); setIssues([]);
     try {
       if (WEBSITE_WORKSPACE === "beta" && recoveryIdentity && readPendingWebsitePromotion(recoveryIdentity.ownerUid,recoveryIdentity.projectId)) throw new Error("Resolve the saved Live or both publication before publishing Beta separately.");
-      const saved = await store.publishLive(structuredClone(content), workspace.revision);
+      const drafts = WEBSITE_WORKSPACE === "beta" ? [] : await draftsBeforePublication();
+      if (!mountedRef.current) return false;
+      const publication = structuredClone(withHubStatus(content));
+      const saved = await store.publishLive(publication, workspace.revision);
       if (!mountedRef.current) return false;
       workspaceRevisionRef.current = saved.revision; dirtyRef.current = false;
       setWorkspace(saved); setContent(structuredClone(saved.draft)); setPublished(true);
       setLiveShopRetry(value => value + 1); recovery.cloud.acknowledgePublication();
-      setNotice(WEBSITE_WORKSPACE === "beta" ? "Your protected beta preview is updated. The main website is unchanged." : "Your website changes are live."); notifyPublicSitePublished();
+      notifyPublicSitePublished();
+      const archived = await archivePublishedDrafts(drafts);
+      if (mountedRef.current) setNotice(`${WEBSITE_WORKSPACE === "beta" ? "Your protected beta preview is updated." : "Your website changes are live."}${archived}`);
       return true;
     } catch (cause) { if (mountedRef.current) setError(errorMessage(cause), true); return false; }
     finally { operationRef.current = false; if (mountedRef.current) { setBusy(false); setPublishing(false); } }
@@ -709,7 +766,7 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
       if (operationRef.current || uploadBusyRef.current || loadingRef.current) return false;
       operationRef.current = true; ++loadRequestRef.current; setBusy(true); setSyncing(false); return true;
     }} endUpdate={() => { operationRef.current = false; if (mountedRef.current) setBusy(false); }} />} />;
-    if (isBuilder && currentPage) body = <OwnerVisualBuilder frameClipboard={frameClipboard} clipboardScopeKey={clipboardScopeKey} workspaceMode={fullPageBuilder} draftNameControl={<Field label="Draft name" value={draftName} onChange={value => { if (!operationRef.current && !uploadBusyRef.current && !loading) setDraftName(value); }} readOnly={busy || uploadBusy || loading} placeholder="Optional name for your next saved draft" />} onRequestDiscard={requestBuilderDiscard} canUndo={!historyBlocked && historyState.canUndo} canRedo={!historyBlocked && historyState.canRedo} onUndo={() => travelDraftHistory("undo")} onRedo={() => travelDraftHistory("redo")} onSaveDraft={() => { void saveDraft(); }} onSave={() => { setPublished(false); setSaveChoice(true); }} saveBusy={busy || uploadBusy || loading} draftSaveStatus={recoveryIdentity ? recovery.cloud.enabled ? recovery.cloud.problem ?? recovery.cloud.status : recovery.problem ?? recovery.status : undefined} onPopOut={livePreview.open} onEditCommissionForm={() => { setShowPreview(false); arrive({ section: "commissionForm" }); }} key={`${section}-${currentPage.id}-${formVersion}`} browsing={builderBrowsing} onBrowsingChange={changeBuilderMode} content={content} page={currentPage} onEdit={edit} onPageChange={page => { if (!operationRef.current && !uploadBusy) { arrive({ section: "pages", pageId: page.id }); } }} onManagePages={() => setShowPageManager(true)} onAddPage={openAddPage} onPrices={() => navigate({ section: "prices" })} onRemove={confirmRemove} liveShopVisibility={liveShopVisibility} liveShopKnown={liveShopKnown} liveShopReadError={liveShopReadError ?? (!store.readLiveShopVisibility ? "Live shop controls are not connected in this workspace." : null)} onRetryLiveShop={() => { setLiveShopReadError(null); setLiveShopKnown(false); setLiveShopRetry(value => value + 1); }} canUpdateLiveShop={!!store.updateLiveShopVisibility && liveShopKnown} onUpdateLiveShop={requestShopUpdate} uploadBusy={uploadBusy} />;
+    if (isBuilder && currentPage) body = <OwnerVisualBuilder frameClipboard={frameClipboard} clipboardScopeKey={clipboardScopeKey} workspaceMode={fullPageBuilder} mainCommissionStatus={mainCommissionStatus} draftNameControl={<Field label="Draft name" value={draftName} onChange={value => { if (!operationRef.current && !uploadBusyRef.current && !loading) setDraftName(value); }} readOnly={busy || uploadBusy || loading} placeholder="Optional name for your next saved draft" />} onRequestDiscard={requestBuilderDiscard} canUndo={!historyBlocked && historyState.canUndo} canRedo={!historyBlocked && historyState.canRedo} onUndo={() => travelDraftHistory("undo")} onRedo={() => travelDraftHistory("redo")} onSaveDraft={() => { void saveDraft(); }} onSave={() => { setPublished(false); setSaveChoice(true); }} saveBusy={busy || uploadBusy || loading} draftSaveStatus={recoveryIdentity ? recovery.cloud.enabled ? recovery.cloud.problem ?? recovery.cloud.status : recovery.problem ?? recovery.status : undefined} onPopOut={livePreview.open} onEditCommissionForm={() => { setShowPreview(false); arrive({ section: "commissionForm" }); }} key={`${section}-${currentPage.id}-${formVersion}`} browsing={builderBrowsing} onBrowsingChange={changeBuilderMode} content={content} page={currentPage} onEdit={edit} onPageChange={page => { if (!operationRef.current && !uploadBusy) { arrive({ section: "pages", pageId: page.id }); } }} onManagePages={() => setShowPageManager(true)} onAddPage={openAddPage} onPrices={() => navigate({ section: "prices" })} onRemove={confirmRemove} liveShopVisibility={liveShopVisibility} liveShopKnown={liveShopKnown} liveShopReadError={liveShopReadError ?? (!store.readLiveShopVisibility ? "Live shop controls are not connected in this workspace." : null)} onRetryLiveShop={() => { setLiveShopReadError(null); setLiveShopKnown(false); setLiveShopRetry(value => value + 1); }} canUpdateLiveShop={!!store.updateLiveShopVisibility && liveShopKnown} onUpdateLiveShop={requestShopUpdate} uploadBusy={uploadBusy} />;
   }
 
   return <OwnerUploadProvider onBusyChange={reportUploadBusy}><div style={fullPageBuilder?{"--owner-toolbar-height":`${toolbarHeight}px`} as CSSProperties:undefined} className={`${styles.portal} ${fullPageBuilder ? styles.fullPageBuilder : ""}`} data-full-page-builder={fullPageBuilder || undefined} data-owner-portal data-color-mode={fullPageBuilder ? editorColorMode : colorMode} data-workspace-mode={mode}>
@@ -767,7 +824,7 @@ export default function OwnerPortal({ store, recoveryIdentity, mode, userEmail, 
     {pendingSync && <Dialog title="Sync with unsaved changes?" dismissDisabled={busy} onClose={() => { if (!busy) setPendingSync(false); }} actions={<><button type="button" className={styles.secondary} disabled={busy || uploadBusy} onClick={() => setPendingSync(false)}>Cancel</button><button type="button" className={styles.secondary} disabled={busy || uploadBusy} onClick={async () => { if (await load(true)) setPendingSync(false); }}>Reload saved draft</button><button type="button" className={styles.primary} disabled={busy || uploadBusy} onClick={async () => { const saved = await saveDraft(); if (saved && mountedRef.current && await load()) setPendingSync(false); }}>Save draft & sync</button></>}><p>Your edits are only in this tab. Save them privately before syncing, or choose Reload saved draft to discard these edits and open the cloud version. Cancel keeps everything as it is.</p><p className={styles.help}>Nothing here publishes your website. A newer cloud revision will stop the save rather than overwrite another device’s work.</p>{error && <p className={styles.errorNotice} role="alert">{error}</p>}</Dialog>}
     {promotionIntent && recoveryIdentity && store.websitePromotion && <WebsitePromotionDialog request={store.websitePromotion} session={recoveryIdentity} target={promotionIntent.target} revisedSource={promotionIntent.revision} assertSourceCurrent={revision=>{recoveryIdentity.assertCurrent();if(!mountedRef.current||!promotionIntent||revision!==promotionIntent.revision||workspaceRevisionRef.current!==revision||editVersionRef.current!==promotionIntent.editVersion||dirtyRef.current)throw new Error("The saved beta draft changed. Resolve this operation, then review the current draft again.");}} onClose={closeLivePublication} onPublished={reconcileWebsitePublication} />}
     {saveChoice && <Dialog title="Save your changes" dismissDisabled={busy} onClose={() => { if (!operationRef.current) setSaveChoice(false); }} actions={published ? <button type="button" className={styles.primary} onClick={()=>setSaveChoice(false)}>Close</button> : <div className={styles.saveChoiceActions}><div className={styles.saveDraftActions}><button type="button" className={styles.secondary} disabled={busy || uploadBusy} onClick={() => setSaveChoice(false)}>Keep editing</button><button type="button" className={styles.secondary} disabled={busy || uploadBusy} onClick={async () => { const saved = await saveDraft(); if (saved && mountedRef.current) setSaveChoice(false); }}>Save draft</button></div><div className={styles.savePublishActions}><button type="button" className={styles.primary} disabled={busy || uploadBusy || !store.publishLive} onClick={() => void publishLive()}>{publishing ? "Publishing…" : WEBSITE_WORKSPACE === "beta" ? "Publish to beta" : "Publish live"}</button>{WEBSITE_WORKSPACE === "beta" && fullPageBuilder && store.websitePromotion && recoveryIdentity && <><button type="button" className={styles.primary} disabled={busy || uploadBusy} onClick={()=>void reviewLivePublication()}>Publish Live…</button><button type="button" className={styles.primary} disabled={busy || uploadBusy} onClick={()=>void reviewLivePublication("both")}>Publish to both…</button></>}</div></div>}>{(publishing || published) && <div className={styles.publishProgress} role="status" aria-live="polite">{publishing ? <><span className={styles.publishSpinner} aria-hidden="true"/><strong>Publishing…</strong><span>Please keep this window open while we confirm the result.</span></> : <><svg className={styles.publishCheck} aria-hidden="true" viewBox="0 0 32 32"><path d="m7 16 6 6L25 10"/></svg><strong>Published!</strong><span>{WEBSITE_WORKSPACE === "beta" ? "Your protected beta preview is updated. The main website is unchanged." : "Your website changes are live."}</span></>}</div>}{error && <p className={styles.errorNotice} role="alert">{error}</p>}<p>{WEBSITE_WORKSPACE === "beta" ? "Save draft keeps these changes private. Publish to Beta updates only the protected test site. Publish Live saves this draft and opens a separate review and confirmation before changing the public website. Publish to both prepares an atomic Beta and Live update. Live keeps the latest Hub gallery; Beta uses the gallery saved in this Builder draft." : "Save draft keeps these changes private. Publish live saves and publishes all current website changes, including the gallery."}</p></Dialog>}
-    {showPreview && content && previewPage && <Dialog draggable wide maximizable title="Your draft preview" dismissDisabled={busy} onClose={() => { if (!busy) setShowPreview(false); }} actions={<><button type="button" className={styles.primary} disabled={busy || uploadBusy} onClick={() => setShowPreview(false)}>Back to workspace</button></>}><p className={styles.help}>This is your current draft, including unsaved changes. Opening it does not save or publish anything.</p><div className={styles.dialogPreview} data-dialog-preview data-editable-preview><OwnerVisualBuilder frameClipboard={frameClipboard} clipboardScopeKey={clipboardScopeKey} workspaceMode={fullPageBuilder} draftNameControl={<Field label="Draft name" value={draftName} onChange={value => { if (!operationRef.current && !uploadBusyRef.current && !loading) setDraftName(value); }} readOnly={busy || uploadBusy || loading} placeholder="Optional name for your next saved draft" />} onRequestDiscard={requestBuilderDiscard} canUndo={!historyBlocked && historyState.canUndo} canRedo={!historyBlocked && historyState.canRedo} onUndo={() => travelDraftHistory("undo")} onRedo={() => travelDraftHistory("redo")} key={`preview-${formVersion}`} content={content} page={previewPage} onEdit={edit} onPageChange={page => setPreviewPageId(page.id)} onManagePages={() => { setShowPreview(false); setShowPageManager(true); }} onAddPage={() => { setShowPreview(false); openAddPage(); }} onPrices={() => { setShowPreview(false); arrive({ section: "prices" }); }} onRemove={confirmRemove} liveShopVisibility={liveShopVisibility} liveShopKnown={liveShopKnown} liveShopReadError={liveShopReadError} onRetryLiveShop={() => setLiveShopRetry(value => value + 1)} canUpdateLiveShop={!!store.updateLiveShopVisibility && liveShopKnown} onUpdateLiveShop={requestShopUpdate} uploadBusy={uploadBusy || busy} browsing={previewBrowsing} onBrowsingChange={setPreviewBrowsing} onEditCommissionForm={() => { setShowPreview(false); arrive({ section: "commissionForm" }); }} /></div>{workspace?.updatedAt && <p className={styles.help}>{fullPageBuilder ? <a href={`https://${process.env.NEXT_PUBLIC_TMC_BETA_PREVIEW_HOST || "beta.taylormadecreations.dog"}`} target="_blank" rel="noopener noreferrer">Open published beta preview ↗</a> : <a href="/taylor/preview" target="_blank" rel="noreferrer">Open saved draft in a new tab ↗</a>} · Unsaved edits stay here.</p>}</Dialog>}
+    {showPreview && content && previewPage && <Dialog draggable wide maximizable title="Your draft preview" dismissDisabled={busy} onClose={() => { if (!busy) setShowPreview(false); }} actions={<><button type="button" className={styles.primary} disabled={busy || uploadBusy} onClick={() => setShowPreview(false)}>Back to workspace</button></>}><p className={styles.help}>This is your current draft, including unsaved changes. Opening it does not save or publish anything.</p><div className={styles.dialogPreview} data-dialog-preview data-editable-preview><OwnerVisualBuilder frameClipboard={frameClipboard} clipboardScopeKey={clipboardScopeKey} workspaceMode={fullPageBuilder} mainCommissionStatus={mainCommissionStatus} draftNameControl={<Field label="Draft name" value={draftName} onChange={value => { if (!operationRef.current && !uploadBusyRef.current && !loading) setDraftName(value); }} readOnly={busy || uploadBusy || loading} placeholder="Optional name for your next saved draft" />} onRequestDiscard={requestBuilderDiscard} canUndo={!historyBlocked && historyState.canUndo} canRedo={!historyBlocked && historyState.canRedo} onUndo={() => travelDraftHistory("undo")} onRedo={() => travelDraftHistory("redo")} key={`preview-${formVersion}`} content={content} page={previewPage} onEdit={edit} onPageChange={page => setPreviewPageId(page.id)} onManagePages={() => { setShowPreview(false); setShowPageManager(true); }} onAddPage={() => { setShowPreview(false); openAddPage(); }} onPrices={() => { setShowPreview(false); arrive({ section: "prices" }); }} onRemove={confirmRemove} liveShopVisibility={liveShopVisibility} liveShopKnown={liveShopKnown} liveShopReadError={liveShopReadError} onRetryLiveShop={() => setLiveShopRetry(value => value + 1)} canUpdateLiveShop={!!store.updateLiveShopVisibility && liveShopKnown} onUpdateLiveShop={requestShopUpdate} uploadBusy={uploadBusy || busy} browsing={previewBrowsing} onBrowsingChange={setPreviewBrowsing} onEditCommissionForm={() => { setShowPreview(false); arrive({ section: "commissionForm" }); }} /></div>{workspace?.updatedAt && <p className={styles.help}>{fullPageBuilder ? <a href={`https://${process.env.NEXT_PUBLIC_TMC_BETA_PREVIEW_HOST || "beta.taylormadecreations.dog"}`} target="_blank" rel="noopener noreferrer">Open published beta preview ↗</a> : <a href="/taylor/preview" target="_blank" rel="noreferrer">Open saved draft in a new tab ↗</a>} · Unsaved edits stay here.</p>}</Dialog>}
     {addingPage && <Dialog title="Add a new page" onClose={() => setAddingPage(false)} actions={<><button type="button" className={styles.secondary} onClick={() => setAddingPage(false)}>Cancel</button><button type="button" className={styles.primary} onClick={createPage}>Create page</button></>}><p>Give it a name. You can add text, photos, and buttons next.</p><Field label="Page name" value={newTitle} onChange={value => { if (newSlug === slugifyTitle(newTitle)) setNewSlug(slugifyTitle(value)); setNewTitle(value); setNewPageError(null); }} placeholder="About the maker" required /><Field label="Page address" value={newSlug} onChange={value => { setNewSlug(value.toLowerCase()); setNewPageError(null); }} hint={fullPageBuilder ? `Beta page address after publishing: /${newSlug || "about-the-maker"}.` : `Private preview link: /taylor/preview/${newSlug || "about-the-maker"}.`} />{newPageError && <p className={styles.inlineError} role="alert">{newPageError}</p>}</Dialog>}
     {pending && <Dialog title="Save before moving on?" dismissDisabled={busy} onClose={() => { if (!busy) setPending(null); }} actions={<><button type="button" className={styles.secondary} disabled={busy || uploadBusy} onClick={() => { discard(); arrive(pending); setPending(null); }}>Discard changes</button><button type="button" className={styles.secondary} disabled={busy || uploadBusy} onClick={() => setPending(null)}>Keep editing</button><button type="button" className={styles.primary} disabled={busy || uploadBusy} onClick={async () => { const saved = await saveDraft(); if (!mountedRef.current) return; if (saved) { arrive(pending); setPending(null); } else setPending(null); }}>Save and continue</button></>}><p>You have unsaved changes. Save them as a draft, or stay here and keep working.</p></Dialog>}
     {pendingSignOut && <Dialog title="Save before signing out?" dismissDisabled={busy} onClose={() => { if (!busy) setPendingSignOut(false); }} actions={<><button type="button" className={styles.secondary} disabled={busy || uploadBusy} onClick={() => { void signOut(); }}>Sign out without saving</button><button type="button" className={styles.secondary} disabled={busy || uploadBusy} onClick={() => setPendingSignOut(false)}>Keep editing</button><button type="button" className={styles.primary} disabled={busy || uploadBusy} onClick={async () => { const saved = await saveDraft(); if (saved) await signOut(); else if (mountedRef.current) setPendingSignOut(false); }}>Save and sign out</button></>}><p>You have unsaved changes in this tab. Save them to your private cloud draft before signing out, or discard only these unsaved edits.</p><p className={styles.help}>Your saved cloud draft will stay in your account.</p></Dialog>}

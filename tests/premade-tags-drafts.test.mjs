@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { BackupError, createOwnerBackupService } from '../firebase/functions/owner-backups-core.mjs';
+import { OWNER_UID } from '../firebase/functions/cleanup-core.mjs';
+
 import { model as m, defaults as d, storage as s, memoryAdapter } from './owner-test-modules.mjs';
 import { sourceLoader } from './scout-source-loader.mjs';
 
@@ -89,15 +92,23 @@ test('invalid tag card never touches storage; rejected commit or stale revision 
 
 // Firestore transaction double: no SDK initialization, real account or external writes.
 function cloud() {
-  const documents = new Map(); let fail = false, retry; const writes = []; const user = { uid: 'owner', getIdToken: async () => 'inert-test-token' }; const auth = { currentUser: user };
+  const documents = new Map(); let fail = false, retry; const writes = []; const user = { uid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843', getIdToken: async () => 'inert-test-token' }; const auth = { currentUser: user };
   const api = { doc: (_db, path) => ({ path }), getDoc: async ref => view(ref.path), runTransaction: async (_db, callback) => {
     let pending = new Map(); const tx = { get: async ref => view(ref.path), set: (ref, value) => pending.set(ref.path, structuredClone(value)) };
     let next = await callback(tx); if (retry) { retry(); retry = null; pending = new Map(); next = await callback(tx); }
     if (fail) throw { code: 'unavailable' }; for (const [path, value] of pending) { documents.set(path, value); writes.push(path); } return next;
   } };
   const view = path => ({ exists: () => documents.has(path), data: () => structuredClone(documents.get(path)) });
-  const load = sourceLoader({ 'firebase/firestore/lite': api }), fm = load('src/owner/firebase-store.ts');
-  return { documents, writes, fm, auth, store: fm.createFirebaseOwnerStore({ db: {}, auth, ownerUid: 'owner' }), fail: () => fail = true, retry: fn => retry = fn };
+  const toAdmin = snap => ({ exists: snap.exists(), data: () => snap.exists() ? snap.data() : undefined });
+  const adminDb = { doc: path => ({ path, get: async () => toAdmin(await api.getDoc({ path })) }), runTransaction: callback => api.runTransaction({}, tx => callback({ get: async ref => toAdmin(await tx.get(ref)), set: tx.set, create(ref, value) { assert.equal(documents.has(ref.path), false, `immutable create ${ref.path}`); tx.set(ref, value); } })) };
+  const service = createOwnerBackupService({ db: adminDb });
+  const functions = { getFunctions: () => ({}), httpsCallable: (_functions, name) => async input => {
+    assert.equal(name, 'tmcOwnerPublishContent');
+    try { return { data: await service.publishContent(input, { auth: { uid: OWNER_UID } }) }; }
+    catch (cause) { const error = new Error(cause instanceof BackupError ? cause.message : cause?.name === 'OwnerValidationError' ? 'The website content is invalid. Nothing was saved or published.' : 'This action could not be confirmed.'); error.code = `functions/${cause instanceof BackupError ? cause.code : cause?.name === 'OwnerValidationError' ? 'invalid-argument' : 'unavailable'}`; throw error; }
+  } };
+  const load = sourceLoader({ 'firebase/firestore/lite': api, 'firebase/functions': functions }), fm = load('src/owner/firebase-store.ts');
+  return { documents, writes, fm, auth, store: fm.createFirebaseOwnerStore({ db: {}, auth, ownerUid: 'a4ARjp0z8ZOByKlC2AfGzmMRj843' }), fail: () => fail = true, retry: fn => retry = fn };
 }
 
 test('cloud Save as Draft writes only ownerWorkspace and full site publication keeps its card private', async () => {

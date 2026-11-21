@@ -52,7 +52,14 @@ test('shared owner actions retain variants, sizing and readable text in light/da
         if (state === 'focus-visible') assert.ok(contrast(style['outline-color'], background(t.portal, computed)) >= 3);
         if (state.includes('disabled')) assert.equal(style.opacity, '1', 'disabled text remains readable');
         if (state === 'loading') assert.equal(style.cursor, 'progress');
-        if (state === 'idle' && variant !== 'quiet') assert.ok(contrast(style['border-color'], background(t.portal, computed)) >= 3);
+        if (state === 'idle' && variant !== 'quiet') {
+          // Fox16 explicitly restores red-on-red primary edges. Their readable
+          // label identifies the action; keyboard focus still requires 3:1.
+          if (mode === 'dark' && variant === 'primary') {
+            assert.equal(style['border-color'], '#7f0011');
+            assert.ok(contrast(style.color, background(t.portal, computed)) >= 4.5);
+          } else assert.ok(contrast(style['border-color'], background(t.portal, computed)) >= 3);
+        }
       }
     }
   }
@@ -70,7 +77,7 @@ test('primary/danger are distinct from neutral actions, compact/icon sizes and s
   assert.doesNotMatch(read('src/owner/OwnerButton.module.css'), /#[\da-f]{3,8}\b/i, 'shared control module has no duplicated palette literals');
 });
 
-test('shared action rules never recolor editable/public canvas buttons and Help keeps its unique blue', () => {
+test('shared action rules never recolor editable/public canvas buttons and Help keeps its neutral surface', () => {
   for (const mode of ['light', 'dark']) for (const state of ['idle', 'hover', 'active', 'focus-visible', 'disabled']) {
     const t = fixture(mode), canvas = element('div', { 'data-site-render-mode': 'preview' }, t.portal);
     const previewButton = element('button', { class: 'savedBrand', 'data-owner-button': '', 'aria-pressed': 'true' }, canvas);
@@ -82,7 +89,7 @@ test('shared action rules never recolor editable/public canvas buttons and Help 
     const before = [computed(previewButton), computed(publicButton)];
     for (const node of [previewButton, publicButton]) node.attrs.class += ` ${button.button} ${button.primary}`;
     for (const [index, node] of [previewButton, publicButton].entries()) for (const property of ['background-color', 'color', 'border-color', 'min-height']) assert.equal(computed(node)[property], before[index][property], `${mode}/${state}/${property}`);
-    assert.equal(computed(help)['background-color'], '#54a6eb'); assert.ok(contrast(computed(help).color, '#54a6eb') >= 4.5);
+    assert.equal(computed(help)['background-color'], '#2c2c2d'); assert.ok(contrast(computed(help).color, '#2c2c2d') >= 4.5);
   }
 });
 

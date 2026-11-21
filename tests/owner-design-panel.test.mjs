@@ -36,7 +36,7 @@ test('every website color control stores a bounded color and uses the rendered t
 
 test('every typography/layout select persists every allowed option and rejects unsupported choices', () => {
   const t = setup('OwnerDesignPanel', { onReset() {} });
-  for (const field of t.catalog.DESIGN_SELECT_FIELDS.filter(field => !["textSize", "headingSize"].includes(field.key))) {
+  for (const field of t.catalog.DESIGN_SELECT_FIELDS.filter(field => !["textSize", "headingSize", "sectionDividers"].includes(field.key))) {
     for (const option of field.options) {
       const select = t.h.find(n => n.type?.name === 'OwnerSelect' && n.props.label === field.label);
       select.props.onChange(option.value); t.render();
@@ -336,3 +336,5 @@ test('footer business name can be selected without making dynamic copyright edit
   assert.equal(visibleText(name), content.site.name);
   assert.equal(h.find(n => n.type?.name === 'CopyrightRange').props['data-owner-edit'], undefined);
 });
+
+test('Section dividers uses the shared aligned Toggle and custom hex accepts a new nonswatch color',()=>{const t=setup('OwnerDesignPanel',{onReset(){}}),toggle=()=>t.h.find(n=>n.type?.name==='Toggle'&&n.props.label==='Section dividers');assert.ok(toggle());toggle().props.onChange(false);t.render();assert.equal(t.content.design.sectionDividers,'hidden');toggle().props.onChange(true);t.render();assert.equal(t.content.design.sectionDividers,'visible');const hex=t.h.find(n=>n.type?.name==='OwnerHexInput');assert.ok(hex);hex.props.onChange('#13579b');assert.equal(Object.values(t.content.design.colors).includes('#13579b'),true);const h=harness(),values=[],C=h.load('src/owner/OwnerDesignInputs.tsx').OwnerHexInput,props={label:'Custom',value:'#000000',onChange:v=>values.push(v)};h.render(C,props);h.find(n=>n.type==='input').props.onChange({target:{value:'#c7d'}});assert.deepEqual(values,['#cc77dd']);h.find(n=>n.type==='input').props.onChange({target:{value:'url(x)'}});assert.deepEqual(values,['#cc77dd']);});

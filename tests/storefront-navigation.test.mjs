@@ -58,8 +58,11 @@ test('catalog activation removes an open persisted cart and unlocks scrolling wi
 test('odd/even gallery renders every photo in original order and only changes layout class',()=>{
  const h=harness(),{FursuitGallery}=h.load('src/components/FursuitGallery.tsx');
  const photos=Array.from({length:5},(_,i)=>({id:`photo-${i}`,name:`Photo ${i}`,src:`/images/fursuit-${i}.webp`,alt:`Photo ${i}`,width:100,height:100}));
- h.render(FursuitGallery,{photos});assert.match(h.find(n=>n.props.className?.includes('grid')).props.className,/odd/);assert.equal(h.all(n=>n.type==='figure').length,5);assert.deepEqual(h.all(n=>n.type==='figcaption').map(n=>text(n)),['Photo 005','Photo 104','Photo 203','Photo 302','Photo 401']);
+ h.render(FursuitGallery,{photos});assert.match(h.find(n=>n.props.className?.includes('grid')).props.className,/odd/);assert.equal(h.all(n=>n.type==='figure').length,5);assert.deepEqual(h.all(n=>n.type==='figcaption').map(n=>text(n)),['05','04','03','02','01']);
+ assert.deepEqual(h.all(n=>n.type==='button'&&n.props['aria-haspopup']==='dialog').map(n=>n.props['aria-label']),photos.map(photo=>`Enlarge ${photo.name} fursuit photos`));
  h.render(FursuitGallery,{photos:[{...photos[0],id:'new',name:'Newest'},...photos]});assert.equal(h.all(n=>n.type==='figure').length,6);assert.doesNotMatch(h.find(n=>n.props.className?.includes('grid')).props.className,/odd/);
+ assert.deepEqual(h.all(n=>n.type==='figcaption').map(n=>text(n)),['06','05','04','03','02','01']);
+ assert.deepEqual(h.all(n=>n.type==='button'&&n.props['aria-haspopup']==='dialog').map(n=>n.props['aria-label']),['Newest',...photos.map(photo=>photo.name)].map(name=>`Enlarge ${name} fursuit photos`));
  const css=readFileSync(new URL('../src/components/FursuitGallery.module.css',import.meta.url),'utf8');assert.match(css,/\.odd:not\(\.compact\) > \.card:first-child/);assert.match(css,/grid-column:auto; width:100%/);
 });
 test('FAQs stay open only during editable builder mode',()=>{
@@ -85,8 +88,10 @@ test('numeric fonts, independent alignment and section percentages render defens
  const h=harness(),a=h.load('src/owner/appearance.ts'),design=h.load('src/owner/site-design.ts');
  const style=a.getElementAppearanceStyle({fontSize:23.5,textSize:'small',headingAlign:'center',bodyAlign:'right',widthPercent:72.5,heightPercent:140,fontId:'font-test'});
  assert.equal(style['--element-font-size'],'23.5px');assert.equal(style['--element-heading-align'],'center');assert.equal(style['--element-body-align'],'right');assert.equal(style.width,'72.5%');assert.equal(style.minHeight,'140vh');assert.equal(style.height,undefined);assert.match(style['--element-font'],/TMCFont_font-test/);
- for(const fontSize of [NaN,Infinity,7,145])assert.equal(a.getElementAppearanceStyle({fontSize})['--element-font-size'],undefined);
- assert.deepEqual(a.getElementAppearanceStyle({fontId:'x";color:red',widthPercent:101,heightPercent:-1,headingAlign:'url(x)'}),{});
+ for(const fontSize of [7,145,5000])assert.equal(a.getElementAppearanceStyle({fontSize})['--element-font-size'],`${fontSize}px`);
+ assert.equal(a.getElementAppearanceStyle({widthPercent:101}).width,'101%');
+ for(const fontSize of [NaN,Infinity,0,-1])assert.equal(a.getElementAppearanceStyle({fontSize})['--element-font-size'],undefined);
+ assert.deepEqual(a.getElementAppearanceStyle({fontId:'x";color:red',widthPercent:0,heightPercent:-1,headingAlign:'url(x)'}),{});
  const theme={design:{bodyFontSize:18,headingFontSize:40,textSize:'small',headingSize:'large',bodyFontId:'font-test'}};
  assert.equal(design.getSiteThemeStyle(theme)['--site-body-font-size'],'18px');assert.equal(design.getSiteThemeStyle(theme)['--site-heading-font-size'],'40px');assert.equal(design.getSiteThemeAttributes(theme)['data-site-text-size'],undefined);assert.equal(design.getSiteThemeAttributes(theme)['data-site-heading-size'],undefined);
 });

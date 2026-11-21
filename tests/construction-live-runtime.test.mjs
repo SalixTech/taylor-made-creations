@@ -31,7 +31,7 @@ test('access network failure is locked; ON exposes no publication snapshot and O
   const first=await reader.readPublishedSite({projectId,fetcher});assert.equal(first.status,'published');assert.equal(first.accessRevision,2);
   mode=true;revision=3;
   const next=await reader.readPublishedSite({projectId,fetcher});assert.deepEqual(next,{status:'locked',accessRevision:3});assert.doesNotMatch(JSON.stringify(next),/payload|snapshot|content|PRIVATE_SENTINEL/);
-  assert.deepEqual(paths.map(p=>p.split('/').pop()),['access','published','access']);
+  assert.deepEqual(paths.map(p=>p.split('/').pop()),['access','published','access','constructionWhimsy']);
 });
 
 function fixture({initialState={status:'locked'},pathname='/',reply=()=>Response.json({status:'locked'},{status:503}),hidden=false}={}){

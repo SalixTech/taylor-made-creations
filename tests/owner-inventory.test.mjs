@@ -58,12 +58,12 @@ test('scanner search supports exact payload, checksum suffix, names and tags wit
 });
 
 function cloud() {
-  const docs=new Map();let fail=false,changed=false;
+  const docs=new Map();let fail=false,changed=false,beforeTransaction=null;
   const view=path=>({exists:()=>docs.has(path),data:()=>structuredClone(docs.get(path)),id:path.split('/').at(-1)});
   const session={db:{},assertCurrent:()=>{if(changed)throw Error('Session changed');}};
-  const api={serverTimestamp:()=>({seconds:Date.now()/1000}),doc:(_db,...p)=>({path:p.join('/')}),collection:(_db,path)=>({path}),getDoc:async r=>view(r.path),getDocs:async r=>({docs:[...docs.keys()].filter(p=>p.startsWith(r.path+'/')).map(view)}),runTransaction:async(_db,fn)=>{const changes=[];let wrote=false; const tx={get:async r=>{assert.equal(wrote,false,'all reads precede writes');return view(r.path);},set:(r,v)=>{wrote=true;changes.push([r.path,structuredClone(v)]);},delete:r=>{wrote=true;changes.push([r.path,null]);}};const result=await fn(tx);if(fail)throw Error('Network failed');for(const[p,v]of changes){if(v===null)docs.delete(p);else docs.set(p,v);}return result;}};
+  const api={serverTimestamp:()=>({seconds:Date.now()/1000}),doc:(_db,...p)=>({path:p.join('/')}),collection:(_db,path)=>({path}),getDoc:async r=>view(r.path),getDocs:async r=>({docs:[...docs.keys()].filter(p=>p.startsWith(r.path+'/')).map(view)}),runTransaction:async(_db,fn)=>{const before=beforeTransaction;beforeTransaction=null;before?.(docs);const changes=[];let wrote=false; const tx={get:async r=>{assert.equal(wrote,false,'all reads precede writes');return view(r.path);},set:(r,v)=>{wrote=true;changes.push([r.path,structuredClone(v)]);},delete:r=>{wrote=true;changes.push([r.path,null]);}};const result=await fn(tx);if(fail)throw Error('Network failed');for(const[p,v]of changes){if(v===null)docs.delete(p);else docs.set(p,v);}return result;}};
   const load=sourceLoader({'firebase/firestore/lite':api,'./taylor-services-client':{taylorOwnerSession:async()=>session}});
-  return {client:load('src/owner/inventory-client.ts'),docs,fail:()=>fail=true,changeSession:()=>changed=true};
+  return {client:load('src/owner/inventory-client.ts'),docs,fail:()=>fail=true,changeSession:()=>changed=true,beforeTransaction:fn=>beforeTransaction=fn};
 }
 
 test('cloud inventory saves and reserves both scanner forms atomically; duplicate barcode cannot be used',async()=>{
@@ -218,4 +218,28 @@ test('stale generated candidate is rechecked at save; unrelated stock edits neve
  await assert.rejects(c.client.saveInventoryItem(null,edit({barcode:candidate}),'',{barcodeAssignment:'generated'}),/60-day/);
  await c.client.saveInventoryItem(changed,edit({barcode:'OTHER-CODE',quantity:2}));
  assert.deepEqual(c.docs.get(key).releasedAt,stamp);
+});
+
+test('deletion blocks references in active, archived, and Trash records without corrupting choices',async()=>{
+ for(const state of [{},{archived:true},{trashed:true}]) {
+ const c=cloud();let settings=await c.client.saveInventoryCategories(model.emptyInventoryCategories(),[{id:categoryId,name:'Fur'}],{itemTypes:[{id,name:'Packaging'}],units:['rolls']});let saved=await c.client.saveInventoryItem(null,edit({categoryId,kind:id,unit:'rolls',...state}));if(state.trashed)saved=await c.client.trashInventoryItem(saved);
+ for(const args of [[[],{}],[settings.categories,{itemTypes:[]}],[settings.categories,{units:[]}]])await assert.rejects(c.client.saveInventoryCategories(settings,...args),/used by 1 inventory item.*Red fur/);
+ assert.equal((await c.client.readInventory()).categories.categories.length,1);assert.equal((await c.client.readInventory()).items[0].categoryId,categoryId);
+ }
+});
+test('unused choices are durably deleted after explicit reassignment despite stock-only settings revision drift',async()=>{
+ const c=cloud();let settings=await c.client.saveInventoryCategories(model.emptyInventoryCategories(),[{id:categoryId,name:'Fur'}],{itemTypes:[{id,name:'Packaging'}],units:['rolls']});const saved=await c.client.saveInventoryItem(null,edit({categoryId,kind:id,unit:'rolls'}));await c.client.saveInventoryItem(saved,edit({categoryId:'',kind:'material',unit:'yards'}));
+ settings=await c.client.saveInventoryCategories(settings,[],{itemTypes:[],units:[]});assert.deepEqual(settings.categories,[]);assert.deepEqual((await c.client.readInventory()).categories,settings);
+});
+test('settings reference guard advances atomically with item saves, never on failed saves',async()=>{
+ const c=cloud();const first=await c.client.saveInventoryItem(null,edit());const before=(await c.client.readInventory()).categories.revision;assert.equal(before,1);c.fail();await assert.rejects(c.client.saveInventoryItem(first,edit({quantity:99})),/Network/);assert.equal((await c.client.readInventory()).categories.revision,before);
+});
+test('a concurrent reference writer invalidates deletion guard rather than leaving dangling choices',async()=>{
+ const c=cloud();const settings=await c.client.saveInventoryCategories(model.emptyInventoryCategories(),[{id:categoryId,name:'Fur'}]);const saved=await c.client.saveInventoryItem(null,edit());
+ c.beforeTransaction(docs=>{const live=docs.get('ownerInventorySettings/categories');live.revision++;docs.get(`ownerInventory/${saved.id}`).categoryId=categoryId;});
+ await assert.rejects(c.client.saveInventoryCategories(settings,[]),/changed while checking/);const after=await c.client.readInventory();assert.equal(after.categories.categories[0].id,categoryId);assert.equal(after.items[0].categoryId,categoryId);
+});
+test('a stale form cannot recreate a deleted unit; existing legacy item units remain editable',async()=>{
+ const c=cloud();const settings=await c.client.saveInventoryCategories(model.emptyInventoryCategories(),[],{units:['rolls']});await c.client.saveInventoryCategories(settings,[],{units:[]});await assert.rejects(c.client.saveInventoryItem(null,edit({unit:'rolls'})),/unit is no longer available/);
+ const saved=await c.client.saveInventoryItem(null,edit());c.docs.get(`ownerInventory/${saved.id}`).unit='legacy measure';const legacy=(await c.client.readInventory()).items[0];const renamed=await c.client.saveInventoryItem(legacy,{...legacy,name:'Legacy preserved'});assert.equal(renamed.unit,'legacy measure');
 });

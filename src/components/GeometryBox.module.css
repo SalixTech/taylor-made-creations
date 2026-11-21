@@ -16,3 +16,13 @@
 .compensatedContents > :first-child > :not([data-owner-compensated-text]):not([data-owner-compensated-inline]) { translate:var(--box-content-offset-x,0px) var(--box-content-offset-y,0px); }
 
 .compensatedContents > :first-child > [data-owner-compensated-inline] { position:relative; left:calc(var(--box-inline-left,0px) + var(--box-content-offset-x,0px))!important; top:calc(var(--box-inline-top,0px) + var(--box-content-offset-y,0px))!important; }
+
+/* Only a button in this frame's normal flow takes its dimensions. A button
+   moved to a separate canvas slot keeps that slot's own placement. */
+.buttonContents > :global(a[data-site-sized-button]),
+.buttonContents > div > :global(a[data-site-sized-button]) {
+  width:100%;
+  min-height:var(--site-button-frame-height);
+  text-align:center;
+  overflow-wrap:anywhere;
+}

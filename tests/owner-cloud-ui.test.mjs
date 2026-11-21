@@ -17,7 +17,10 @@ function setupPortal() {
   const base = storage.createOwnerStore({ read: async () => structuredClone(raw), update: async fn => { raw = structuredClone(fn(raw)); return structuredClone(raw); } });
   const store = {
     ...base,
-    async saveDraft(...args) { saves++; if (saveGate) await saveGate.promise; if (failSave) throw new Error('Network unavailable; your changes were not saved.'); return base.saveDraft(...args); },
+    // This source-hook fixture models the acknowledged workspace only. The
+    // explicit version request is checked here; real atomic named persistence
+    // is exercised by fox5-drafts-firestore.integration.mjs.
+    async saveDraft(value, revision, version) { saves++; assert.ok(version?.id && version?.name); if (saveGate) await saveGate.promise; if (failSave) throw new Error('Network unavailable; your changes were not saved.'); return base.saveDraft(value, revision); },
     async publishLocal(...args) { previews++; if (failPreview) throw new Error('Private snapshot could not be saved.'); return base.publishLocal(...args); },
   };
   const Portal = h.load('src/owner/OwnerPortal.tsx').default;
@@ -52,9 +55,10 @@ test('editor requires injected store, never saves baseline on open, and accurate
   const t = await openPortal();
   assert.equal(t.raw, null);
   assert.equal(t.button('Save').props.disabled, false);
-  assert.match(content(t.h.tree), /PRIVATE CLOUD DRAFT/);
+  assert.doesNotMatch(content(t.h.tree), /PRIVATE CLOUD DRAFT/);
+  assert.match(content(t.h.tree), /Drafts stay private/);
   assert.match(content(t.h.tree), /No cloud draft saved yet/);
-  assert.match(content(t.h.tree), /owner@example.test/);
+  assert.doesNotMatch(content(t.h.tree), /owner@example.test/);
   for (const file of ['OwnerPortal.tsx', 'OwnerSitePreview.tsx', 'OwnerWorkspaceEntry.tsx', 'OwnerPreviewEntry.tsx']) {
     const source = readFileSync(new URL(`../src/owner/${file}`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /createBrowserOwnerStore|indexedDB|localStorage/);
@@ -265,4 +269,34 @@ test('upload busy locks save, navigation and signout before handlers can change 
   for (const label of ['Save', 'Preview', 'Sign out', 'Prices & options']) assert.equal((t.button(label).props.disabled ?? t.button(label).props['aria-disabled']), true, label);
   t.button('Prices & options').props.onClick(); t.render(); assert.equal(t.dialog(), undefined); assert.equal(t.field('Main heading').props.value, 'UPLOADING WORK'); assert.equal(t.saves, 0); assert.equal(t.signsOut, 0);
   provider.props.onBusyChange(false); t.render(); assert.equal(t.button('Save').props.disabled, false); t.h.unmount();
+});
+
+
+test('Cloud Sync displays the saved instant in the local zone with date-sensitive daylight/standard abbreviations', async () => {
+ const previous=process.env.TZ;
+ try {
+  for (const [zone,instant,expected] of [
+   ['America/New_York','2026-07-15T16:14:00.000Z','Jul 15, 2026, 12:14 PM EDT'],
+   ['America/New_York','2026-01-15T17:14:00.000Z','Jan 15, 2026, 12:14 PM EST'],
+   ['America/New_York','2026-11-01T05:30:00.000Z','Nov 1, 2026, 1:30 AM EDT'],
+   ['America/New_York','2026-11-01T06:30:00.000Z','Nov 1, 2026, 1:30 AM EST'],
+   ['America/Chicago','2026-07-15T16:14:00.000Z','Jul 15, 2026, 11:14 AM CDT'],
+   ['America/Chicago','2026-01-15T17:14:00.000Z','Jan 15, 2026, 11:14 AM CST'],
+   ['America/Los_Angeles','2026-07-16T01:14:00.000Z','Jul 15, 2026, 6:14 PM PDT'],
+  ]) {
+   process.env.TZ=zone;
+   const t=setupPortal();
+   try {
+    t.raw={...t.defaults.createInitialOwnerWorkspace(),revision:1,updatedAt:instant};
+    t.render(); await flush(); t.render();
+    const saved=t.h.find(node=>node.props.className==='saveState');
+    assert.match(content(saved),new RegExp(`Website draft saved · ${expected}`),`${zone} at ${instant}`);
+    const sync=nodes(saved).find(node=>node.type==='button');
+    assert.equal(sync.props['aria-label'],'Sync cloud draft');
+    assert.equal(sync.props.title,'Check your saved cloud draft. Unsaved edits are protected.');
+    assert.equal(t.raw.updatedAt,instant,'formatting does not alter the persisted timestamp');
+    assert.equal(t.saves,0);
+   } finally { t.h.unmount(); }
+  }
+ } finally { if(previous===undefined)delete process.env.TZ;else process.env.TZ=previous; }
 });

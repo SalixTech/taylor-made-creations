@@ -1,0 +1,29 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {sourceLoader} from './scout-source-loader.mjs';
+const id='11111111-1111-4111-8111-111111111111',now='2026-10-31T06:00:00.000Z';
+const file={id,schemaVersion:1,revision:2,kind:'photo',name:'Beta photo',parentId:'root',contentType:'image/webp',bytes:3,width:1,height:1,status:'ready',trashedAt:null,createdAt:now,updatedAt:now};
+function fixture(change){const calls=[];let active=true;const session={auth:{app:{}},assertCurrent(){if(!active)throw Error('Session changed')}};const api=sourceLoader({'./website-workspace-config':{WEBSITE_WORKSPACE:'beta'},'firebase/functions':{getFunctions:()=>({}),httpsCallable:(_f,name)=>async input=>{assert.equal(name,'tmcOwnerWebsiteAssets');calls.push(input);const data=input.action==='metadata'?{file,generation:'123'}:{fileId:id,revision:2,generation:'123',contentType:'image/webp',totalBytes:3,offset:0,base64:'AQID',nextOffset:null};return {data:change?await change(input,data,()=>{active=false}):data}}}})('src/owner/beta-assets-client.ts');return {api,calls,session};}
+test('beta bytes use authenticated bounded callable, pin revision/generation, and never return token URLs',async()=>{const f=fixture();const blob=await f.api.readBetaWebsiteAsset(id,f.session);assert.deepEqual([...new Uint8Array(await blob.arrayBuffer())],[1,2,3]);assert.equal(blob.type,'image/webp');assert.deepEqual(f.calls,[{workspace:'beta',action:'metadata',fileId:id},{workspace:'beta',action:'readChunk',fileId:id,offset:0,generation:'123',revision:2}]);assert.doesNotMatch(JSON.stringify(f.calls),/token|https:\/\//);});
+test('beta chunk integrity rejects stale generation, wrong identity, type, bytecount, continuation and malformed base64',async()=>{for(const patch of [{generation:'124'},{revision:3},{fileId:'22222222-2222-4222-8222-222222222222'},{contentType:'text/html'},{totalBytes:4},{offset:1},{nextOffset:3},{base64:'!!!!'},{base64:''}]){const f=fixture((input,data)=>input.action==='readChunk'?{...data,...patch}:data);await assert.rejects(()=>f.api.readBetaWebsiteAsset(id,f.session),undefined,JSON.stringify(patch));}});
+test('revoked/changed session and cancellation discard late bytes without a retry',async()=>{for(const abort of [false,true]){const controller=new AbortController(),f=fixture((input,data,signOut)=>{if(input.action==='readChunk'){if(abort)controller.abort();else signOut()}return data});await assert.rejects(()=>f.api.readBetaWebsiteAsset(id,f.session,controller.signal));assert.equal(f.calls.length,2);}});
+test('asset metadata excludes legacy private files, trash, uploading, and oversized beta assets',async()=>{for(const patch of [{kind:'file',contentType:'application/octet-stream',width:0,height:0},{trashedAt:now},{status:'uploading'},{bytes:12*1024*1024+1}]){const f=fixture((input,data)=>input.action==='metadata'?{...data,file:{...file,...patch}}:data);await assert.rejects(()=>f.api.readBetaWebsiteAsset(id,f.session));assert.equal(f.calls.length,1);}});
+test('source parsing accepts only exact kind-specific local paths',()=>{const f=fixture();assert.equal(f.api.betaAssetSourceId('/api/cloud-media/'+id,'photo'),id);for(const source of ['https://example.test/api/cloud-media/'+id,'/api/cloud-media/'+id+'?workspace=main','/api/cloud-documents/'+id,'/api/cloud-media/../x'])assert.throws(()=>f.api.betaAssetSourceId(source,'photo'));});
+test('multi-chunk reads stay within one MiB and pin the exact revision throughout',async()=>{
+ const size=1024*1024, largeFile={...file,bytes:size+3};
+ const f=fixture((input,data)=>input.action==='metadata'?{...data,file:largeFile}:{...data,totalBytes:size+3,offset:input.offset,base64:input.offset===0?Buffer.alloc(size,1).toString('base64'):'AgME',nextOffset:input.offset===0?size:null});
+ const blob=await f.api.readBetaWebsiteAsset(id,f.session);assert.equal(blob.size,size+3);assert.deepEqual(f.calls.filter(x=>x.action==='readChunk').map(x=>[x.offset,x.generation,x.revision]),[[0,'123',2],[size,'123',2]]);assert.deepEqual([...new Uint8Array(await blob.slice(size).arrayBuffer())],[2,3,4]);
+});
+test('main gateway helper cannot copy/import or read photo bytes; only explicitly approved document kind passes',async()=>{
+ const calls=[],session={auth:{app:{}},assertCurrent(){}};let kind='photo';
+ const api=sourceLoader({'./website-workspace-config':{WEBSITE_WORKSPACE:'main'},'firebase/functions':{getFunctions:()=>({}),httpsCallable:()=>async input=>{calls.push(input);return {data:input.action==='metadata'?{file:{...file,kind,contentType:kind==='document'?'application/pdf':'image/webp',width:kind==='document'?0:1,height:kind==='document'?0:1},generation:'123'}:{fileId:id,revision:2,generation:'123',contentType:'application/pdf',totalBytes:3,offset:0,base64:'AQID',nextOffset:null}}}}})('src/owner/beta-assets-client.ts');
+ await assert.rejects(()=>api.requestWebsiteAsset({action:'copyFromMain'},undefined,session),/unavailable/);assert.equal(calls.length,0);
+ await assert.rejects(()=>api.readBetaWebsiteAsset(id,session),/unavailable/);assert.equal(calls.length,1);
+ kind='document';assert.equal((await api.readBetaWebsiteAsset(id,session)).type,'application/pdf');assert.ok(calls.every(value=>value.workspace==='main'));
+});
+
+test('pending upload status is strict read-only and cannot confuse matching bytes with a ready receipt',async()=>{
+ const value={fileId:id,registryStatus:'uploading',objectStatus:'matching',receiptStatus:'absent'};
+ const f=fixture((input,data)=>input.action==='uploadStatus'?value:data);assert.deepEqual(await f.api.betaUploadStatus(id,f.session),value);assert.deepEqual(f.calls,[{action:'uploadStatus',fileId:id,workspace:'beta'}]);
+ for(const patch of [{fileId:'wrong'},{registryStatus:'complete'},{objectStatus:'ready'},{receiptStatus:'okay'},{url:'https://unsafe'}]){const bad=fixture(()=>({...value,...patch}));await assert.rejects(bad.api.betaUploadStatus(id,bad.session),/could not be verified/);}
+});

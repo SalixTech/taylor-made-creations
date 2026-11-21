@@ -18,7 +18,7 @@ function managerFixture(items = []) {
   const button = label => h.find(n => n.type === 'button' && content(n) === label);
   const field = label => h.find(n => typeof n.type === 'function' && n.type.name === 'Field' && n.props.label === label);
   const cards = () => h.all(n => typeof n.type === 'function' && n.type.name === 'Card');
-  const edit = id => { const card = cards().find(n => n.props.title === draft.premades.find(i => i.id === id).name); nodes(card.props.action).find(n => n.type === 'button' && content(n) === 'Edit listing').props.onClick(); render(); };
+  const edit = id => { const card = cards().find(n => n.props.title === draft.premades.find(i => i.id === id).name); nodes(card.props.action).find(n => n.type === 'button' && n.props.title === 'Edit listing').props.onClick(); render(); };
   const details = () => h.find(n => n.type === 'details');
   render(); return { h, props, render, button, field, edit, cards, details, saves, get draft() { return draft; }, set gate(v) { gate = v; }, set saveResult(v) { saveResult = v; } };
 }
@@ -37,7 +37,7 @@ test('tag text keeps trailing commas while typing, stores normalized individual 
 
 test('draft cards start out of the way, add opens editor, acknowledged save collapses it, and renamed draft reopens by id', async () => {
   const t = managerFixture([item({ isDraft: true, visible: false })]); assert.equal(t.details().props.open, false);
-  t.button('＋ Add a premade').props.onClick(); t.render(); assert.equal(t.details().props.open, true);
+  t.button('Add Premade').props.onClick(); t.render(); t.field('Listing name').props.onChange('New premade'); t.render(); nodes(t.h.find(n=>n.type?.name==='Dialog').props.actions).find(n=>content(n)==='Add private draft').props.onClick(); t.render(); assert.equal(t.details().props.open, true);
   const id = t.draft.premades[0].id; assert.equal(t.draft.premades[0].isDraft, true);
   t.field('Listing name').props.onChange('Fox draft'); t.render();
   assert.equal(t.h.find(n => typeof n.type === 'function' && n.props.label === 'Show this listing'), undefined);
@@ -127,7 +127,7 @@ test('the gallery photo dialog has its requested singular Save Photo action', ()
   const props = { content: draft, onEdit(change) { change(draft); }, onRemove() {}, onSavePhotos() { saves++; } };
   const render = () => { h.render(Manager, props); for (const node of h.refs.values()) node.scrollIntoView = () => {}; };
   const photoNodes = () => { const list = h.find(n => n.type?.name === 'OwnerPriceReorderList'); return list.props.items.flatMap(photo => nodes(list.props.children(photo, null))); };
-  render(); photoNodes().find(n => n.type === 'button' && content(n) === 'Edit photo').props.onClick(); render();
+  render(); photoNodes().find(n => n.type === 'button' && n.props['aria-label']?.startsWith('Edit photo:')).props.onClick(); render();
   nodes(h.find(n => n.type?.name === 'Dialog').props.actions).find(n => n.type === 'button' && content(n) === 'Save Photo').props.onClick(); assert.equal(saves, 1);
   assert.ok(h.find(n => n.type === 'button' && content(n) === 'Save photos')); h.unmount();
 });

@@ -11,13 +11,13 @@ function fixture(entries=[]) {
   const down=(x=340,y=640,id=1)=>button().props.onPointerDown({button:0,pointerId:id,clientX:x,clientY:y,currentTarget:{getBoundingClientRect:()=>({left:330,top:630})}});
   render();render();return {h,values,theme,render,fire,down,button};
 }
-test('legacy scoped choices survive until explicit shared choice; storage and blocked storage are shared',()=>{
+test('legacy scoped choices survive and new preferences stay per-area with optional storage',()=>{
   const t=fixture([['tmc-owner-color-mode','light'],['tmc-public-color-mode','dark']]);
   assert.equal(t.theme.readColorMode('owner'),'light');assert.equal(t.theme.readColorMode('public'),'dark');
-  t.theme.setColorMode('owner','light');assert.equal(t.values.get('tmc-color-mode'),'light');assert.equal(t.theme.readColorMode('public'),'light');
-  t.values.set('tmc-color-mode','dark');t.fire('storage',{key:'tmc-color-mode'});t.render();assert.equal(t.button().props['aria-pressed'],true);
+  t.theme.setColorMode('owner','light');assert.equal(JSON.parse(t.values.get('tmc-display-areas-v1')).owner,'light');assert.equal(t.theme.readColorMode('public'),'dark');
+  t.values.set('tmc-display-areas-v1',JSON.stringify({owner:'dark'}));t.fire('storage',{key:'tmc-display-areas-v1'});t.render();assert.equal(t.button().props['aria-pressed'],true);
   t.h.window.localStorage={getItem(){throw Error();},setItem(){throw Error();}};
-  t.theme.setColorMode('public','light');assert.equal(t.theme.readColorMode('owner'),'light');t.h.unmount();
+  t.theme.setColorMode('public','light');assert.equal(t.theme.readColorMode('owner'),'dark');t.h.unmount();
 });
 test('click toggles, touch/pointer drag moves without toggling and persists globally',()=>{
  const t=fixture();assert.equal(t.h.all(n=>n.type==='circle').length,0);t.down();t.fire('pointermove',{pointerId:1,clientX:342,clientY:642});t.fire('pointerup',{pointerId:1});
