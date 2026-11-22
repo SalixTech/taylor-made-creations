@@ -16,7 +16,7 @@ import type {CapturedCanvasFrame} from './canvas-placement-geometry';
 type CanvasMoveHooks={onCanvasMoveStart?:()=>void;onCanvasMovePreview?:(point:{x:number;y:number},snapshot?:CapturedCanvasFrame)=>void;onCanvasMoveCommit?:(snapshot:CapturedCanvasFrame,point:{x:number;y:number},next:{box:ElementBox;placement?:CanvasPlacement})=>boolean|void;onCanvasMoveCancel?:()=>void};
 type PlacementProps = { layoutIdentity?:{id:string;scope:"page"|"chrome"}; placement?:CanvasPlacement; resolvePlacementDestination?:(canvas:HTMLDivElement)=>HTMLElement|null; onPlacementChange?:(placement:CanvasPlacement,box:ElementBox)=>void; onResetPlacement?:()=>void };
 type Kind = "move" | "rotate" | BoxHandle;
-type Gesture = { pointer: number; x: number; y: number; kind: Kind; original: ElementBox; current: ElementBox; bounds: CanvasBoxBounds; lastX: number; lastY: number; button: HTMLButtonElement; alignments: AlignmentRect[]; preserveContents:boolean };
+type Gesture = { pointer: number; x: number; y: number; kind: Kind; original: ElementBox; current: ElementBox; bounds: CanvasBoxBounds; lastX: number; lastY: number; button: HTMLElement; alignments: AlignmentRect[]; preserveContents:boolean };
 const handles: BoxHandle[] = ["se", "nw", "n", "ne", "e", "s", "sw", "w"];
 const handleNames = {nw:"top left corner",n:"top edge",ne:"top right corner",e:"right edge",se:"bottom right corner",s:"bottom edge",sw:"bottom left corner",w:"left edge"};
 function releaseGesture(ref: { current: Gesture | null }) {
@@ -94,6 +94,41 @@ export function OwnerCanvasBoxTools({ constrainTextWidth=false,showResizeHandles
     window.addEventListener("resize", resize); window.addEventListener("scroll", resize, { capture: true }); window.addEventListener("blur", cancel);
     return () => { document.removeEventListener("visibilitychange",hidden); active = false; markCanvasOutline(node, false); observer?.disconnect(); mutations?.disconnect(); window.removeEventListener("resize", resize); window.removeEventListener("scroll", resize, { capture: true }); window.removeEventListener("blur", cancel); cancel(); };
   }, [canvasRef, target, occurrence, layoutIdentity, value, disabled, initialAspectLocked, renderVersion, placement, resolvePlacementDestination, showResizeHandles]);
+  // The selected box body is a move handle while Shove is active. Keep the
+  // listeners on the real frame so Alt-click can still reach asset selection.
+  const bodyDrag=useRef<{start:(e:globalThis.PointerEvent,node:HTMLElement)=>void;move:(e:globalThis.PointerEvent)=>void;finish:(commit:boolean,id:number)=>void}|null>(null);
+  useLayoutEffect(()=>{
+    bodyDrag.current=bounds&&toolbarRef.current?{start:(e,node)=>start(e,"move",node),move,finish}:null;
+  });
+  const dragBodyEnabled=!!onCanvasMoveStart&&!disabled;
+  useLayoutEffect(()=>{
+    if(!dragBodyEnabled)return;
+    const canvas=canvasRef.current,frame=canvas&&findCanvasBoxTarget(canvas,target,occurrence,layoutIdentity);
+    if(!canvas||!frame)return;
+    let pointer:number|null=null,blockClick=false;
+    const down=(e:globalThis.PointerEvent)=>{
+      if(e.button!==0||e.altKey||!bodyDrag.current||!(e.target instanceof Element)||e.target.closest("input,textarea,select,[contenteditable=true],[data-owner-canvas-controls]"))return;
+      blockClick=false;bodyDrag.current.start(e,frame);
+      if(gesture.current?.pointer===e.pointerId)pointer=e.pointerId;
+    };
+    const drag=(e:globalThis.PointerEvent)=>{if(pointer===e.pointerId)bodyDrag.current?.move(e);};
+    const end=(e:globalThis.PointerEvent)=>{
+      if(pointer!==e.pointerId)return;
+      pointer=null;
+      const state=gesture.current;
+      blockClick=e.type==="pointerup"&&!!state&&!sameElementBox(state.original,state.current);
+      bodyDrag.current?.finish(e.type==="pointerup",e.pointerId);
+    };
+    const click=(e:globalThis.MouseEvent)=>{if(blockClick){blockClick=false;e.preventDefault();e.stopImmediatePropagation();}};
+    frame.addEventListener("pointerdown",down);frame.addEventListener("pointermove",drag);
+    for(const type of ["pointerup","pointercancel","lostpointercapture"] as const)frame.addEventListener(type,end);
+    canvas.ownerDocument.addEventListener("click",click,true);
+    return ()=>{
+      frame.removeEventListener("pointerdown",down);frame.removeEventListener("pointermove",drag);
+      for(const type of ["pointerup","pointercancel","lostpointercapture"] as const)frame.removeEventListener(type,end);
+      canvas.ownerDocument.removeEventListener("click",click,true);
+    };
+  },[dragBodyEnabled,canvasRef,target,occurrence,layoutIdentity,renderVersion]);
   if (!bounds) return unsupported ? <div data-owner-canvas-controls="true" className={styles.boxUnsupported} role="status">Canvas handles are unavailable while this box is hidden, uses a multi-line inline layout, or is inside an unsupported transform. {validElementBox(value?.box) ? "Use the content box fields, or remove the unsupported transform." : "Make the box visible and remove any unsupported transform to use handles."}</div> : null;
   if (bounds.materializationError) return <div className={styles.boxUnsupported} data-owner-canvas-controls="true" role="status">{bounds.materializationError}</div>;
   const chart = placement ? placementControlChart(placement,value?.box) : null;
@@ -135,11 +170,11 @@ export function OwnerCanvasBoxTools({ constrainTextWidth=false,showResizeHandles
     else if (!commit) setNotice("Box adjustment canceled.");
     else if (Math.hypot(state.x - state.lastX, state.y - state.lastY) >= 2) setNotice("No box change applied. Check the position fields or try the gesture again; positions are not contained to the section.");
   }
-  function start(event: PointerEvent<HTMLButtonElement>, kind: Kind) {
+  function start(event: PointerEvent<HTMLButtonElement>|globalThis.PointerEvent, kind: Kind, handle=event.currentTarget as HTMLElement) {
     event.preventDefault(); event.stopPropagation();
     if (disabled || event.button !== 0 || event.isPrimary === false || gesture.current || !bounds || ![event.clientX, event.clientY].every(Number.isFinite)) return;
-    event.currentTarget.focus({ preventScroll: true });
-    try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { setNotice("Use the arrow keys or geometry fields to adjust this box."); return; }
+    handle.focus({ preventScroll: true });
+    try { handle.setPointerCapture?.(event.pointerId); } catch { setNotice("Use the arrow keys or geometry fields to adjust this box."); return; }
     const canvas=canvasRef.current, selected=canvas&&findCanvasBoxTarget(canvas,target,occurrence,layoutIdentity);
     const alignments:AlignmentRect[]=[];
     if(canvas&&selected){
@@ -148,9 +183,9 @@ export function OwnerCanvasBoxTools({ constrainTextWidth=false,showResizeHandles
         const rect=candidate.getBoundingClientRect();alignments.push({left:rect.left,top:rect.top,width:rect.width,height:rect.height});}
     }
     if(kind==="move")moveHooks.current.onCanvasMoveStart?.();
-    gesture.current = { preserveContents:hasContents&&!selectBoxContents, alignments, pointer:event.pointerId,x:event.clientX,y:event.clientY,kind,original:box,current:box,bounds,lastX:event.clientX,lastY:event.clientY,button:event.currentTarget };
+    gesture.current = { preserveContents:hasContents&&!selectBoxContents, alignments, pointer:event.pointerId,x:event.clientX,y:event.clientY,kind,original:box,current:box,bounds,lastX:event.clientX,lastY:event.clientY,button:handle };
   }
-  function move(event: PointerEvent<HTMLButtonElement>) {
+  function move(event: PointerEvent<HTMLButtonElement>|globalThis.PointerEvent) {
     const state = gesture.current; if (!state || state.pointer !== event.pointerId) return;
     event.preventDefault(); event.stopPropagation();
     if (disabled) { finish(false); return; }

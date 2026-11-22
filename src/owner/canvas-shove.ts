@@ -127,9 +127,12 @@ export function shoveNativeRow(canvas:HTMLElement,content:OwnerContent,pageId:st
  const m=snapshot.screenMatrix,rect={left:m.e,right:m.e+m.a*snapshot.widthPx,top:m.f,bottom:m.f+m.d*snapshot.heightPx};
  const map=resolveCanvasLayout(content,page,mobile),shell=page.builtinKey==='home'?null:`canvas:layout.page:${page.id}:shell`;
  const sourceParent=map[sourceId]?.parentId;
+ const frames=Array.from(canvas.querySelectorAll<HTMLElement>('[data-owner-layout-scope="page"][data-owner-layout-id]'));
+ const sourceFrame=frames.find(el=>el.dataset.ownerLayoutId===sourceId);
  const nodes=getCanvasNodes(content,page),byId=new Map(nodes.map(n=>[n.id,n]));
- const candidates=Array.from(canvas.querySelectorAll<HTMLElement>('[data-owner-layout-scope="page"][data-owner-layout-id]')).flatMap(el=>{
+ const candidates=frames.flatMap(el=>{
   const id=el.dataset.ownerLayoutId!,entry=map[id],node=byId.get(id);
+  if(sourceFrame&&(el.contains(sourceFrame)||sourceFrame.contains(el)))return [];
   if(id===sourceId||id===shell||!node?.movable||!entry||entry.removed||entry.placement||entry.flowAttachment||(entry.parentId!==sourceParent&&!(sourceParent==null&&entry.parentId===shell)))return [];
   if(!node.styleTarget.startsWith('canvas:')&&!node.styleTarget.startsWith('block:'))return [];
   const r=el.getBoundingClientRect();

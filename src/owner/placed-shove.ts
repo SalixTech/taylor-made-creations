@@ -12,13 +12,16 @@ function bounds(p:CanvasPlacement){
 
 /** Move overlapping siblings in their common parent's coordinates. Cascading
  * contact follows only displaced boxes, so unrelated columns stay put. */
-export function shovePlacedSiblings(content:OwnerContent,page:OwnerPage,mobile:boolean,id:string,direction:1|-1|0,half?:1|-1):ShoveShift[]{
- const map=resolveCanvasLayout(content,page,mobile),root=map[id];
+export function shovePlacedSiblings(content:OwnerContent,page:OwnerPage,mobile:boolean,id:string,direction:1|-1|0,half?:1|-1,footprint?:{parentId:string|null;placement:CanvasPlacement}):ShoveShift[]{
+ const map=resolveCanvasLayout(content,page,mobile),root=footprint??map[id];
  if(!root?.placement)return [];
  if(direction===0)return [...shovePlacedSiblings(content,page,mobile,id,-1,-1),...shovePlacedSiblings(content,page,mobile,id,1,1)];
  const area=bounds(root.placement),frontier=[area],shifts:ShoveShift[]=[];
  const middle=(area.top+area.bottom)/2;
- const siblings=Object.entries(map).filter(([key,e])=>key!==id&&!e.removed&&e.parentId===root.parentId&&e.placement)
+ const relatives=new Set<string>([id]);
+ for(let parent=map[id]?.parentId;parent;parent=map[parent]?.parentId)relatives.add(parent);
+ const belongsToSource=(key:string)=>{for(let p=map[key]?.parentId;p;p=map[p]?.parentId)if(p===id)return true;return false;};
+ const siblings=Object.entries(map).filter(([key,e])=>!relatives.has(key)&&!belongsToSource(key)&&!e.removed&&e.parentId===root.parentId&&e.placement)
   .map(([key,e])=>({id:key,placement:e.placement!,rect:bounds(e.placement!)}))
   .sort((a,b)=>direction===1?a.rect.top-b.rect.top:b.rect.bottom-a.rect.bottom);
  for(const item of siblings){

@@ -63,6 +63,7 @@ type Props = {
   frameClipboard?:FrameClipboardSessionRef;
   clipboardScopeKey?:string;
   assetLibraryKey?:string;
+  shoveMemory?: {current:boolean};
   deviceMemory?: { current: "desktop"|"mobile" };
   draftNameControl?:ReactNode;
   content: OwnerContent;
@@ -98,7 +99,7 @@ const selectionLabels: Record<string, string> = { site: "Header & footer", desig
 function move<T extends { id: string }>(items: T[], id: string, direction: -1 | 1) { const from = items.findIndex(item => item.id === id); const to = from + direction; if (from >= 0 && to >= 0 && to < items.length) [items[from], items[to]] = [items[to], items[from]]; }
 
 /** The public renderer IS the canvas. Only the selected piece gets editing controls. */
-export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboardScopeKey,assetLibraryKey,deviceMemory,workspaceMode=false, mainCommissionStatus, draftNameControl, content:sourceContent, page:sourcePage, onEdit:onContentEdit, onPageChange, onManagePages, onAddPage, onEditCommissionForm, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange, onSave, saveBusy = false, draftSaveStatus, onPopOut, onRequestDiscard, onUndo, onRedo, canUndo = false, canRedo = false }: Props) {
+export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboardScopeKey,assetLibraryKey,deviceMemory,shoveMemory,workspaceMode=false, mainCommissionStatus, draftNameControl, content:sourceContent, page:sourcePage, onEdit:onContentEdit, onPageChange, onManagePages, onAddPage, onEditCommissionForm, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange, onSave, saveBusy = false, draftSaveStatus, onPopOut, onRequestDiscard, onUndo, onRedo, canUndo = false, canRedo = false }: Props) {
   const panelId = useId();
   const builderRef=useRef<HTMLElement>(null),toolbarRef=useRef<HTMLDivElement>(null);
   const [priceColors,setPriceColors]=useState<{source:OwnerContent;pageId:string;mobile:boolean;session:string|undefined;color:string}|null>(null);
@@ -166,7 +167,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [pricesOpen,setPricesOpen]=useState(false);
   const [announcement, setAnnouncement] = useState("");
-  const [shove,setShove]=useState(false),[shoveNotice,setShoveNotice]=useState("");
+  const [shove,setShove]=useState(shoveMemory?.current??false),[shoveNotice,setShoveNotice]=useState("");
   const shoveGesture=useRef<{result:ReturnType<typeof captureCanvasShove>;source:OwnerContent;pageId:string;mobile:boolean;session:string|undefined;id:string;scope:"page"|"chrome"}|null>(null);
   const shoveEnabled=useRef(shove);shoveEnabled.current=shove;
   const [textWidthWarning,setTextWidthWarning]=useState("");
@@ -176,6 +177,16 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   if(frameClipboard.current&&frameClipboard.current.scopeKey!==clipboardScopeKey)frameClipboard.current=null;
   const [openAssetLibraryKey,setOpenAssetLibraryKey]=useState<string|null>(null);
   const assetLibraryOpen=!!assetLibraryKey&&openAssetLibraryKey===assetLibraryKey;
+  const shelfRef=useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    if(!assetLibraryOpen||browsing)return;
+    const outside=(event:globalThis.PointerEvent)=>{if(shelfRef.current&&!event.composedPath().includes(shelfRef.current)){
+      clipboardAbort.current?.abort();
+      setOpenAssetLibraryKey(null);
+    }};
+    document.addEventListener("pointerdown",outside,true);
+    return ()=>document.removeEventListener("pointerdown",outside,true);
+  },[assetLibraryOpen,browsing]);
   const [assetName,setAssetName]=useState("");
   const [editingAsset,setEditingAsset]=useState<BuilderAsset|null>(null);
   const [variantRoot,setVariantRoot]=useState<string|null>(null);
@@ -509,19 +520,12 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     if (browsing || !(event.target instanceof HTMLElement)) return;
     // Canvas controls own Escape and arrow keys for their active gesture.
     // Do not close the inspector first and swallow their cancellation event.
-    if("key" in event&&event.key?.toLowerCase()==="a"&&(event.ctrlKey||event.metaKey)&&assetLibraryKey&&
-      !event.target.closest("input,textarea,select,[contenteditable],[role=textbox]")){
-      const layout=resolveCanvasLayout(sourceContent,sourcePage,useMobile);
-      const ids=sourcePage.blocks.map(item=>`block:${item.id}`).filter(id=>!layout[id]?.removed&&!!layoutFrame("page",id));
-      if(ids.length){event.preventDefault();event.stopPropagation();setAssetSelection({pageId:sourcePage.id,mobile:device==="mobile",ids});setInlineTarget(null);}
-      return;
-    }
     if("key" in event&&event.key==="Escape"&&assetIds?.length){event.preventDefault();event.stopPropagation();setAssetSelection(null);return;}
     if(!("key" in event)&&!event.target.closest("[data-owner-canvas-controls]")){
-      if((event.altKey||event.shiftKey)&&event.button===0&&assetLibraryKey){
+      if(event.altKey&&event.button===0&&assetLibraryKey){
         const frame=event.target.closest<HTMLElement>(assetFrameSelector);
         const id=frame?.dataset.ownerLayoutId;
-        if(id){event.preventDefault();event.stopPropagation();const base=assetIds??(!event.altKey&&selectedLayout?.scope==="page"&&selectedLayout.id.startsWith("block:")?[selectedLayout.id]:[]);setInlineTarget(null);setInspectorOpen(false);setAssetSelection({pageId:sourcePage.id,mobile:device==="mobile",ids:base.includes(id)?base.filter(item=>item!==id):[...base,id]});return;}
+        if(id){event.preventDefault();event.stopPropagation();const base=assetIds??[];setInlineTarget(null);setInspectorOpen(false);setAssetSelection({pageId:sourcePage.id,mobile:device==="mobile",ids:base.includes(id)?base.filter(item=>item!==id):[...base,id]});return;}
       }
       setAssetSelection(null);
     }
@@ -815,9 +819,9 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   function previewShove(snapshot?:CapturedCanvasFrame){
     const gesture=shoveGesture.current;if(!shove||!gesture||!snapshot)return;
     if(selectedPlacement){setShoveNotice("Release to move overlapping boxes in the opposite direction.");return;}
-    if(!gesture.result.ok){setShoveNotice(gesture.result.notice);return;}
+    if(!gesture.result.ok){setShoveNotice("Release over a neighboring box to make room.");return;}
     const result=planCanvasShove(gesture.result.value,snapshot);
-    setShoveNotice(result.ok?"Shove: release to place this box and make room below.":result.notice);
+    setShoveNotice(result.ok?"Shove: release to place this box and make room below.":"Release over a neighboring box to make room.");
   }
   function commitShove(snapshot:CapturedCanvasFrame,next:{box:ElementBox;placement?:CanvasPlacement}){
     if(!shoveEnabled.current)return false;
@@ -832,14 +836,14 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       onContentEdit(draft=>{if(JSON.stringify(draft)===JSON.stringify(gesture.source)){rememberShifts(target,useMobile,gesture.id,shifts);Object.assign(draft,candidate);}});
       setShoveNotice(shifts.length?`Moved ${shifts.length} neighboring boxes ${direction===1?"down":"up"}.`:"Box moved.");return true;
     }
-    if(!gesture.result.ok){setShoveNotice("Box moved in its layout.");return false;}
     const frame=layoutFrame(gesture.scope,gesture.id),canvas=canvasRef.current;
-    if(!canvas||!frame||!canvasShoveCaptureCurrent(canvas,gesture.result.value,frame)){setShoveNotice("The page layout changed during this move. Try again.");return true;}
-    const result=planCanvasShove(gesture.result.value,snapshot);
-    if(!result.ok){setShoveNotice("Box moved in its layout.");return false;}
+    if(!canvas||!frame||gesture.scope!=="page")return false;
+    const capture=gesture.result.ok?gesture.result.value:null;
+    if(capture&&!canvasShoveCaptureCurrent(canvas,capture,frame)){setShoveNotice("The page layout changed during this move. Try again.");return true;}
+    const result=capture?planCanvasShove(capture,snapshot):null;
     const candidate=structuredClone(gesture.source);
     if(selectedPlacement){
-      const scope=gesture.scope==="chrome"?"chrome":candidate.pages.find(p=>p.id===gesture.pageId);
+      const scope=candidate.pages.find(p=>p.id===gesture.pageId);
       if(!scope||!next.placement){setShoveNotice("Shove cannot safely place this box. Nothing changed.");return true;}
       updateCanvasPlacement(candidate,scope,gesture.id,gesture.mobile,next.placement);
     }else{
@@ -850,12 +854,27 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
         else {const key=selected==="page-title"?`${page.builtinKey}.title`:boxStyleKey;if(key){draft.contentOverrides??={};draft.contentOverrides.styles??={};draft.contentOverrides.styles[key]=value;}}
       },gesture.mobile);
     }
-    if(!applyCanvasShove(candidate,gesture.result.value,result.value)){setShoveNotice("Shove could not keep this layout safe. Nothing changed.");return true;}
-    const anchor=gesture.result.value.anchors.find(a=>a.id===result.value.anchorId);
-    if(anchor&&result.value.deltaPx>0)rememberShifts(candidate.pages.find(p=>p.id===gesture.pageId)!,gesture.mobile,gesture.id,[{id:anchor.id,parentId:selectedLayoutMap[anchor.id]?.parentId??null,before:anchor.marginTop,after:result.value.marginTopPx,margin:true}]);
+    const shifts:ShoveShift[]=[];
+    if(capture&&result?.ok){
+      if(!applyCanvasShove(candidate,capture,result.value))return false;
+      const anchor=capture.anchors.find(a=>a.id===result.value.anchorId);
+      if(anchor&&result.value.deltaPx>0)shifts.push({id:anchor.id,parentId:selectedLayoutMap[anchor.id]?.parentId??null,before:anchor.marginTop,after:result.value.marginTopPx,margin:true});
+    }
+    const targetPage=candidate.pages.find(p=>p.id===gesture.pageId)!;
+    const direction=snapshot.screenMatrix.f>=frame.getBoundingClientRect().top?-1:1;
+    const parentId=selectedLayoutMap[gesture.id]?.parentId??null;
+    for(const parent of new Set([parentId,null])){
+      const dest=layoutDestination("page",parent);
+      const placement=dest&&placeCapturedCanvasFrame(snapshot,dest);
+      if(placement)shifts.push(...shovePlacedSiblings(candidate,targetPage,useMobile,gesture.id,direction,undefined,{placement,parentId:parent}));
+    }
+    if(!result?.ok){
+      shifts.push(...shoveNativeRow(canvas,candidate,gesture.pageId,useMobile,gesture.id,snapshot,direction));
+      if(!shifts.length){setShoveNotice("Box moved. No neighboring box overlapped the drop.");return false;}
+    }
     let changed=false;
-    onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(gesture.source))return;Object.assign(draft,candidate);changed=true;});
-    setShoveNotice(changed?"Shove placed the box and made room below. Undo restores the whole move.":"The draft changed. Shove moved nothing; try again.");
+    onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(gesture.source))return;Object.assign(draft,candidate);rememberShifts(targetPage,useMobile,gesture.id,shifts);changed=true;});
+    setShoveNotice(changed?(shifts.length?"Shove moved neighboring boxes. Undo restores the whole move.":"Box moved into the available space."):"The draft changed. Shove moved nothing; try again.");
     return true;
   }
   const footerViewport=()=>[window.innerWidth??0,window.innerHeight??0,window.visualViewport?.width??0,window.visualViewport?.height??0,window.visualViewport?.scale??1];
@@ -1452,7 +1471,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     {!browsing && <OwnerHeaderEditor content={content} onEdit={onEdit} open={navigationOpen} onOpenChange={changeNavigationOpen} disabled={uploadBusy} />}
     </details>
     <div ref={toolbarRef} className={styles.textToolbarDock} data-owner-formatting-dock>
-      {!browsing&&<OwnerTextFormattingBar resizeHandles={showResizeHandles} onResizeHandlesChange={value=>{setShowResizeHandles(value);if(value)setInlineTarget(null);}} canHyperlink={selectedHyperlink?.kind==="destination"||selectedHyperlink?.kind==="inline"&&!!styleRange} shove={shove} onShoveChange={value=>{if(uploadBusy||saveBusy||browsing)return;shoveGesture.current=null;setShove(value);setShoveNotice("");}} computed={toolbarComputed} selectionStyles={selectedRichRuns.map(run=>run.style??{})} marks={textMarks} selectionKey={formattingKey} active={!!selectedText&&!!inlineTextId} selected={!!styleRange} caretActive={!!typingCaret} disabled={uploadBusy||saveBusy} fonts={sourceContent.fonts} onStyle={formatSelectedText} onReset={()=>formatSelectedText(null)} onLink={()=>openHyperlink()} onEdit={()=>{if(selectedText)setInlineTarget(selected);}}>
+      {!browsing&&<OwnerTextFormattingBar resizeHandles={showResizeHandles} onResizeHandlesChange={value=>{setShowResizeHandles(value);if(value)setInlineTarget(null);}} canHyperlink={selectedHyperlink?.kind==="destination"||selectedHyperlink?.kind==="inline"&&!!styleRange} shove={shove} onShoveChange={value=>{if(uploadBusy||saveBusy||browsing)return;shoveGesture.current=null;if(shoveMemory)shoveMemory.current=value;setShove(value);setShoveNotice("");}} computed={toolbarComputed} selectionStyles={selectedRichRuns.map(run=>run.style??{})} marks={textMarks} selectionKey={formattingKey} active={!!selectedText&&!!inlineTextId} selected={!!styleRange} caretActive={!!typingCaret} disabled={uploadBusy||saveBusy} fonts={sourceContent.fonts} onStyle={formatSelectedText} onReset={()=>formatSelectedText(null)} onLink={()=>openHyperlink()} onEdit={()=>{if(selectedText)setInlineTarget(selected);}}>
       {workspaceMode && <>
 
       <button type="button" disabled={uploadBusy||saveBusy} onClick={event=>{
@@ -1508,8 +1527,8 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       </div>
       {!workspaceMode && selected && controls && sectionPanel}
     </div>
-    {assetLibraryOpen&&!browsing&&<div role="dialog" aria-label="Assets" className={styles.assetShelf} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpenAssetLibraryKey(null);}}}><strong>Assets</strong> <button type="button" onClick={()=>setOpenAssetLibraryKey(null)}>Done</button>
-      <p>Drag Add to page onto the canvas, or click it and choose a spot. Assets are saved in this browser. On the canvas, use Ctrl+A or Cmd+A to select all added items, or hold Alt and left-click each box. Click a selected box again with Alt to remove it, then choose Save selection as asset.</p>
+    {assetLibraryOpen&&!browsing&&<div ref={shelfRef} role="dialog" aria-label="Assets" className={styles.assetShelf} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpenAssetLibraryKey(null);}}}><strong>Assets</strong> <button type="button" onClick={()=>setOpenAssetLibraryKey(null)}>Done</button>
+      <p>Hold Alt and left-click each box to select it. Alt-click again to deselect. Choose Save selection as asset. To reuse it, click Add to page and choose a spot, or drag it onto the canvas.</p>
       {pendingAsset&&<form onSubmit={event=>{event.preventDefault();saveAsset();}}><Field label="Asset name" value={assetName} onChange={value=>setAssetName(value.slice(0,80))} required/><button type="submit" disabled={!assetName.trim()}>{variantRoot?"Save as variant":"Save asset"}</button></form>}
       {editingAsset&&<div><Field label="Saved asset name" value={editingAsset.name} onChange={name=>setEditingAsset({...editingAsset,name:name.slice(0,80)})}/>
         {editingAsset.clip.blocks.map((b,index)=>Object.entries(b).filter(([key,value])=>typeof value==="string"&&["label","heading","text","body","caption","note","actionLabel","alt","href"].includes(key)).map(([key,value])=><Field key={b.id+key} label={b.type+" "+key} value={String(value)} onChange={value=>setEditingAsset(changeAssetField(editingAsset,index,key,value))}/>))}

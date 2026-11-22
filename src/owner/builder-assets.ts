@@ -76,7 +76,7 @@ export function placeAsset(content:OwnerContent,pageId:string,asset:BuilderAsset
  const clip={...groupedAssetClip(asset.clip),sourceBinding:JSON.stringify(content)};
  const rootIndex=clip.blocks.findIndex(b=>"block:"+b.id===clip.rootId);
  let index=0;
- return pasteFrameClipboard(content,pageId,clip,{newId:()=>index++===rootIndex?(existingRoot??`sa_${asset.id}_${newId().replace(/^item-/,"")}`):newId(),verifiedAssets,preserveRelativePlacement:true,reuseDesigns});
+ return pasteFrameClipboard(content,pageId,clip,{newId:()=>index++===rootIndex?(existingRoot??`sa_${asset.id}_${newId().replace(/^item-/,"").replaceAll("-","")}`):newId(),verifiedAssets,preserveRelativePlacement:true,reuseDesigns});
 }
 
 export function assetRoot(content:OwnerContent,page:OwnerPage,mobile:boolean,id:string){

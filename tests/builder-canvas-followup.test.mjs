@@ -65,3 +65,28 @@ test("A template paragraph saved as an asset keeps its text, inline formatting a
  assert.equal(result.content.pages.find(p=>p.id===page.id).blocks.find(b=>b.id===id).body,site.prices.intro);
  assert.equal(result.content.contentOverrides.inlineStyles[`block:${page.id}:${id}:body`].spans[0].style.bold,true);
 });
+
+test("A saved commission label with production UUIDs inserts twice and remains linked",()=>{
+ const {site,page}=fixture();
+ const {newOwnerId}=load("src/owner/model.ts");
+ const asset={id:newOwnerId(),name:"Commission Status",clip:captureFrameClipboard(site,page.id,"template-text:commissions.statusLabel")};
+ const first=placeAsset(site,page.id,asset,newOwnerId,new Set());
+ const second=placeAsset(first.content,page.id,asset,newOwnerId,new Set());
+ for(const result of [first,second]){
+  const id=result.rootId.slice(6);
+  assert.ok(isCommissionLabelHeading(id));
+  assert.ok(id.length<=96);
+  assert.equal(load("src/owner/builder-assets.ts").linkedAssetId(id),asset.id);
+ }
+ assert.notEqual(first.rootId,second.rootId);
+});
+test("Dropping a native box on a free-standing box shoves its neighbor in page coordinates",()=>{
+ const {site,page}=fixture(),source="canvas:layout.commissions.statusValue";
+ page.blocks.push({id:"neighbor",type:"heading",text:"Next",level:2});
+ const map=resolveCanvasLayout(site,page);page.canvasLayout.desktop=map;
+ map["block:neighbor"]={parentId:null,order:200,placement:placement(80,30,20,85)};
+ const {shovePlacedSiblings}=load("src/owner/placed-shove.ts");
+ const result=shovePlacedSiblings(site,page,false,source,1,undefined,{parentId:null,placement:placement(100,40,10,60)});
+ assert.deepEqual(result.map(({id,after})=>[id,after]),[["block:neighbor",100]]);
+ assert.equal(map[source].placement,undefined);
+});
