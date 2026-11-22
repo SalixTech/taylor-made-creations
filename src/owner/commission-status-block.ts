@@ -8,3 +8,8 @@ export function commissionStatusRequestHref(content:OwnerContent,mode:'public'|'
  const page=content.pages.find(page=>page.builtinKey==='commissions'&&isPageAvailable(content,page));
  return page&&content.site.commissionStatus==='Open!'?`${mode==='public'?'':OWNER_PREVIEW_ROOT}/${encodeURIComponent(page.slug)}/request`:null;
 }
+
+// Heading IDs carry this presentation across copies while remaining readable by
+// deployed workspace validators that accept the original heading schema.
+export const commissionLabelSuffix="-tmc-status-label";
+export function isCommissionLabelHeading(id:string){return id.endsWith(commissionLabelSuffix);}

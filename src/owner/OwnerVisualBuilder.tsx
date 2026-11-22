@@ -44,12 +44,12 @@ import type { ElementAppearance } from "./appearance";
 import { getCanvasNodes, resolveCanvasLayout, canAssignCanvasParent, assignCanvasParent, updateCanvasPlacement, stepCanvasNode, removeCanvasNode, renameCanvasNode, type CanvasPlacement } from "./canvas-layout";
 import { marginAfterGapCut, measureGapCut } from "./canvas-gap";
 import { canvasSpacePlacementFromDrag, captureCanvasSpaceParent } from "./canvas-space";
-import {shovePlacedSiblings,restoreShifts,mergeShifts,type ShoveShift} from "./placed-shove";
+import {shoveShiftCurrent,shovePlacedSiblings,restoreShifts,mergeShifts,type ShoveShift} from "./placed-shove";
 import {shoveNativeRow,captureCanvasShove,canvasShoveCaptureCurrent,planCanvasShove,applyCanvasShove} from "./canvas-shove";
 import type { Affine, ElementBox } from "./box-geometry";
 import { captureCanvasFrame, placeCapturedCanvasFrame, type CapturedCanvasFrame } from "./canvas-placement-geometry";
 import { transferPageBlockToFooter } from "./shared-footer";
-import {placeAsset,replaceAssetCopies,assetRoot,linkedAssetId,changeAssetField,type BuilderAsset} from "./builder-assets";
+import {captureAssetBox,placeAsset,replaceAssetCopies,assetRoot,linkedAssetId,changeAssetField,type BuilderAsset} from "./builder-assets";
 import {captureFrameClipboard,pasteFrameClipboard,updatedAssetSources,type FrameClipboard,type FrameClipboardSessionRef} from "./frame-clipboard";
 import {captureHorizontalGrowth,horizontalGrowthCaptureCurrent,measureHorizontalText,proposeHorizontalGrowth} from "./horizontal-text-growth";
 import { useMovablePanel } from "./use-movable-panel";
@@ -92,6 +92,7 @@ type Props = {
   browsing: boolean;
   onBrowsingChange: (browsing: boolean) => void;
 };
+const assetFrameSelector='[data-owner-layout-scope="page"]:is([data-owner-layout-id^="block:"],[data-owner-layout-id="canvas:layout.commissions.status"],[data-owner-layout-id^="template-text:"],[data-owner-layout-id^="template-link:"],[data-owner-layout-id^="template-image:"],[data-owner-layout-id^="core-text:"],[data-owner-layout-id="page-title"],[data-owner-layout-id="canvas:layout.commissions.statusValue"])';
 const blockLabels: Record<PageBlock["type"], string> = { text: "Text", image: "Photo", link: "Button", heading: "Heading", list: "List", divider: "Divider", spacer: "Space", faq: "Questions & answers", feature: "Photo + text", "canvas-space": "Add Canvas Space", section: "Section container", "commission-status":"Commission status" };
 const selectionLabels: Record<string, string> = { site: "Header & footer", design: "Website design", "page-content": "Page content", "home-copy": "Welcome text", "home-image": "Main photo", status: "Commission availability", contact: "Contact details", page: "Page settings", sections: "Add Item", shop: "Premade shop", prices: "Prices & options" };
 function move<T extends { id: string }>(items: T[], id: string, direction: -1 | 1) { const from = items.findIndex(item => item.id === id); const to = from + direction; if (from >= 0 && to >= 0 && to < items.length) [items[from], items[to]] = [items[to], items[from]]; }
@@ -229,6 +230,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const footerPage=useMemo(()=>({...page,id:"shared-footer",blocks:content.footerBlocks??[]}),[page,content.footerBlocks]);
   const boxPage=useMemo(()=>({...page,blocks:[...page.blocks,...(content.footerBlocks??[])]}),[page,content.footerBlocks]);
   const block = page.blocks.find(item => selected === `block:${item.id}`)??footerBlock;
+  const linkedContents=!!block&&["link","heading","text","commission-status"].includes(block.type)||selected==="template-text:commissions.statusLabel"||selected==="canvas:layout.commissions.statusValue";
   const boxEditableBlock = block && BOX_BLOCK_TYPES.includes(block.type);
   const coreStyleKey = selected?.startsWith("core-text:") ? selected.slice(10) : null;
   const imageStyleKey = selected === "home-image" ? "home.image" : selected?.startsWith("template-image:") ? selected.slice(15) : null;
@@ -236,9 +238,9 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const boxStyleKey = boxStyleKeyForTarget(selected);
   const boxAppearance = block?.appearance ?? (selected === "page-title" ? page.titleAppearance ?? content.contentOverrides?.styles?.[`${page.builtinKey}.title`] : boxStyleKey ? content.contentOverrides?.styles?.[boxStyleKey] : undefined);
   const selectedLayoutScope=selectedLayout?.scope==="chrome"?"chrome":sourcePage;
-  const selectedTitleFlow=!!selectedLayout&&resolveCanvasLayout(sourceContent,selectedLayoutScope,useMobile)[selectedLayout.id]?.flowAttachment==="after-page-title";
-  const selectedPlacement=selectedLayout?resolveCanvasLayout(sourceContent,selectedLayoutScope,useMobile)[selectedLayout.id]?.placement:undefined;
-  const selectedLayoutMap=resolveCanvasLayout(sourceContent,selectedLayoutScope,useMobile);
+  const selectedLayoutMap=useMemo(()=>resolveCanvasLayout(sourceContent,selectedLayoutScope,useMobile),[sourceContent,selectedLayoutScope,useMobile]);
+  const selectedTitleFlow=!!selectedLayout&&selectedLayoutMap[selectedLayout.id]?.flowAttachment==="after-page-title";
+  const selectedPlacement=selectedLayout?selectedLayoutMap[selectedLayout.id]?.placement:undefined;
   const titleFlowHostLocked=selectedLayout?.scope==="page"&&["page-title",`canvas:layout.page:${sourcePage.id}:intro`,`canvas:layout.page:${sourcePage.id}:shell`].includes(selectedLayout.id)&&Object.values(selectedLayoutMap).some(entry=>!entry.removed&&entry.flowAttachment==="after-page-title");
   const titleFlowGeometryLocked=selectedTitleFlow||titleFlowHostLocked;
   const selectedSiblings=selectedLayout?Object.entries(selectedLayoutMap).filter(([,entry])=>entry.parentId===selectedLayoutMap[selectedLayout.id]?.parentId).sort((a,b)=>a[1].order-b[1].order).map(([id])=>id):[];
@@ -277,7 +279,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const displayWord=sourceContent.contentOverrides?.text?.[commissionStatusTemplateKey(actualStatus)]??actualStatus;
   const selectedText=statusWord?{value:displayWord,label:"Status wording",links:false,inputKind:undefined}:canvasTextField(sourceContent,sourcePage,selected);
   const selectedHyperlink=canvasHyperlinkTarget(sourceContent,sourcePage,selected,selectedLayout?.id,useMobile);
-  const horizontalText=!!selectedText&&selectedText.inputKind!=="money"&&!!selected&&!selected.startsWith("template-link:")&&(selected==="page-title"||selected.startsWith("core-text:")||selected.startsWith("block:")&&block?.type==="heading"||/^canvas:layout\.block:[^:]+:[^:]+:(heading|body|caption)$/.test(selected)||/^canvas:layout\.(?:price-(?:group|item|parts|extras):[^:]+:(?:title|note|name|detail)|gallery:[^:]+:caption)$/.test(selected)||selected.startsWith("template-text:")&&!/(?:Button|Label|Placeholder)$/i.test(selected));
+  const horizontalText=!!selectedText&&(block?.type==="heading"||selected?.endsWith(":body")&&sourcePage.blocks.some(item=>item.type==="text"&&!item.heading&&selected===`canvas:layout.block:${sourcePage.id}:${item.id}:body`));
   const textContextKey=`${sourcePage.id}:${selected}:${selectedLayout?.scope??"page"}:${selectedLayout?.id??selectedOccurrence}:${useMobile}:${clipboardScopeKey??"owner-mounted"}`;
   function openPriceColors(){if(uploadBusy||saveBusy||browsing)return;setPriceColors({source:sourceContent,pageId:sourcePage.id,mobile:useMobile,session:clipboardScopeKey,color:"#315b50"});}
   function priceColorsCurrent(){const current=deleteContext.current;return !!priceColors&&priceColorsLive.current===priceColors&&deleteMounted.current&&clipboardScope.current===priceColors.session&&current.source===priceColors.source&&current.pageId===priceColors.pageId&&current.mobile===priceColors.mobile&&!current.uploadBusy&&!current.saveBusy&&!current.browsing;}
@@ -422,7 +424,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     const canvas=canvasRef.current;
     if(!canvas||browsing||!assetIds?.length)return;
     const ids=new Set(assetIds);
-    const frames=canvas.querySelectorAll<HTMLElement>('[data-owner-layout-scope="page"][data-owner-layout-id^="block:"]');
+    const frames=canvas.querySelectorAll<HTMLElement>(assetFrameSelector);
     frames.forEach(frame=>{if(ids.has(frame.dataset.ownerLayoutId??""))frame.dataset.ownerAssetSelected="true";});
     return()=>frames.forEach(frame=>{delete frame.dataset.ownerAssetSelected;});
   },[assetIds,browsing,sourceContent]);
@@ -516,10 +518,10 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     }
     if("key" in event&&event.key==="Escape"&&assetIds?.length){event.preventDefault();event.stopPropagation();setAssetSelection(null);return;}
     if(!("key" in event)&&!event.target.closest("[data-owner-canvas-controls]")){
-      if(event.shiftKey&&assetLibraryKey){
-        const frame=event.target.closest<HTMLElement>('[data-owner-layout-scope="page"][data-owner-layout-id^="block:"]');
+      if((event.altKey||event.shiftKey)&&event.button===0&&assetLibraryKey){
+        const frame=event.target.closest<HTMLElement>(assetFrameSelector);
         const id=frame?.dataset.ownerLayoutId;
-        if(id){event.preventDefault();event.stopPropagation();const base=assetIds??(selectedLayout?.scope==="page"&&selectedLayout.id.startsWith("block:")?[selectedLayout.id]:[]);setAssetSelection({pageId:sourcePage.id,mobile:device==="mobile",ids:base.includes(id)?base.filter(item=>item!==id):[...base,id]});return;}
+        if(id){event.preventDefault();event.stopPropagation();const base=assetIds??(!event.altKey&&selectedLayout?.scope==="page"&&selectedLayout.id.startsWith("block:")?[selectedLayout.id]:[]);setInlineTarget(null);setInspectorOpen(false);setAssetSelection({pageId:sourcePage.id,mobile:device==="mobile",ids:base.includes(id)?base.filter(item=>item!==id):[...base,id]});return;}
       }
       setAssetSelection(null);
     }
@@ -626,10 +628,45 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     }catch{setBuilderAssets([]);setClipboardNotice("Saved assets could not be loaded in this browser.");}
     setEditingAsset(null);setVariantRoot(null);setPendingAsset(clip);setAssetName("");setOpenAssetLibraryKey(assetLibraryKey);
   }
+  function captureSelection(ids:string[],asset=false){
+    const destination=layoutDestination("page",null)??canvasRef.current;
+    if(!destination)throw Error("Open the page canvas before copying a box.");
+    const capture=(id:string)=>{
+      const clip=asset?captureAssetBox(sourceContent,sourcePage,id,newOwnerId):captureFrameClipboard(sourceContent,sourcePage.id,id);
+      const block=clip.blocks.find(item=>"block:"+item.id===clip.rootId);
+      const mode=useMobile?"mobile":"desktop",other=useMobile?"desktop":"mobile";
+      const entry=clip[mode][clip.rootId];
+      const appearance=useMobile?block?.appearance?.mobile:block?.appearance;
+      const frame=layoutFrame("page",id);
+      const snapshot=frame&&captureCanvasFrame(frame,entry.placement?undefined:appearance?.box);
+      if(!snapshot)throw Error("This box is hidden or cannot be measured in this layout.");
+      const placement=placeCapturedCanvasFrame(snapshot,destination);
+      if(!placement)throw Error("This box cannot be measured in page coordinates.");
+      entry.placement={...entry.placement,...placement};
+      delete entry.flowAttachment;
+      if(!clip[other][clip.rootId].placement&&!sourceContent.design?.mobileLayoutEnabled){
+        clip[other][clip.rootId].placement=structuredClone(entry.placement);
+        delete clip[other][clip.rootId].flowAttachment;
+      }
+      return clip;
+    };
+    const frames=ids.map(id=>layoutFrame("page",id));
+    const roots=ids.filter((_,i)=>!frames.some((parent,j)=>j!==i&&parent&&frames[i]&&parent.contains(frames[i])));
+    const [first,...others]=roots.map(capture);
+    for(const clip of others){
+      first.blocks.push(...clip.blocks.filter(block=>!first.blocks.some(b=>b.id===block.id)));
+      Object.assign(first.desktop,clip.desktop);Object.assign(first.mobile,clip.mobile);
+      Object.assign(first.styles,clip.styles);Object.assign(first.inlineStyles,clip.inlineStyles);
+      Object.assign(first.elementLinks??={},clip.elementLinks);
+      first.buttonDesigns.push(...clip.buttonDesigns.filter(d=>!first.buttonDesigns.some(b=>b.id===d.id)));
+      first.assets=[...new Set([...first.assets,...clip.assets])];
+    }
+    return first;
+  }
   function saveAssetSelection(){
     const ids=assetIds?.length?assetIds:selectedLayout?.scope==="page"?[selectedLayout.id]:[];
     if(!ids.length)return;
-    try{openAssets(captureFrameClipboard(sourceContent,sourcePage.id,ids[0],ids.slice(1)));}
+    try{openAssets(captureSelection(ids,true));}
     catch(error){setContextMenu(null);setClipboardNotice(error instanceof Error?error.message:"This selection could not be saved.");}
   }
   function storeAssets(items:typeof builderAssets){
@@ -737,7 +774,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   /* eslint-enable react-hooks/set-state-in-effect */
   function copyBox(){
     const current=deleteContext.current;if(!clipboardScopeKey||clipboardScope.current!==clipboardScopeKey||!sharedFrameClipboard||!deleteMounted.current||current.source!==sourceContent||current.pageId!==sourcePage.id||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.browsing||current.saveBusy||current.uploadBusy||!selectedLayout||selectedLayout.scope!=="page"){setClipboardNotice("Select a page box to copy. Header and footer units are not copied here.");return;}
-    try{clipboardAbort.current?.abort();frameClipboard.current={scopeKey:clipboardScopeKey,value:captureFrameClipboard(sourceContent,sourcePage.id,selectedLayout.id)};setHasFrameClipboard(true);setClipboardNotice("Box copied for this builder session. Paste box on another page creates independent contents at the new page origin; nothing is published.");}catch(error){setClipboardNotice(error instanceof Error?error.message:"This box cannot be copied safely.");}
+    try{clipboardAbort.current?.abort();frameClipboard.current={scopeKey:clipboardScopeKey,value:captureSelection([selectedLayout.id])};setHasFrameClipboard(true);setClipboardNotice("Box copied for this builder session. Paste box on another page creates independent contents at the new page origin; nothing is published.");}catch(error){setClipboardNotice(error instanceof Error?error.message:"This box cannot be copied safely.");}
   }
   async function pasteBox(){
     const session=frameClipboard.current,copied=session?.value,current=deleteContext.current;if(!clipboardScopeKey||clipboardScope.current!==clipboardScopeKey||!sharedFrameClipboard||session?.scopeKey!==clipboardScopeKey||!copied||clipboardBusy.current||!deleteMounted.current||current.source!==sourceContent||current.pageId!==sourcePage.id||current.browsing||current.saveBusy||current.uploadBusy)return;
@@ -745,7 +782,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     try{const {verifyFrameClipboardAssets}=await import("./frame-clipboard-assets");abort.signal.throwIfAborted();const assetSession=await verifyFrameClipboardAssets(copied.assets,abort.signal),latest=deleteContext.current;if(!deleteMounted.current||clipboardScope.current!==clipboardScopeKey||frameClipboard.current!==session||frameClipboard.current?.scopeKey!==clipboardScopeKey||latest.source!==sourceContent||latest.pageId!==sourcePage.id||latest.mobile!==useMobile||latest.browsing||latest.saveBusy||latest.uploadBusy)throw Error("The page or draft changed while checking the box. Nothing was pasted.");
       assetSession.assertCurrent();const result=pasteFrameClipboard(sourceContent,sourcePage.id,copied,{newId:newOwnerId,verifiedAssets:new Set(copied.assets)});let changed=false;
       onContentEdit(draft=>{assetSession.assertCurrent();if(JSON.stringify(draft)!==JSON.stringify(sourceContent))return;Object.assign(draft,result.content);changed=true;});
-      if(!changed)throw Error("The current draft changed. Copy the box again before pasting.");frameClipboard.current={scopeKey:clipboardScopeKey,value:result.clipboard};setSelected(result.rootId);setSelectedLayout({scope:"page",id:result.rootId});setInlineTarget(null);setInspectorOpen(true);setClipboardNotice("Independent box pasted in your draft at this page’s origin. Both layouts retain their own styles and contents. Undo removes this copy.");
+      if(!changed)throw Error("The current draft changed. Copy the box again before pasting.");frameClipboard.current={scopeKey:clipboardScopeKey,value:result.clipboard};setSelected(result.rootId);setSelectedLayout({scope:"page",id:result.rootId});setInlineTarget(null);setInspectorOpen(false);setClipboardNotice("Independent box pasted in your draft at this page’s origin. Both layouts retain their own styles and contents. Undo removes this copy.");
     }catch(error){if(deleteMounted.current)setClipboardNotice(error instanceof Error?error.message:"This box could not be pasted safely.");}finally{clipboardBusy.current=false;if(clipboardAbort.current===abort)clipboardAbort.current=null;}
   }
   function layoutFrame(scope:"page"|"chrome",id:string){return Array.from(canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-layout-id]")??[]).find(node=>node.dataset.ownerLayoutId===id&&node.dataset.ownerLayoutScope===scope)??null;}
@@ -763,7 +800,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   }
   function shoveAt(candidate:OwnerContent,page:OwnerPage,mobile:boolean,id:string,direction:1|-1|0,snapshot?:CapturedCanvasFrame|null){
     const shifts=shovePlacedSiblings(candidate,page,mobile,id,direction);
-    if(!shifts.length&&canvasRef.current&&snapshot)shifts.push(...shoveNativeRow(canvasRef.current,candidate,page.id,mobile,id,snapshot,direction));
+    if(canvasRef.current&&snapshot)shifts.push(...shoveNativeRow(canvasRef.current,candidate,page.id,mobile,id,snapshot,direction));
     return shifts;
   }
   function startShove(){
@@ -815,7 +852,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     }
     if(!applyCanvasShove(candidate,gesture.result.value,result.value)){setShoveNotice("Shove could not keep this layout safe. Nothing changed.");return true;}
     const anchor=gesture.result.value.anchors.find(a=>a.id===result.value.anchorId);
-    if(anchor&&result.value.deltaPx>0)rememberShifts(candidate.pages.find(p=>p.id===gesture.pageId)!,gesture.mobile,gesture.id,[{id:anchor.id,parentId:null,before:anchor.marginTop,after:result.value.marginTopPx,margin:true}]);
+    if(anchor&&result.value.deltaPx>0)rememberShifts(candidate.pages.find(p=>p.id===gesture.pageId)!,gesture.mobile,gesture.id,[{id:anchor.id,parentId:selectedLayoutMap[anchor.id]?.parentId??null,before:anchor.marginTop,after:result.value.marginTopPx,margin:true}]);
     let changed=false;
     onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(gesture.source))return;Object.assign(draft,candidate);changed=true;});
     setShoveNotice(changed?"Shove placed the box and made room below. Undo restores the whole move.":"The draft changed. Shove moved nothing; try again.");
@@ -907,16 +944,17 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const frameOffset=selectedPlacement?.contentOffset??boxAppearance?.box?.contentOffset;
-  const displacedParts=selectedLayout&&block&&["text","section","commission-status"].includes(block.type)
+  const displacedParts=selectedLayout&&(selectedLayout.id==="canvas:layout.commissions.status"||block&&["text","section","commission-status"].includes(block.type))
     ?getCanvasNodes(sourceContent,selectedLayoutScope).filter(node=>{
-      if(node.defaultParentId!==selectedLayout.id||!node.id.startsWith("canvas:layout.block:"))return false;
-      const entry=selectedLayoutMap[node.id],style=content.contentOverrides?.styles?.[node.styleTarget.slice(7)];
+      if(node.defaultParentId!==selectedLayout.id)return false;
+      const entry=selectedLayoutMap[node.id],style=content.contentOverrides?.styles?.[boxStyleKeyForTarget(node.styleTarget)??""];
       return entry&&!entry.removed&&(entry.parentId!==selectedLayout.id||!!entry.placement||!!style?.box);
     }):[];
   const hasOwnOffset=!!(frameOffset?.xPx||frameOffset?.yPx||boxAppearance?.box?.contentOffset?.xPx||boxAppearance?.box?.contentOffset?.yPx);
   const hasFrameOffset=hasOwnOffset||displacedParts.length>0;
   function reconnectContents(){
     if(uploadBusy||saveBusy||browsing||!selectedLayout)return;
+    setContentsSelection(null);
     onContentEdit(draft=>{
       if(JSON.stringify(draft)!==JSON.stringify(sourceContent))return;
       const next=structuredClone(draft),scope=selectedLayout.scope==="chrome"?"chrome":next.pages.find(p=>p.id===sourcePage.id);
@@ -931,7 +969,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
         if(!updateCanvasPlacement(next,scope,selectedLayout.id,useMobile,placement))return;
       }
       editContentForLayout(next,view=>{
-        for(const part of displacedParts){const style=view.contentOverrides?.styles?.[part.styleTarget.slice(7)];if(style)delete style.box;}
+        for(const part of displacedParts){const style=view.contentOverrides?.styles?.[boxStyleKeyForTarget(part.styleTarget)??""];if(style)delete style.box;}
         const target=block?(selectedLayout.scope==="chrome"?view.footerBlocks:view.pages.find(p=>p.id===sourcePage.id)?.blocks)?.find(b=>b.id===block.id)?.appearance:
           selected==="page-title"&&sourcePage.kind==="custom"?view.pages.find(p=>p.id===sourcePage.id)?.titleAppearance:view.contentOverrides?.styles?.[boxStyleKey??(selected==="page-title"?`${sourcePage.builtinKey}.title`:"")];
         if(target?.box)delete target.box.contentOffset;
@@ -976,7 +1014,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       setDeleteIntent({restoreShifts:restore?shifts:undefined,scope:selection.scope,id:selection.id,parentId:map[selection.id].parentId,pageId:sourcePage.id,mobile:useMobile,source,captures});
     };
     if(emptyBox)withContents=true;
-    if(shifts.length){setShoveRemoval({remove});return;}
+    if(shifts.some(shift=>shoveShiftCurrent(source,sourcePage,useMobile,shift))){setShoveRemoval({remove});return;}
     if(emptyBox){remove();return;}
     onRemove(withContents?`Remove “${selectedBoxName??node.label}” and its contents from the canvas?`:`Remove “${selectedBoxName??node.label}” from the canvas?`,
       withContents?"This removes this box and its nested contents. Undo restores it.":"The contents stay in place. Undo restores the box.",remove);
@@ -1298,7 +1336,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   if(titleFlowHostLocked)controls=<><p>A status follows this title. Detach it before moving or resizing the title, intro or page shell. Text and typography remain editable.</p>{controls}</>;
   if(block&&!footerBlock&&["text","heading","link"].includes(block.type))controls=<>{controls}<button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>requestFooterTransfer()}>Move to shared footer…</button></>;
   if(selectedHyperlink?.kind==="destination")controls=<>{controls}<div className={styles.destinationLinkActions}><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={openHyperlink}>Edit hyperlink destination</button>{selectedHyperlink.source!=="social"&&<WebsiteAssetPicker disabled={uploadBusy||saveBusy} key={`pdf:${textContextKey}`} targetId={`pdf:${textContextKey}`} revision={sourceContent} kind="document" value={selectedHyperlink.href} onSelect={href=>commitSelectedPdf(href)}/>}</div></>;
-  if (!titleFlowGeometryLocked && selected && supportsBoxTarget(selected, boxPage) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box")) controls = <>{workspaceMode?<>{controls}<details data-owner-advanced-position><summary>Advanced positioning</summary><OwnerBoxFields layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={block?.type==="link"||selectBoxContents} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} /></details></>:<><OwnerBoxFields layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={block?.type==="link"||selectBoxContents} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} />{controls}</>}</>;
+  if (!titleFlowGeometryLocked && selected && supportsBoxTarget(selected, boxPage) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box")) controls = <>{workspaceMode?<>{controls}<details data-owner-advanced-position><summary>Advanced positioning</summary><OwnerBoxFields layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={linkedContents||selectBoxContents} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} /></details></>:<><OwnerBoxFields layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={linkedContents||selectBoxContents} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} />{controls}</>}</>;
   if (!footerBlock && !selectedPlacement && block && !block.appearance?.box &&
       (block.type === "section" || block.type === "text" || block.type === "heading")) {
     const spacingOptions = [
@@ -1432,6 +1470,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       {hasFrameOffset&&!repairButton&&<button type="button" disabled={uploadBusy||saveBusy} onClick={reconnectContents}>Reconnect contents</button>}
       {repairButton&&<button type="button" disabled={uploadBusy||saveBusy} onClick={repairButton}>Align button</button>}
       {assetLibraryKey&&<button type="button" disabled={uploadBusy||saveBusy} onClick={()=>openAssets()}>Assets</button>}
+      {!!assetIds?.length&&<button type="button" onClick={saveAssetSelection} disabled={saveBusy||uploadBusy}>Save selection as asset ({assetIds.length})</button>}
       <div className={styles.sectionMenu} onKeyDown={event => {
         if (event.key !== "Escape" || event.defaultPrevented || !inspectorOpen || uploadBusy) return;
         event.preventDefault();
@@ -1446,7 +1485,6 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
         {sectionPanel}
       </div>
       </>}
-    <div className={styles.layoutIndicator} role="status"><strong>{useMobile?"Editing independent mobile layout":device==="mobile"?"Mobile preview · editing shared layout":"Editing desktop layout"}</strong>{device==="desktop"&&previewViewportWidth&&<span> · Website viewport {previewViewportWidth}px at 100%. Scroll sideways to see the whole page. Other browser widths can reflow.</span>}</div>
       </OwnerTextFormattingBar>}
 
     </div>
@@ -1465,13 +1503,13 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
         {assetPreview&&!assetPreview.point&&!browsing&&<div className={styles.itemPlacement} style={interactionArea} data-owner-canvas-controls role="region" aria-label="Place saved asset" onClick={event=>{event.stopPropagation();setAssetPreview({...assetPreview,point:{x:event.clientX,y:event.clientY}});}}><span className={styles.spacePrompt}>Click to place the asset <button type="button" onClick={event=>{event.stopPropagation();setAssetPreview(null);}}>Cancel</button></span></div>}
         {addingItem&&!browsing&&<div className={styles.itemPlacement} style={interactionArea} data-owner-canvas-controls role="region" aria-label="Click to place the new item; scroll to choose a location, or Escape to cancel" onClick={event=>{if(event.button!==0||addingItem.point||uploadBusy||saveBusy)return;event.preventDefault();event.stopPropagation();setAddingItem({...addingItem,point:{x:event.clientX,y:event.clientY}});}}><span className={styles.spacePrompt}>Click to place {blockLabels[addingItem.block.type]} · Scroll to choose a location · Escape cancels</span></div>}
         {drawingSpace&&!browsing&&<div className={styles.spaceDrawing} style={interactionArea} data-owner-canvas-controls data-owner-space-drawing tabIndex={0} role="region" aria-label={cuttingSpace?"Draw over blank space to remove it":"Draw Canvas Space in any direction; Escape cancels"} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();spaceDrag.current=null;setSpacePreview(null);setDrawingSpace(false);}}} onPointerDown={event=>{if(event.button!==0||uploadBusy||saveBusy)return;const map=spaceGestureMap();if(!map)return;event.preventDefault();event.stopPropagation();spaceDrag.current={pointer:event.pointerId,start:{x:event.clientX,y:event.clientY},map,source:sourceContent,pageId:sourcePage.id,mobile:useMobile};event.currentTarget.setPointerCapture?.(event.pointerId);}} onPointerMove={event=>{const drag=spaceDrag.current;if(!drag||drag.pointer!==event.pointerId)return;const rect=event.currentTarget.getBoundingClientRect();setSpacePreview({left:Math.min(drag.start.x,event.clientX)-rect.left,top:Math.min(drag.start.y,event.clientY)-rect.top,width:Math.abs(event.clientX-drag.start.x),height:Math.abs(event.clientY-drag.start.y)});}} onPointerUp={event=>finishSpace(event)} onPointerCancel={event=>finishSpace(event,true)} onLostPointerCapture={event=>{if(spaceDrag.current)finishSpace(event,true);}}>{spacePreview&&<div className={styles.spacePreview} style={spacePreview}/>}<span className={styles.spacePrompt}>{cuttingSpace?"Draw over the gap · Escape cancels":"Drag to draw Canvas Space · Escape cancels"}</span></div>}
-        {!browsing && !titleFlowGeometryLocked && !(inlineTarget===selected&&selectedText) && selected && (boxStyleKey || selected === "page-title" || boxEditableBlock) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box") && !repairButton && <OwnerCanvasBoxTools constrainTextWidth={block?.type==="text"||block?.type==="heading"||horizontalText} showResizeHandles={showResizeHandles} onCopyBox={clipboardScopeKey&&sharedFrameClipboard?copyBox:undefined} onPasteBox={hasFrameClipboard&&frameClipboard.current?.scopeKey===clipboardScopeKey?()=>void pasteBox():undefined} onCanvasMoveStart={shove?startShove:undefined} onCanvasMovePreview={(point,snapshot)=>{previewShove(snapshot);if(!footerBlock&&block&&["text","heading","link"].includes(block.type)){const frame=footerFrame();if(frame){if(overFooter(point))frame.dataset.ownerFooterDrop="true";else delete frame.dataset.ownerFooterDrop;}}}} onCanvasMoveCancel={()=>{clearFooterHighlight();shoveGesture.current=null;}} onCanvasMoveCommit={shove||(!footerBlock&&block&&["text","heading","link"].includes(block.type))?(capture,point,next)=>{clearFooterHighlight();if(!footerBlock&&block&&["text","heading","link"].includes(block.type)&&overFooter(point)){shoveGesture.current=null;return requestFooterTransfer(capture);}return commitShove(capture,next);}:undefined} layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={block?.type==="link"||selectBoxContents} onSelectBoxContents={block?.type==="link"?undefined:selected=>setContentsSelection(selected?null:contentsSelectionKey)} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} onEditContent={() => {if(selectedLayout?.id===`canvas:layout.page:${page.id}:intro`||selectedLayout?.id==="canvas:layout.home.intro"){selectTitle();return;}if(selectedText){setInspectorOpen(false);setInlineTarget(selected);}else setInspectorOpen(true);}} onDelete={selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable?()=>requestDelete():undefined} onSelectParent={selectedLayout&&selectedLayoutMap[selectedLayout.id]?.parentId?selectParent:undefined} reparentId={undefined} sectionOrder={layoutOrder} />}
+        {!browsing && !titleFlowGeometryLocked && !(inlineTarget===selected&&selectedText) && selected && (boxStyleKey || selected === "page-title" || boxEditableBlock) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box") && !repairButton && <OwnerCanvasBoxTools constrainTextWidth={block?.type==="text"||block?.type==="heading"||horizontalText} showResizeHandles={showResizeHandles} onCopyBox={clipboardScopeKey&&sharedFrameClipboard?copyBox:undefined} onPasteBox={hasFrameClipboard&&frameClipboard.current?.scopeKey===clipboardScopeKey?()=>void pasteBox():undefined} onCanvasMoveStart={shove?startShove:undefined} onCanvasMovePreview={(point,snapshot)=>{previewShove(snapshot);if(!footerBlock&&block&&["text","heading","link"].includes(block.type)){const frame=footerFrame();if(frame){if(overFooter(point))frame.dataset.ownerFooterDrop="true";else delete frame.dataset.ownerFooterDrop;}}}} onCanvasMoveCancel={()=>{clearFooterHighlight();shoveGesture.current=null;}} onCanvasMoveCommit={shove||(!footerBlock&&block&&["text","heading","link"].includes(block.type))?(capture,point,next)=>{clearFooterHighlight();if(!footerBlock&&block&&["text","heading","link"].includes(block.type)&&overFooter(point)){shoveGesture.current=null;return requestFooterTransfer(capture);}return commitShove(capture,next);}:undefined} layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={linkedContents||selectBoxContents} onSelectBoxContents={linkedContents?undefined:selected=>setContentsSelection(selected?null:contentsSelectionKey)} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} onEditContent={() => {if(selectedLayout?.id===`canvas:layout.page:${page.id}:intro`||selectedLayout?.id==="canvas:layout.home.intro"){selectTitle();return;}if(selectedText){setInspectorOpen(false);setInlineTarget(selected);}else setInspectorOpen(true);}} onDelete={selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable?()=>requestDelete():undefined} onSelectParent={selectedLayout&&selectedLayoutMap[selectedLayout.id]?.parentId?selectParent:undefined} reparentId={undefined} sectionOrder={layoutOrder} />}
       </div>
       </div>
       {!workspaceMode && selected && controls && sectionPanel}
     </div>
     {assetLibraryOpen&&!browsing&&<div role="dialog" aria-label="Assets" className={styles.assetShelf} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpenAssetLibraryKey(null);}}}><strong>Assets</strong> <button type="button" onClick={()=>setOpenAssetLibraryKey(null)}>Done</button>
-      <p>Drag Add to page onto the canvas, or click it and choose a spot. Assets are saved in this browser. On the canvas, use Ctrl+A or Cmd+A to select all added items, or Shift-click to choose a group.</p>
+      <p>Drag Add to page onto the canvas, or click it and choose a spot. Assets are saved in this browser. On the canvas, use Ctrl+A or Cmd+A to select all added items, or hold Alt and left-click each box. Click a selected box again with Alt to remove it, then choose Save selection as asset.</p>
       {pendingAsset&&<form onSubmit={event=>{event.preventDefault();saveAsset();}}><Field label="Asset name" value={assetName} onChange={value=>setAssetName(value.slice(0,80))} required/><button type="submit" disabled={!assetName.trim()}>{variantRoot?"Save as variant":"Save asset"}</button></form>}
       {editingAsset&&<div><Field label="Saved asset name" value={editingAsset.name} onChange={name=>setEditingAsset({...editingAsset,name:name.slice(0,80)})}/>
         {editingAsset.clip.blocks.map((b,index)=>Object.entries(b).filter(([key,value])=>typeof value==="string"&&["label","heading","text","body","caption","note","actionLabel","alt","href"].includes(key)).map(([key,value])=><Field key={b.id+key} label={b.type+" "+key} value={String(value)} onChange={value=>setEditingAsset(changeAssetField(editingAsset,index,key,value))}/>))}
@@ -1499,7 +1537,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
           }} onDragEnd={()=>{draggingItem.current=null;}} onClick={()=>beginItem(type)}>{label}</button>
       )}</div>
     </div>}
-    {shoveRemoval&&<Dialog title="Remove item and restore spacing?" onClose={()=>setShoveRemoval(null)} actions={<><button type="button" onClick={()=>setShoveRemoval(null)}>Cancel</button><button type="button" onClick={()=>{shoveRemoval.remove(false);setShoveRemoval(null);}}>Remove and keep spacing</button><button type="button" onClick={()=>{shoveRemoval.remove(true);setShoveRemoval(null);}}>Remove and restore spacing</button></>}><p>Restore the neighboring boxes to their positions before Shove. Boxes moved since then keep their newer positions.</p></Dialog>}
+    {shoveRemoval&&<Dialog title="Remove item and restore spacing?" onClose={()=>setShoveRemoval(null)} actions={<><button type="button" data-owner-button className={buttons.button+" "+buttons.secondary} onClick={()=>setShoveRemoval(null)}>Cancel</button><button type="button" data-owner-button className={buttons.button+" "+buttons.secondary} onClick={()=>{shoveRemoval.remove(false);setShoveRemoval(null);}}>Remove and keep spacing</button><button type="button" data-owner-button className={buttons.button+" "+buttons.primary} onClick={()=>{shoveRemoval.remove(true);setShoveRemoval(null);}}>Remove and restore spacing</button></>}><p>Restore the neighboring boxes to their positions before Shove. Boxes moved since then keep their newer positions.</p></Dialog>}
     {contextMenu&&!browsing&&<div ref={contextMenuRef} role="menu" aria-label="Builder actions" className={styles.canvasContextMenu} style={{left:Math.max(8,Math.min(contextMenu.x,typeof window!=="undefined"?window.innerWidth-180:contextMenu.x)),top:Math.max(8,Math.min(contextMenu.y,typeof window!=="undefined"?window.innerHeight-290:contextMenu.y))}} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setContextMenu(null);canvasRef.current?.focus();}else if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();const items=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")),at=items.indexOf(document.activeElement as HTMLButtonElement),next=event.key==="Home"?0:event.key==="End"?items.length-1:(at+(event.key==="ArrowDown"?1:-1)+items.length)%items.length;items[next]?.focus();}}}>{linkedRoot&&<button type="button" role="menuitem" onClick={editPlacedAsset}>Edit linked asset or save variant</button>}{assetLibraryKey&&(!!assetIds?.length||selectedLayout?.scope==="page"&&(selectedLayout.id.startsWith("block:")||["canvas:layout.commissions.status","template-text:commissions.statusLabel","canvas:layout.commissions.statusValue"].includes(selectedLayout.id)))&&<button role="menuitem" type="button" onClick={saveAssetSelection}>Save as asset{assetIds?.length?` (${assetIds.length})`:""}</button>}{contextMenu.target&&<button role="menuitem" type="button" onClick={()=>{setContextMenu(null);setInspectorOpen(true);requestAnimationFrame(()=>panelRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Close section editor"]')?.focus({preventScroll:true}));}}>Edit Section</button>}<button role="menuitem" type="button" disabled={!clipboardScopeKey||!sharedFrameClipboard||!selectedLayout||saveBusy||uploadBusy} onClick={()=>{setContextMenu(null);copyBox();}}>Copy box</button><button role="menuitem" type="button" disabled={!clipboardScopeKey||frameClipboard.current?.scopeKey!==clipboardScopeKey||!hasFrameClipboard||saveBusy||uploadBusy} onClick={()=>{setContextMenu(null);void pasteBox();}}>Paste box</button><button role="menuitem" type="button" disabled={!onSave||saveBusy||uploadBusy} onClick={()=>{if(saveBusy||uploadBusy)return;setContextMenu(null);onSave?.();}}>Save</button><button role="menuitem" type="button" onClick={()=>{openItems(contextMenu.x,contextMenu.y);}}>Add Item</button>{workspaceMode&&<button role="menuitem" type="button" onClick={startSpaceCut}>Remove space</button>}<button role="menuitem" type="button" onClick={()=>{setContextMenu(null);openNewPage();}}>New Page</button></div>}
     {footerTransfer?.phase==="confirm"&&<Dialog title="Move this item to the shared footer?" dismissDisabled={uploadBusy||saveBusy} onClose={()=>{if(!uploadBusy&&!saveBusy)setFooterTransfer(null);}} actions={<><button type="button" onClick={()=>setFooterTransfer(null)} disabled={uploadBusy||saveBusy}>Keep on this page</button><button type="button" disabled={uploadBusy||saveBusy} onClick={()=>{if(!footerTransferCurrent(footerTransfer)){setFooterTransfer(null);setAnnouncement("The page or view changed. Nothing was moved.");return;}setFooterTransfer({...footerTransfer,phase:"measure"});}}>Move to shared footer</button></>}><p>This item will appear in the footer on every page, in both layouts—even if its current page is hidden. It becomes sitewide when you explicitly publish Website structure &amp; design.</p><p>The active layout keeps its measured position. The other layout keeps its own existing placement or uses footer flow; review it separately. This is one draft edit that Undo can restore. Nothing is published automatically.</p></Dialog>}
     {priceColors&&<Dialog title="Edit all Price Colors" dismissDisabled={uploadBusy||saveBusy} onClose={closePriceColors} actions={<><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} disabled={uploadBusy||saveBusy} onClick={closePriceColors}>Cancel</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.primary}`} disabled={!priceColorsCurrent()||!/^#[0-9a-f]{6}$/i.test(priceColors.color)} onClick={commitPriceColors}>Apply all price colors</button></>}><p>Changes all displayed price amounts, including currency symbols and separators, for {priceColors.mobile?"the independent mobile layout":"the desktop/shared layout"}. Values stay unchanged. This is one draft edit you can Undo; nothing is published.</p><label>Price color <input type="color" aria-label="All price color" disabled={!priceColorsCurrent()} value={/^#[0-9a-f]{6}$/i.test(priceColors.color)?priceColors.color:"#315b50"} onChange={event=>setPriceColors({...priceColors,color:event.target.value})}/></label><Field label="Price color hex" readOnly={!priceColorsCurrent()} value={priceColors.color} onChange={color=>{if(priceColorsCurrent())setPriceColors({...priceColors,color});}}/>{!priceColorsCurrent()&&<p role="status">The draft or view changed. Close this dialog and reopen it before applying.</p>}</Dialog>}

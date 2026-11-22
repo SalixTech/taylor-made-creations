@@ -1,10 +1,40 @@
-import {assertOwnerContent,type OwnerContent,type OwnerPage} from "./model";
-import {rebaseInlineTextSpans} from "./rich-text";
+import {canvasTextField} from "./canvas-text-adapter";
+import {getTemplateImage,getTemplateLink} from "./site-design";
+import {assertOwnerContent,type OwnerContent,type OwnerPage,type PageBlock} from "./model";
+import {rebaseInlineTextSpans,getInlineTextId} from "./rich-text";
 import {inlinePlainText} from "./inline-text-editing";
 import {captureFrameClipboard,pasteFrameClipboard,updatedAssetSources,type FrameClipboard} from "./frame-clipboard";
 import {resolveCanvasLayout,type CanvasPlacement} from "./canvas-layout";
 
 export type BuilderAsset={id:string;name:string;clip:Omit<FrameClipboard,"sourceBinding">};
+export function captureAssetBox(content:OwnerContent,page:OwnerPage,id:string,newId:()=>string){
+ const template=id.match(/^template-(text|image|link):(.+)$/);
+ if((!template&&!id.startsWith("core-text:")&&id!=="page-title")||id==="template-text:commissions.statusLabel")
+  return captureFrameClipboard(content,page.id,id);
+ const draft=structuredClone(content),target=draft.pages.find(item=>item.id===page.id)!;
+ const blockId=newId(),key=template?.[2]??id.replace(/^core-text:/,"");
+ let block:PageBlock,field:string|null=null;
+ if(template?.[1]==="image"){
+  const image=getTemplateImage(content,key);block={id:blockId,type:"image",...image,caption:""};
+ }else if(template?.[1]==="link"){
+  block={id:blockId,type:"link",...getTemplateLink(content,key)};field="label";
+ }else{
+  const text=canvasTextField(content,page,id);
+  if(!text||text.inputKind)throw Error("This field needs its original functional box.");
+  block={id:blockId,type:"text",heading:"",body:text.value};field="body";
+ }
+ const appearance=id==="page-title"?page.titleAppearance??content.contentOverrides?.styles?.[`${page.builtinKey}.title`]:content.contentOverrides?.styles?.[key];
+ if(appearance)block.appearance=structuredClone(appearance);
+ target.blocks.push(block);
+ const richId=getInlineTextId(content,page.id,id),record=richId&&content.contentOverrides?.inlineStyles?.[richId];
+ if(record&&field){
+  draft.contentOverrides??={};draft.contentOverrides.inlineStyles??={};
+  draft.contentOverrides.inlineStyles[`block:${page.id}:${blockId}:${field}`]=structuredClone(record);
+ }
+ const clip=captureFrameClipboard(draft,page.id,"block:"+blockId);
+ clip.sourceBinding=JSON.stringify(content);return clip;
+}
+
 export function changeAssetField(asset:BuilderAsset,index:number,key:string,value:string){
  const next=structuredClone(asset),b=next.clip.blocks[index];
  if(!b||!Object.hasOwn(b,key)||!["label","heading","text","body","caption","note","actionLabel","alt","href"].includes(key))return asset;
@@ -30,9 +60,10 @@ export function groupedAssetClip(source:BuilderAsset["clip"]){
  const root="block:"+id;
  for(const mode of ["desktop","mobile"] as const){
   const entries=rootIds(mode),positions=entries.flatMap(([,e])=>e.placement?[e.placement]:[]);
-  const left=positions.length?Math.min(...positions.map(p=>p.matrix.e)):0,top=positions.length?Math.min(...positions.map(p=>p.matrix.f)):0;
-  const width=Math.max(1,...positions.map(p=>p.matrix.e-left+Math.abs(p.matrix.a*p.widthPx)+Math.abs(p.matrix.c*p.heightPx)));
-  const height=Math.max(1,...positions.map(p=>p.matrix.f-top+Math.abs(p.matrix.b*p.widthPx)+Math.abs(p.matrix.d*p.heightPx)));
+  const corners=positions.flatMap(({matrix:m,widthPx:w,heightPx:h})=>
+   [[0,0],[w,0],[0,h],[w,h]].map(([x,y])=>({x:m.e+m.a*x+m.c*y,y:m.f+m.b*x+m.d*y})));
+  const left=corners.length?Math.min(...corners.map(p=>p.x)):0,top=corners.length?Math.min(...corners.map(p=>p.y)):0;
+  const width=Math.max(1,...corners.map(p=>p.x-left)),height=Math.max(1,...corners.map(p=>p.y-top));
   clip[mode][root]={parentId:null,order:0,...(positions.length?{placement:placement(width,height)}:{})};
   entries.forEach(([,e],order)=>{e.parentId=root;e.order=order;if(e.placement){e.placement.matrix.e-=left;e.placement.matrix.f-=top;}});
  }

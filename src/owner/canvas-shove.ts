@@ -1,3 +1,4 @@
+import type {OwnerPage} from "./model";
 import type {OwnerContent} from './model';
 import {resolveElementAppearance,setElementAppearanceForLayout,type ElementAppearance} from './appearance';
 import {elementToScreen,layoutSize} from './box-affine';
@@ -104,6 +105,10 @@ export function applyCanvasShove(candidate:OwnerContent,capture:CanvasShoveCaptu
  Object.assign(candidate,next);return true;
 }
 
+export function currentShoveMargin(content:OwnerContent,page:OwnerPage,mobile:boolean,id:string,bottom=false){
+ const target=getCanvasNodes(content,page).find(node=>node.id===id)?.styleTarget;
+ return target?resolveElementAppearance(appearance(content,page.id,target),mobile)?.[bottom?"marginBottomPx":"marginTopPx"]:undefined;
+}
 export function restoreShoveMargin(content:OwnerContent,pageId:string,mobile:boolean,id:string,before:number,after:number,bottom=false,unset=false){
  const page=content.pages.find(p=>p.id===pageId);
  const target=page&&getCanvasNodes(content,page).find(node=>node.id===id)?.styleTarget;
@@ -125,7 +130,7 @@ export function shoveNativeRow(canvas:HTMLElement,content:OwnerContent,pageId:st
  const nodes=getCanvasNodes(content,page),byId=new Map(nodes.map(n=>[n.id,n]));
  const candidates=Array.from(canvas.querySelectorAll<HTMLElement>('[data-owner-layout-scope="page"][data-owner-layout-id]')).flatMap(el=>{
   const id=el.dataset.ownerLayoutId!,entry=map[id],node=byId.get(id);
-  if(id===sourceId||id===shell||!node?.movable||!entry||entry.removed||entry.placement||entry.flowAttachment||entry.parentId!==(sourceParent??shell))return [];
+  if(id===sourceId||id===shell||!node?.movable||!entry||entry.removed||entry.placement||entry.flowAttachment||(entry.parentId!==sourceParent&&!(sourceParent==null&&entry.parentId===shell)))return [];
   if(!node.styleTarget.startsWith('canvas:')&&!node.styleTarget.startsWith('block:'))return [];
   const r=el.getBoundingClientRect();
   if(r.width<=0||r.height<=0||r.right<=rect.left||r.left>=rect.right||r.top>=rect.bottom||r.bottom<=rect.top)return [];

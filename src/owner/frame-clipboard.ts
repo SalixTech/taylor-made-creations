@@ -1,7 +1,7 @@
 import {assertOwnerContent,type OwnerContent,type PageBlock} from './model';
 import {getCanvasNodes,resolveCanvasLayout,type CanvasNodeMap} from './canvas-layout';
 import type {ElementAppearance} from './site-design';
-import {createCommissionStatusBlock} from './commission-status-block';
+import {createCommissionStatusBlock,commissionLabelSuffix,isCommissionLabelHeading} from './commission-status-block';
 import type {InlineTextRecord} from './rich-text';
 
 /** In-memory, same-builder clipboard only. No OS clipboard, persistence or remote writes. */
@@ -23,7 +23,8 @@ export function captureFrameClipboard(content:OwnerContent,pageId:string,rootId:
   if(additionalRoots.length)fail('Copy this commission field on its own.');
   const draft=structuredClone(content),target=draft.pages.find(item=>item.id===pageId)!;
   if(!getCanvasNodes(content,page).some(node=>node.id===rootId))fail('This commission field is unavailable.');
-  let id='commission-field',suffix=0;while(target.blocks.some(item=>item.id===id))id=`commission-field-${++suffix}`;
+  const suffix=rootId.startsWith('template-text:')?commissionLabelSuffix:'-commission-value';
+  let n=0,id='copied'+suffix;while(target.blocks.some(item=>item.id===id))id=`copied-${++n}${suffix}`;
   const unit=createCommissionStatusBlock(content,id),label=rootId==='template-text:commissions.statusLabel';
   const block:PageBlock=label?{id,type:'heading',level:3,text:unit.label}:{...unit,textOnly:true};
   const style=content.contentOverrides?.styles?.[label?'commissions.statusLabel':'layout.commissions.statusValue'];
@@ -31,7 +32,12 @@ export function captureFrameClipboard(content:OwnerContent,pageId:string,rootId:
   target.blocks.push(block);
   const rich=content.contentOverrides?.inlineStyles?.['template:commissions.statusLabel'];
   if(label&&rich&&draft.contentOverrides?.inlineStyles)draft.contentOverrides.inlineStyles[`block:${pageId}:${id}:text`]=structuredClone(rich);
-  const clip=captureFrameClipboard(draft,pageId,`block:${id}`);clip.sourceBinding=binding(content);return clip;
+  const clip=captureFrameClipboard(draft,pageId,`block:${id}`);
+  for(const mode of ['desktop','mobile'] as const){
+   const placement=resolveCanvasLayout(content,page,mode==='mobile')[rootId]?.placement;
+   if(placement)clip[mode][clip.rootId].placement=structuredClone(placement);
+  }
+  clip.sourceBinding=binding(content);return clip;
  }
  if(rootId==='canvas:layout.commissions.status')return captureCommissionClipboard(content,pageId);
  if([rootId,...additionalRoots].some(id=>!id.startsWith('block:')))fail('This built-in functional unit cannot be copied as a custom box. Nothing was changed.');
@@ -58,8 +64,8 @@ export function pasteFrameClipboard(content:OwnerContent,pageId:string,clipboard
  if(!frameClipboardIsCurrent(content,clipboard))fail('The draft changed after Copy box. Copy the box again before pasting.');
  if(clipboard.assets.some(src=>!options.verifiedAssets.has(src)))fail('A required photo, font or document has not been verified as available. Nothing was pasted.');
  const draft=structuredClone(content),page=draft.pages.find(p=>p.id===pageId&&!p.trashedAt);if(!page)fail('Choose an available destination page.');
- const occupied=new Set<string>();const collectIds=(value:unknown)=>{if(Array.isArray(value))value.forEach(collectIds);else if(value&&typeof value==='object')for(const[key,item]of Object.entries(value)){if(key==='id'&&typeof item==='string')occupied.add(item);else collectIds(item);}};collectIds(draft);const fresh=()=>{const id=options.newId();if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(id)||occupied.has(id))fail('A fresh box identity could not be created. Nothing was pasted.');occupied.add(id);return id;};
- const ids=new Map(clipboard.blocks.map(block=>[block.id,fresh()]));const faqIds=new Map<string,string>();for(const block of clipboard.blocks)if(block.type==='faq')for(const item of block.items)faqIds.set(`${block.id}:${item.id}`,fresh());
+ const occupied=new Set<string>();const collectIds=(value:unknown)=>{if(Array.isArray(value))value.forEach(collectIds);else if(value&&typeof value==='object')for(const[key,item]of Object.entries(value)){if(key==='id'&&typeof item==='string')occupied.add(item);else collectIds(item);}};collectIds(draft);const fresh=(suffix="")=>{const generated=options.newId(),id=generated.endsWith(suffix)?generated:generated+suffix;if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(id)||occupied.has(id))fail('A fresh box identity could not be created. Nothing was pasted.');occupied.add(id);return id;};
+ const ids=new Map(clipboard.blocks.map(block=>[block.id,fresh(block.type==="heading"&&isCommissionLabelHeading(block.id)?commissionLabelSuffix:"")]));const faqIds=new Map<string,string>();for(const block of clipboard.blocks)if(block.type==='faq')for(const item of block.items)faqIds.set(`${block.id}:${item.id}`,fresh());
  const designs=new Map(clipboard.buttonDesigns.map(design=>{
   const match=content.buttonDesigns?.find(existing=>options.reuseDesigns?.has(existing.id)&&JSON.stringify({...existing,id:""})===JSON.stringify({...design,id:""}));
   return [design.id,match?.id??fresh()];

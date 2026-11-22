@@ -1,7 +1,7 @@
 import {resolveCanvasLayout, updateCanvasPlacement, type CanvasPlacement} from "./canvas-layout";
 import type {OwnerContent,OwnerPage} from "./model";
 
-import {restoreShoveMargin} from "./canvas-shove";
+import {currentShoveMargin,restoreShoveMargin} from "./canvas-shove";
 
 export type ShoveShift={margin?:boolean;bottom?:boolean;unset?:boolean;id:string;parentId:string|null;before:number;after:number};
 
@@ -35,6 +35,13 @@ export function shovePlacedSiblings(content:OwnerContent,page:OwnerPage,mobile:b
  return shifts;
 }
 
+export function shoveShiftCurrent(content:OwnerContent,page:OwnerPage,mobile:boolean,shift:ShoveShift){
+ if(shift.before===shift.after)return false;
+ const entry=resolveCanvasLayout(content,page,mobile)[shift.id];
+ if(!entry||entry.removed||entry.parentId!==shift.parentId)return false;
+ return shift.margin?currentShoveMargin(content,page,mobile,shift.id,shift.bottom)===shift.after:entry.placement?.matrix.f===shift.after;
+}
+
 export function restoreShifts(content:OwnerContent,page:OwnerPage,mobile:boolean,shifts:ShoveShift[]){
  for(const shift of shifts){
   if(shift.margin){restoreShoveMargin(content,page.id,mobile,shift.id,shift.before,shift.after,shift.bottom,shift.unset);continue;}
@@ -51,5 +58,5 @@ export function mergeShifts(previous:ShoveShift[],added:ShoveShift[]){
   const old=merged.get(key(shift));
   merged.set(key(shift),old?.after===shift.before?{...old,after:shift.after}:shift);
  }
- return [...merged.values()];
+ return [...merged.values()].filter(shift=>shift.before!==shift.after);
 }
