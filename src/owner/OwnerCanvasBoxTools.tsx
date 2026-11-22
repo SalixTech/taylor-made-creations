@@ -36,8 +36,22 @@ function frameGeometry(bounds: CanvasBoxBounds, box: ElementBox, original: Eleme
   rotation.f = bounds.origin.y + (box.yPx-original.yPx)*responsive + height/2 - rotatedCenter.y;
   return {width,height,matrix:multiplyAffine(bounds.parentToCanvas,rotation)};
 }
+function constrainResize(bounds:CanvasBoxBounds,original:ElementBox,next:ElementBox){
+  const edges=(value:ElementBox)=>{
+    const f=frameGeometry(bounds,value,original),m=f.matrix;
+    const xs=[m.e,m.e+m.a*f.width,m.e+m.c*f.height,m.e+m.a*f.width+m.c*f.height];
+    return [Math.min(...xs),Math.max(...xs)];
+  };
+  const [left,right]=edges(original),[nextLeft,nextRight]=edges(next);
+  let amount=1;
+  if(nextLeft<Math.min(left,0))amount=Math.min(amount,(left-Math.min(left,0))/(left-nextLeft));
+  if(nextRight>Math.max(bounds.canvasWidth,right))amount=Math.min(amount,(Math.max(bounds.canvasWidth,right)-right)/(nextRight-right));
+  if(amount===1)return next;
+  const at=(from:number,to:number)=>from+(to-from)*amount;
+  return {...next,widthPercent:at(original.widthPercent,next.widthPercent),heightPx:at(original.heightPx,next.heightPx),xPercent:at(original.xPercent,next.xPercent),yPx:at(original.yPx,next.yPx)};
+}
 const matrixStyle = (m: Affine) => `matrix(${m.a}, ${m.b}, ${m.c}, ${m.d}, ${m.e}, ${m.f})`;
-export function OwnerCanvasBoxTools({ showResizeHandles=true,onCanvasMoveStart,onCanvasMovePreview,onCanvasMoveCommit,onCanvasMoveCancel, layoutIdentity, canvasRef, target, occurrence = 0, value, disabled, onChange, initialAspectLocked, onInitialAspectLockChange, onEditContent, onDelete, onCopyBox, onPasteBox, onSelectParent, selectBoxContents = true, onSelectBoxContents, sectionOrder, reparentId, renderVersion, placement, resolvePlacementDestination, onPlacementChange, onResetPlacement }: PlacementProps & CanvasMoveHooks & { showResizeHandles?:boolean; selectBoxContents?:boolean; onSelectBoxContents?:(selected:boolean)=>void; onSelectParent?:()=>void; onCopyBox?:()=>void; onPasteBox?:()=>void; onDelete?:()=>void; reparentId?:string; sectionOrder?: { index: number; count: number; onMove: (direction: -1 | 1) => void }; onEditContent?: () => void; renderVersion?: object; initialAspectLocked?: boolean; onInitialAspectLockChange?: (locked: boolean) => void; occurrence?: number; canvasRef: RefObject<HTMLDivElement | null>; target: string; value?: ElementAppearance; disabled: boolean; onChange: (value: ElementAppearance) => void }) {
+export function OwnerCanvasBoxTools({ constrainTextWidth=false,showResizeHandles=true,onCanvasMoveStart,onCanvasMovePreview,onCanvasMoveCommit,onCanvasMoveCancel, layoutIdentity, canvasRef, target, occurrence = 0, value, disabled, onChange, initialAspectLocked, onInitialAspectLockChange, onEditContent, onDelete, onCopyBox, onPasteBox, onSelectParent, selectBoxContents = true, onSelectBoxContents, sectionOrder, reparentId, renderVersion, placement, resolvePlacementDestination, onPlacementChange, onResetPlacement }: PlacementProps & CanvasMoveHooks & { constrainTextWidth?:boolean;showResizeHandles?:boolean; selectBoxContents?:boolean; onSelectBoxContents?:(selected:boolean)=>void; onSelectParent?:()=>void; onCopyBox?:()=>void; onPasteBox?:()=>void; onDelete?:()=>void; reparentId?:string; sectionOrder?: { index: number; count: number; onMove: (direction: -1 | 1) => void }; onEditContent?: () => void; renderVersion?: object; initialAspectLocked?: boolean; onInitialAspectLockChange?: (locked: boolean) => void; occurrence?: number; canvasRef: RefObject<HTMLDivElement | null>; target: string; value?: ElementAppearance; disabled: boolean; onChange: (value: ElementAppearance) => void }) {
   const [bounds, setBounds] = useState<CanvasBoxBounds | null>(null), [preview, setPreview] = useState<{ box: ElementBox; appearance: ElementAppearance | undefined; target: string; guides?: AlignmentGuide[] } | null>(null), [notice, setNotice] = useState("");
   const [hasContents,setHasContents]=useState(false);
   const [textExtent,setTextExtent]=useState<CanvasVisualExtent|null>(null);
@@ -156,6 +170,7 @@ export function OwnerCanvasBoxTools({ showResizeHandles=true,onCanvasMoveStart,o
       const local=transformPoint(rotationAffine(-(state.original.rotationDeg ?? 0)),{x:dx,y:dy});
       state.current=resizeElementBoxFromHandle(state.original,state.kind,local.x,local.y,state.original.aspectLocked || event.shiftKey,b.heightFactor);
     }
+    if(constrainTextWidth&&state.kind!=="move"&&state.kind!=="rotate")state.current=constrainResize(b,state.original,state.current);
     const currentFrame=frameGeometry(b,state.current,state.original),canvasToParent=inverseAffine(b.parentToCanvas);
     let guides:AlignmentGuide[]=[];
     if(canvasToParent&&state.kind!=="rotate"){
@@ -177,7 +192,7 @@ export function OwnerCanvasBoxTools({ showResizeHandles=true,onCanvasMoveStart,o
     event.preventDefault(); event.stopPropagation(); finish(false);
     const step=event.shiftKey ? 10 : 1, dx=event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0, dy=event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
     const next=kind === "move" ? (hasContents&&!selectBoxContents?moveElementBoxFrame:moveElementBox)(box,box.xPercent+dx,box.yPx+dy) : kind === "rotate" ? rotateElementBox(box,event.shiftKey ? Math.round(((box.rotationDeg ?? 0)+(dx || dy)*1.5)/15)*15 : (box.rotationDeg ?? 0)+(dx || dy)) : resizeElementBoxFromHandle(box,kind,dx*box.referenceParentPx/100,dy,box.aspectLocked || event.shiftKey,bounds!.heightFactor);
-    if (!sameElementBox(box,next)) save(next);
+    if (!sameElementBox(box,next)) save(constrainTextWidth&&kind!=="move"&&kind!=="rotate"?constrainResize(bounds!,box,next):next);
   }
   /* eslint-disable react-hooks/refs */
   const events=(kind:Kind)=>({onPointerDown:(event:PointerEvent<HTMLButtonElement>)=>start(event,kind),onPointerMove:move,onPointerUp:(event:PointerEvent<HTMLButtonElement>)=>{event.preventDefault();event.stopPropagation();finish(true,event.pointerId);},onPointerCancel:(event:PointerEvent<HTMLButtonElement>)=>finish(false,event.pointerId),onLostPointerCapture:(event:PointerEvent<HTMLButtonElement>)=>finish(false,event.pointerId),onKeyDown:(event:KeyboardEvent<HTMLButtonElement>)=>keys(event,kind)});
@@ -204,7 +219,14 @@ export function OwnerCanvasBoxTools({ showResizeHandles=true,onCanvasMoveStart,o
 
       {onDelete&&<button data-owner-button type="button" disabled={disabled} onClick={()=>{if(!disabled){finish(false);onDelete();}}}>Delete</button>}
       <button data-owner-button type="button" disabled={disabled} aria-pressed={box.aspectLocked} onClick={()=>{if(disabled)return;finish(false);if(boxed)save({...box,aspectLocked:!box.aspectLocked});else if(onInitialAspectLockChange)onInitialAspectLockChange(!box.aspectLocked);else setInitialLocked(locked=>!locked);}}>Lock ratio</button>
-      <details className={styles.boxMore}><summary onClick={event=>event.stopPropagation()}>More</summary><div>{sectionOrder&&<><button data-owner-button type="button" disabled={disabled||sectionOrder.index<=0} onClick={()=>{if(!disabled&&sectionOrder.index>0)sectionOrder.onMove(-1);}}>Move earlier</button><button data-owner-button type="button" disabled={disabled||sectionOrder.index>=sectionOrder.count-1} onClick={()=>{if(!disabled&&sectionOrder.index<sectionOrder.count-1)sectionOrder.onMove(1);}}>Move later</button></>}      {onSelectParent&&<button data-owner-button type="button" disabled={disabled} onClick={onSelectParent}>Select parent box</button>}
+      <details className={styles.boxMore} onToggle={event=>{
+        const details=event.currentTarget,menu=details.querySelector("div");if(!details.open||!menu)return;
+        menu.style.translate="";const rect=menu.getBoundingClientRect(),canvas=canvasRef.current?.getBoundingClientRect();
+        const left=Math.max(4,canvas?.left??4),right=Math.min(window.innerWidth-4,canvas?.right??window.innerWidth);
+        const x=rect.left<left?left-rect.left:Math.min(0,right-rect.right);
+        const y=rect.bottom>window.innerHeight&&details.getBoundingClientRect().top>rect.height?-rect.height-details.offsetHeight:0;
+        menu.style.translate=`${x}px ${y}px`;
+      }}><summary onClick={event=>event.stopPropagation()}>More</summary><div>{sectionOrder&&<><button data-owner-button type="button" disabled={disabled||sectionOrder.index<=0} onClick={()=>{if(!disabled&&sectionOrder.index>0)sectionOrder.onMove(-1);}}>Move earlier</button><button data-owner-button type="button" disabled={disabled||sectionOrder.index>=sectionOrder.count-1} onClick={()=>{if(!disabled&&sectionOrder.index<sectionOrder.count-1)sectionOrder.onMove(1);}}>Move later</button></>}      {onSelectParent&&<button data-owner-button type="button" disabled={disabled} onClick={onSelectParent}>Select parent box</button>}
       {hasContents&&onSelectBoxContents&&<button data-owner-button type="button" disabled={disabled} aria-pressed={!selectBoxContents} onClick={()=>{if(disabled)return;finish(false);onSelectBoxContents?.(!selectBoxContents);}}>Move frame only</button>}
       {reparentId&&<button data-owner-button type="button" draggable={!disabled} disabled={disabled} data-owner-reparent-id={reparentId} title="Drag this handle into a section container to change membership">Move into section</button>}
 

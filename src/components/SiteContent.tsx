@@ -141,7 +141,7 @@ function TemplateLeaf({content,field,variables}:{content:OwnerContent;field:stri
  * while an item-level color wins over older nested template/run colors. */
 function CommissionStatusValue({content,styleKey,perCopyAlignment=false}:{content:OwnerContent;styleKey:string;perCopyAlignment?:boolean}) {
   const {mobileLayout}=useContext(RenderContext),mobile=!!mobileLayout;
-  const field=commissionStatusTemplateKey(content.site.commissionStatus),value=content.site.commissionStatus;
+  const field=commissionStatusTemplateKey(content.site.commissionStatus),value=getTemplateText(content,field)||content.site.commissionStatus;
   const sourceAppearance=resolveElementAppearance(content.contentOverrides?.styles?.[field],mobile);
   const ownAppearance=resolveElementAppearance(content.contentOverrides?.styles?.[styleKey],mobile),color=ownAppearance?.textColor;
   // Only an explicit per-copy alignment overrides nested template alignment.

@@ -7,7 +7,7 @@ import {getCanvasNodes} from './canvas-layout';
 export function resolveCanvasClickTarget(content:OwnerContent,page:OwnerPage,canvas:HTMLElement,target:HTMLElement):HTMLElement{
  const edit=target.dataset.ownerEdit;if(!edit||!canvas.contains(target)||canvasTextField(content,page,edit))return target;
  // Only the dynamic commission-status value is a known nontext unit control.
- if(edit!=='canvas:layout.commissions.statusValue'&&!/^canvas:layout\.block:[^:]+:[^:]+:status-value$/.test(edit))return target;
+ if(!/^canvas:layout\.block:[^:]+:[^:]+:status-value$/.test(edit))return target;
  const frame=target.closest<HTMLElement>('[data-owner-layout-id]');if(!frame)return target;
  const scope=frame.dataset.ownerLayoutScope==='chrome'?'chrome':'page';
  const nodes=getCanvasNodes(content,scope==='chrome'?'chrome':page),node=nodes.find(n=>n.id===frame.dataset.ownerLayoutId);

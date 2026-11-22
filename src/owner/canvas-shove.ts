@@ -103,3 +103,45 @@ export function applyCanvasShove(candidate:OwnerContent,capture:CanvasShoveCaptu
  }
  Object.assign(candidate,next);return true;
 }
+
+export function restoreShoveMargin(content:OwnerContent,pageId:string,mobile:boolean,id:string,before:number,after:number,bottom=false,unset=false){
+ const page=content.pages.find(p=>p.id===pageId);
+ const target=page&&getCanvasNodes(content,page).find(node=>node.id===id)?.styleTarget;
+ if(!target)return;
+ const raw=appearance(content,pageId,target),active=resolveElementAppearance(raw,mobile);
+ const key=bottom?"marginBottomPx":"marginTopPx";
+ if(active?.[key]===after){const next={...active,[key]:before};if(unset)delete next[key];writeAppearance(content,pageId,target,setElementAppearanceForLayout(raw,next,mobile)!);}
+}
+
+/** An absolutely placed item can overlap a native row even when there is no
+ * existing margin to drop into. Move that row in flow, leaving nested elements
+ * to follow their own row and excluding the page shell itself. */
+export function shoveNativeRow(canvas:HTMLElement,content:OwnerContent,pageId:string,mobile:boolean,sourceId:string,snapshot:CapturedCanvasFrame,direction:1|-1|0){
+ const page=content.pages.find(p=>p.id===pageId);
+ if(!page||!axis(snapshot.screenMatrix))return [];
+ const m=snapshot.screenMatrix,rect={left:m.e,right:m.e+m.a*snapshot.widthPx,top:m.f,bottom:m.f+m.d*snapshot.heightPx};
+ const map=resolveCanvasLayout(content,page,mobile),shell=page.builtinKey==='home'?null:`canvas:layout.page:${page.id}:shell`;
+ const sourceParent=map[sourceId]?.parentId;
+ const nodes=getCanvasNodes(content,page),byId=new Map(nodes.map(n=>[n.id,n]));
+ const candidates=Array.from(canvas.querySelectorAll<HTMLElement>('[data-owner-layout-scope="page"][data-owner-layout-id]')).flatMap(el=>{
+  const id=el.dataset.ownerLayoutId!,entry=map[id],node=byId.get(id);
+  if(id===sourceId||id===shell||!node?.movable||!entry||entry.removed||entry.placement||entry.flowAttachment||entry.parentId!==(sourceParent??shell))return [];
+  if(!node.styleTarget.startsWith('canvas:')&&!node.styleTarget.startsWith('block:'))return [];
+  const r=el.getBoundingClientRect();
+  if(r.width<=0||r.height<=0||r.right<=rect.left||r.left>=rect.right||r.top>=rect.bottom||r.bottom<=rect.top)return [];
+  const scale=el.parentElement&&elementToScreen(el.parentElement);
+  if(!axis(scale)||!['static','relative'].includes(getComputedStyle(el).position))return [];
+  const sign=direction||((r.top+r.bottom)/2<(rect.top+rect.bottom)/2?-1:1);
+  const delta=(sign===1?rect.bottom-r.top:rect.top-r.bottom)/scale!.d;
+  return [{el,id,node,delta}];
+ }).sort((a,b)=>Math.abs(a.delta)-Math.abs(b.delta));
+ const hit=candidates[0];if(!hit)return [];
+ const raw=appearance(content,pageId,hit.node.styleTarget),active=resolveElementAppearance(raw,mobile);
+ const css=getComputedStyle(hit.el),before=active?.marginTopPx??pixels(css.marginTop),bottom=active?.marginBottomPx??pixels(css.marginBottom);
+ if(!finite(before,bottom,hit.delta))return [];
+ const after=before+hit.delta;
+ const value={...active,marginTopPx:after,...(hit.delta<0?{marginBottomPx:bottom-hit.delta}:{})};
+ if(!writeAppearance(content,pageId,hit.node.styleTarget,setElementAppearanceForLayout(raw,value,mobile)!))return [];
+ return [{id:hit.id,parentId:map[hit.id].parentId,before,after,margin:true,unset:active?.marginTopPx===undefined},
+  ...(hit.delta<0?[{id:hit.id,parentId:map[hit.id].parentId,before:bottom,after:bottom-hit.delta,margin:true,bottom:true,unset:active?.marginBottomPx===undefined}]:[])];
+}

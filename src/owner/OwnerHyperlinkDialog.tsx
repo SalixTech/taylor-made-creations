@@ -14,7 +14,7 @@ export function OwnerHyperlinkDialog({href,disabled,onApply,onClose,canRemove=tr
   if(!onApply(normalized))setError('The selected item or draft changed. Close these controls and select it again; nothing was changed.');
  }
  return <Dialog title="Hyperlink destination" dismissDisabled={disabled} onClose={onClose} actions={<><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={disabled} onClick={onClose}>Cancel</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={disabled||!href||!canRemove} onClick={()=>apply(null)}>{removeLabel}</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={disabled} onClick={()=>apply(destination)}>Apply link</button></>}>
-  <p>{selectionText!==undefined?<>Link selected text: <mark>{selectionText}</mark></>:<>This edits the selected item’s destination. If it is already inside a link, that existing destination is updated.</>}</p>
+  <p>{selectionText!==undefined?<>Link selected text: <strong>{selectionText}</strong></>:<>This edits the selected item’s destination. If it is already inside a link, that existing destination is updated.</>}</p>
   <fieldset disabled={disabled}><Field label="Link destination" value={destination} onChange={setDestination} hint="https://example.com, /contact, mailto:name@example.com or #section"/></fieldset>
   {allowDocument&&<WebsiteAssetPicker disabled={disabled} key={targetId} targetId={targetId} revision={revision} kind="document" value={destination} onSelect={value=>{setDestination(value);setError("");}}/>}
   {error&&<p role="alert">{error}</p>}

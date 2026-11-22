@@ -5,6 +5,17 @@ import {captureCanvasFrame,type CapturedCanvasFrame} from './canvas-placement-ge
  * original full-width frame instead of guessing an undersized text box. */
 export function captureNewItemFrame(frame:HTMLElement,block:PageBlock,samples?:HTMLElement|null):CapturedCanvasFrame|null {
   const capture=captureCanvasFrame(frame);
+  if(capture&&(block.type==="text"||block.type==="heading")&&frame.ownerDocument){
+    const doc=frame.ownerDocument,range=doc.createRange(),walker=doc.createTreeWalker(frame,4);
+    let width=0;
+    while(walker.nextNode()){
+      if(!walker.currentNode.textContent?.trim())continue;
+      range.selectNodeContents(walker.currentNode);
+      for(const rect of range.getClientRects())width=Math.max(width,rect.width);
+    }
+    const scale=Math.abs(capture.screenMatrix.a)||1;
+    if(width>0)return {...capture,widthPx:Math.min(capture.widthPx,Math.ceil(width/scale)+12)};
+  }
   if(!capture||block.type!=='commission-status'||!block.textOnly)return capture;
   const widths:number[]=[],heights:number[]=[];
   for(const status of COMMISSION_STATUSES){

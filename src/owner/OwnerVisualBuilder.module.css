@@ -435,3 +435,10 @@
   border-color:var(--owner-control-line,#888);
 }
 .dockedPanel .navRowHeading>span,.dockedPanel .navRow small{color:var(--owner-ink,#eee);}
+.boxMore>div{left:auto;right:0;max-height:40dvh;overflow:auto;}
+.savedAsset button{color:var(--owner-ink,#eee);background:var(--owner-raised,#292929);border:1px solid var(--owner-control-line,#888);border-radius:6px;padding:5px 9px;}
+
+.assetShelf{position:fixed;right:12px;top:15vh;max-height:75vh;overflow:auto;z-index:60;width:min(400px,calc(100vw - 24px));box-sizing:border-box;padding:16px;background:var(--owner-surface,#252529);color:var(--owner-ink,#eee);border:1px solid var(--owner-control-line,#888);border-radius:8px;}
+.assetShelf button,.pagePicker>button,.pagePicker form button{background:var(--owner-raised,#303036);color:inherit;border:1px solid var(--owner-control-line,#888);padding:5px 9px;border-radius:5px;}
+.assetShelf button[draggable=true]{cursor:grab;}
+.layoutIndicator{flex-basis:100%;text-align:center;background:transparent;}

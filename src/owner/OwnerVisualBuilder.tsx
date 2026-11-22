@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode, type PointerEvent } from "react";
+import {BUTTON_PRESETS,type ButtonAppearance} from "./button-import";
+import {createDefaultOwnerContent} from "./defaults";
 import {OwnerTitleSizeHandle} from "./OwnerTitleSizeHandle";
 import {setStatusTitleFlow} from "./canvas-title-flow";
 import {captureNewItemFrame} from "./capture-new-item-frame";
@@ -35,18 +37,20 @@ import {applyPendingInlineTextStyle,mergePendingInlineTextStyle,inlineTextStyleA
 import {getInlineTextId,getInlineTextRuns,applyInlineTextStyle,resetInlineTextStyle,reconcileInlineTextStyles,type InlineTextStyle} from "./rich-text";
 import {canvasTextField,changeCanvasText} from "./canvas-text-adapter";
 import {resolveCanvasClickTarget} from "./canvas-hit-target";
-import {inlinePlainText,type InlineSelection} from "./inline-text-editing";
+import {inlinePlainText,type InlineSelection,applyInlineHyperlink,removeInlineHyperlink,inlineLinkAtSelection} from "./inline-text-editing";
 import {readComputedPriceAppearance,readComputedTextAppearance,type ComputedTextAppearance} from "./editable-text-dom";
 import { OwnerCanvasImageTools } from "./OwnerCanvasImageTools";
 import type { ElementAppearance } from "./appearance";
 import { getCanvasNodes, resolveCanvasLayout, canAssignCanvasParent, assignCanvasParent, updateCanvasPlacement, stepCanvasNode, removeCanvasNode, renameCanvasNode, type CanvasPlacement } from "./canvas-layout";
 import { marginAfterGapCut, measureGapCut } from "./canvas-gap";
 import { canvasSpacePlacementFromDrag, captureCanvasSpaceParent } from "./canvas-space";
-import {captureCanvasShove,canvasShoveCaptureCurrent,planCanvasShove,applyCanvasShove} from "./canvas-shove";
+import {shovePlacedSiblings,restoreShifts,mergeShifts,type ShoveShift} from "./placed-shove";
+import {shoveNativeRow,captureCanvasShove,canvasShoveCaptureCurrent,planCanvasShove,applyCanvasShove} from "./canvas-shove";
 import type { Affine, ElementBox } from "./box-geometry";
 import { captureCanvasFrame, placeCapturedCanvasFrame, type CapturedCanvasFrame } from "./canvas-placement-geometry";
 import { transferPageBlockToFooter } from "./shared-footer";
-import {captureFrameClipboard,pasteFrameClipboard,type FrameClipboard,type FrameClipboardSessionRef} from "./frame-clipboard";
+import {placeAsset,replaceAssetCopies,assetRoot,linkedAssetId,changeAssetField,type BuilderAsset} from "./builder-assets";
+import {captureFrameClipboard,pasteFrameClipboard,updatedAssetSources,type FrameClipboard,type FrameClipboardSessionRef} from "./frame-clipboard";
 import {captureHorizontalGrowth,horizontalGrowthCaptureCurrent,measureHorizontalText,proposeHorizontalGrowth} from "./horizontal-text-growth";
 import { useMovablePanel } from "./use-movable-panel";
 import { canvasInteractionArea } from "./canvas-interaction-area";
@@ -59,6 +63,7 @@ type Props = {
   frameClipboard?:FrameClipboardSessionRef;
   clipboardScopeKey?:string;
   assetLibraryKey?:string;
+  deviceMemory?: { current: "desktop"|"mobile" };
   draftNameControl?:ReactNode;
   content: OwnerContent;
   page: OwnerPage;
@@ -92,7 +97,7 @@ const selectionLabels: Record<string, string> = { site: "Header & footer", desig
 function move<T extends { id: string }>(items: T[], id: string, direction: -1 | 1) { const from = items.findIndex(item => item.id === id); const to = from + direction; if (from >= 0 && to >= 0 && to < items.length) [items[from], items[to]] = [items[to], items[from]]; }
 
 /** The public renderer IS the canvas. Only the selected piece gets editing controls. */
-export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboardScopeKey,assetLibraryKey,workspaceMode=false, mainCommissionStatus, draftNameControl, content:sourceContent, page:sourcePage, onEdit:onContentEdit, onPageChange, onManagePages, onAddPage, onEditCommissionForm, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange, onSave, saveBusy = false, draftSaveStatus, onPopOut, onRequestDiscard, onUndo, onRedo, canUndo = false, canRedo = false }: Props) {
+export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboardScopeKey,assetLibraryKey,deviceMemory,workspaceMode=false, mainCommissionStatus, draftNameControl, content:sourceContent, page:sourcePage, onEdit:onContentEdit, onPageChange, onManagePages, onAddPage, onEditCommissionForm, onRemove, liveShopVisibility, liveShopKnown = true, liveShopReadError, onRetryLiveShop, canUpdateLiveShop, onUpdateLiveShop, uploadBusy = false, browsing, onBrowsingChange, onSave, saveBusy = false, draftSaveStatus, onPopOut, onRequestDiscard, onUndo, onRedo, canUndo = false, canRedo = false }: Props) {
   const panelId = useId();
   const builderRef=useRef<HTMLElement>(null),toolbarRef=useRef<HTMLDivElement>(null);
   const [priceColors,setPriceColors]=useState<{source:OwnerContent;pageId:string;mobile:boolean;session:string|undefined;color:string}|null>(null);
@@ -124,9 +129,12 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const [footerTransfer,setFooterTransfer]=useState<{source:OwnerContent;pageId:string;blockId:string;newId:string;mobile:boolean;capture:CapturedCanvasFrame;preview:OwnerContent;viewport:number[];phase:"confirm"|"measure"}|null>(null);
   const applyingFooter=useRef<typeof footerTransfer>(null);
   const [placementIntent,setPlacementIntent]=useState<{scope:"page"|"chrome";id:string;parentId:string|null;pageId:string;mobile:boolean;source:OwnerContent;capture:CapturedCanvasFrame;relative?:{id:string;after:boolean}}|null>(null);
-  const [deleteIntent,setDeleteIntent]=useState<{scope:"page"|"chrome";id:string;parentId:string|null;pageId:string;mobile:boolean;source:OwnerContent;captures:Record<string,CapturedCanvasFrame>}|null>(null);
+  const [deleteIntent,setDeleteIntent]=useState<{scope:"page"|"chrome";id:string;parentId:string|null;pageId:string;mobile:boolean;source:OwnerContent;restoreShifts?:ShoveShift[];captures:Record<string,CapturedCanvasFrame>}|null>(null);
   const [drawingSpace,setDrawingSpace]=useState(false);
   const [cuttingSpace,setCuttingSpace]=useState(false);
+  function pageNameNode(p:OwnerPage){return p.builtinKey==="home"?"canvas:layout.home.intro":`canvas:layout.page:${p.id}:shell`;}
+  function editorPageName(p:OwnerPage){return p.canvasLayout?.desktop[pageNameNode(p)]?.label??p.title;}
+  const [renamePage,setRenamePage]=useState<{id:string;name:string}|null>(null);
   const [itemPicker,setItemPicker]=useState<{x:number;y:number}|null>(null);
   const pickerRef=useRef<HTMLDivElement>(null);
   const draggingItem=useRef<{type:PageBlock["type"];source:OwnerContent;pageId:string;mobile:boolean}|null>(null);
@@ -143,6 +151,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     target.blocks.push(structuredClone(addingItem.block));
     return preview;
   },[addingItem]);
+  const [shoveRemoval,setShoveRemoval]=useState<{remove:(restore:boolean)=>void}|null>(null);
   const [contextMenu,setContextMenu]=useState<{x:number;y:number;target?:string}|null>(null);
   const contextMenuRef=useRef<HTMLDivElement>(null);
   const [boxNameDraft,setBoxNameDraft]=useState<{id:string;original:string;value:string}|null>(null);
@@ -167,15 +176,20 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   const [openAssetLibraryKey,setOpenAssetLibraryKey]=useState<string|null>(null);
   const assetLibraryOpen=!!assetLibraryKey&&openAssetLibraryKey===assetLibraryKey;
   const [assetName,setAssetName]=useState("");
+  const [editingAsset,setEditingAsset]=useState<BuilderAsset|null>(null);
+  const [variantRoot,setVariantRoot]=useState<string|null>(null);
+  const dragAsset=useRef<BuilderAsset|null>(null);
+  const [assetPreview,setAssetPreview]=useState<{draft:OwnerContent;source:OwnerContent;pageId:string;mobile:boolean;root:string;point:{x:number;y:number}|null}|null>(null);
   const [pendingAsset,setPendingAsset]=useState<FrameClipboard|null>(null);
-  const [builderAssets,setBuilderAssets]=useState<{id:string;name:string;clip:Omit<FrameClipboard,"sourceBinding">}[]>([]);
+  const [builderAssets,setBuilderAssets]=useState<BuilderAsset[]>([]);
   const [assetSelection,setAssetSelection]=useState<{pageId:string;mobile:boolean;ids:string[]}|null>(null);
   const [clipboardNotice,setClipboardNotice]=useState("");
   const [hasFrameClipboard,setHasFrameClipboard]=useState(()=>!!clipboardScopeKey&&frameClipboard.current?.scopeKey===clipboardScopeKey);
   const draggingNav = useRef<string | null>(null);
   const dragClickGuard = useRef(false);
   const [imageEditMode, setImageEditMode] = useState<"photo" | "box">("box");
-  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [device, setActiveDevice] = useState<"desktop" | "mobile">(deviceMemory?.current??"desktop");
+  function setDevice(next:"desktop"|"mobile"){if(deviceMemory)deviceMemory.current=next;setActiveDevice(next);}
   const assetIds=assetSelection?.pageId===sourcePage.id&&assetSelection.mobile===(device==="mobile")?assetSelection.ids:undefined;
   const contentsSelectionKey=`${sourcePage.id}:${selected}:${selectedOccurrence}:${device}`;
   const selectBoxContents=contentsSelection!==contentsSelectionKey;
@@ -258,27 +272,40 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       else if (imageBlock) { const item = draft.pages.find(item => item.id === page.id)?.blocks.find(item => item.id === imageBlock.id); if (item) item.appearance = value; }
     });
   }
-  const selectedText=canvasTextField(sourceContent,sourcePage,selected);
+  const statusWord=selected==="canvas:layout.commissions.statusValue"||block?.type==="commission-status"&&block.textOnly;
+  const actualStatus=mainCommissionStatus??sourceContent.site.commissionStatus;
+  const displayWord=sourceContent.contentOverrides?.text?.[commissionStatusTemplateKey(actualStatus)]??actualStatus;
+  const selectedText=statusWord?{value:displayWord,label:"Status wording",links:false,inputKind:undefined}:canvasTextField(sourceContent,sourcePage,selected);
   const selectedHyperlink=canvasHyperlinkTarget(sourceContent,sourcePage,selected,selectedLayout?.id,useMobile);
   const horizontalText=!!selectedText&&selectedText.inputKind!=="money"&&!!selected&&!selected.startsWith("template-link:")&&(selected==="page-title"||selected.startsWith("core-text:")||selected.startsWith("block:")&&block?.type==="heading"||/^canvas:layout\.block:[^:]+:[^:]+:(heading|body|caption)$/.test(selected)||/^canvas:layout\.(?:price-(?:group|item|parts|extras):[^:]+:(?:title|note|name|detail)|gallery:[^:]+:caption)$/.test(selected)||selected.startsWith("template-text:")&&!/(?:Button|Label|Placeholder)$/i.test(selected));
   const textContextKey=`${sourcePage.id}:${selected}:${selectedLayout?.scope??"page"}:${selectedLayout?.id??selectedOccurrence}:${useMobile}:${clipboardScopeKey??"owner-mounted"}`;
   function openPriceColors(){if(uploadBusy||saveBusy||browsing)return;setPriceColors({source:sourceContent,pageId:sourcePage.id,mobile:useMobile,session:clipboardScopeKey,color:"#315b50"});}
   function priceColorsCurrent(){const current=deleteContext.current;return !!priceColors&&priceColorsLive.current===priceColors&&deleteMounted.current&&clipboardScope.current===priceColors.session&&current.source===priceColors.source&&current.pageId===priceColors.pageId&&current.mobile===priceColors.mobile&&!current.uploadBusy&&!current.saveBusy&&!current.browsing;}
   function commitPriceColors(){if(!priceColorsCurrent()||!priceColors)return;const intent=priceColors;if(!applyAllPriceColors(structuredClone(sourceContent),intent.color,intent.mobile)){setAnnouncement("Choose a six-digit hex color different from the current price colors.");return;}onContentEdit(draft=>{if(priceColorsCurrent())applyAllPriceColors(draft,intent.color,intent.mobile);});closePriceColors();setAnnouncement("All price colors updated in this layout. Undo restores the previous colors. Nothing was published.");}
-  function requestInlineHyperlink(selection:InlineSelection){const current=deleteContext.current;if(!deleteMounted.current||clipboardScope.current!==clipboardScopeKey||current.source!==sourceContent||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.target!==selected||current.uploadBusy||current.saveBusy||current.browsing)return;inlineSelectionScope.current=textContextKey;setInlineSelection(selection);setLinkRequest({...selection,requestId:++linkRequestSequence.current,contextKey:textContextKey});setInspectorOpen(true);}
+  function requestInlineHyperlink(selection:InlineSelection){const current=deleteContext.current;if(!deleteMounted.current||clipboardScope.current!==clipboardScopeKey||current.source!==sourceContent||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.target!==selected||current.uploadBusy||current.saveBusy||current.browsing)return;inlineSelectionScope.current=textContextKey;setInlineSelection(selection);setLinkRequest({...selection,requestId:++linkRequestSequence.current,contextKey:textContextKey});setInspectorOpen(false);}
   function commitInlineText(expected:string,value:string,edit?:CanvasTextEditMetadata){const current=deleteContext.current;if(!deleteMounted.current||!selected||clipboardScope.current!==clipboardScopeKey||current.source!==sourceContent||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.target!==selected||current.uploadBusy||current.saveBusy||current.browsing)return false;
     const pending=pendingTypingRef.current,typing=pending?.key===textContextKey&&pending.value===expected&&selectedText?.inputKind!=="money"?pending:null;
-    const growthContext=horizontalText&&edit&&selectedLayout?{source:sourceContent,pageId:sourcePage.id,target:selected,value:expected,mobile:useMobile,identity:selectedLayout}:null;
-    const growth=(()=>{try{return growthContext&&canvasRef.current?captureHorizontalGrowth(canvasRef.current,growthContext,boxAppearance,selectedPlacement):null;}catch{return null;}})();
-    let changed=false,nextRecord="",widthWarning="";onContentEdit(draft=>{const next=structuredClone(draft);if(!changeCanvasText(next,sourcePage.id,selected,expected,value))return;
+    const parentId=selectedLayout&&selectedLayoutMap[selectedLayout.id]?.parentId;
+    const textParent=parentId&&!selectedPlacement&&selectedLayout?.scope==="page"&&sourcePage.blocks.find(b=>b.type==="text"&&!b.heading&&`block:${b.id}`===parentId&&selected===`canvas:layout.block:${sourcePage.id}:${b.id}:body`);
+    const parentPlacement=textParent&&parentId?selectedLayoutMap[parentId]?.placement:undefined;
+    const growthIdentity=parentPlacement&&parentId?{scope:"page" as const,id:parentId}:selectedLayout;
+    const growthPlacement=parentPlacement??selectedPlacement;
+    const growthAppearance=parentPlacement&&textParent?textParent.appearance:boxAppearance;
+    const growthContext=horizontalText&&edit&&growthIdentity?{source:sourceContent,pageId:sourcePage.id,target:parentPlacement?parentId!:selected,value:expected,mobile:useMobile,identity:growthIdentity}:null;
+    const growth=(()=>{try{return growthContext&&canvasRef.current?captureHorizontalGrowth(canvasRef.current,growthContext,growthAppearance,growthPlacement):null;}catch{return null;}})();
+    let changed=false,nextRecord="",widthWarning="";onContentEdit(draft=>{const next=structuredClone(draft);if(statusWord){if(expected!==displayWord||value.length>120)return;next.contentOverrides??={};next.contentOverrides.text??={};next.contentOverrides.text[commissionStatusTemplateKey(actualStatus)]=value;}else if(!changeCanvasText(next,sourcePage.id,selected,expected,value))return;
       if(edit?.inputType.startsWith("insert")){const inherited=edit.selection?inlineTextStyleAtCaret(draft,sourcePage.id,selected,edit.selection,useMobile):null,marks=typing?mergePendingInlineTextStyle(inherited??{},typing.style,draft.fonts):inherited;if(typing&&!edit.selection)return;if(marks&&Object.keys(marks).length&&(!edit.selection||!applyPendingInlineTextStyle(draft,next,sourcePage.id,selected,edit.selection,marks,useMobile)))return;}
       reconcileInlineTextStyles(draft,next);
       let resized=false;
       if(growth&&growthContext&&edit?.node&&!growth.node.closest("a,button,label,input,textarea,select,[role=button]")){(()=>{try{
         const fieldId=getInlineTextId(next,sourcePage.id,selected),runs=fieldId?getInlineTextRuns(next,fieldId,useMobile):[],plain=selectedText?.links?inlinePlainText(value):value;
-        const measurement=measureHorizontalText(edit.node,plain,runs);if(!measurement||!horizontalGrowthCaptureCurrent(growth,growthContext,boxAppearance,selectedPlacement))return;
+        const measurement=measureHorizontalText(edit.node,plain,runs);if(!measurement||!horizontalGrowthCaptureCurrent(growth,growthContext,growthAppearance,growthPlacement))return;
+        const rect=growth.node.getBoundingClientRect(),edge=Math.min(window.innerWidth,canvasRef.current?.getBoundingClientRect().right??window.innerWidth);
+        if(edge!==undefined&&rect.width>0)measurement.widthPx=Math.min(measurement.widthPx,Math.max(growth.frame.widthPx,(edge-rect.left)*growth.frame.widthPx/rect.width));
         const proposal=proposeHorizontalGrowth(growth,measurement);if(!proposal)return;
-        if(proposal.kind==="placement"){const scope=selectedLayout?.scope==="chrome"?"chrome":next.pages.find(item=>item.id===sourcePage.id);if(!scope||!selectedLayout)return;if(JSON.stringify(proposal.placement)!==JSON.stringify(selectedPlacement)&&!updateCanvasPlacement(next,scope,selectedLayout.id,useMobile,proposal.placement))return;}
+        if(proposal.kind==="placement"){const scope=growthIdentity?.scope==="chrome"?"chrome":next.pages.find(item=>item.id===sourcePage.id);if(!scope||!growthIdentity)return;
+          proposal.placement.heightPx=Math.max(proposal.placement.heightPx,edit.node.scrollHeight||0);
+          if(JSON.stringify(proposal.placement)!==JSON.stringify(growthPlacement)&&!updateCanvasPlacement(next,scope,growthIdentity.id,useMobile,proposal.placement))return;}
         else if(!proposal.materialized||measurement.widthPx>growth.frame.widthPx){
           let applied=false;editContentForLayout(next,projected=>{const field=canvasTextField(projected,projected.pages.find(item=>item.id===sourcePage.id)!,selected);if(!field)return;
             if(field.appearance==="block"){const target=projected.footerBlocks?.find(item=>item.id===field.blockId)??projected.pages.find(item=>item.id===sourcePage.id)?.blocks.find(item=>item.id===field.blockId);if(!target)return;target.appearance={...target.appearance,box:proposal.box};}
@@ -533,6 +560,13 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     // Detached/pasted frames have clickable padding outside their editable child.
     // Prefer that frame over an unrelated editable ancestor underneath it.
     const hitFrame=event.target.closest<HTMLElement>("[data-owner-layout-id]");
+    if(hitFrame?.dataset.ownerLayoutScope==="page"&&hitFrame.dataset.ownerLayoutId){
+      const root=assetRoot(sourceContent,sourcePage,useMobile,hitFrame.dataset.ownerLayoutId);
+      if(root&&root.id!==linkedRoot?.id){
+        event.preventDefault();event.stopPropagation();
+        const id="block:"+root.id;choose(id,layoutFrame("page",id)??undefined,false,{id,scope:"page"});return;
+      }
+    }
     if(hitFrame&&canvasRef.current?.contains(hitFrame)&&(!nearest||nearest.closest("[data-owner-layout-id]")!==hitFrame)){
       const scope=hitFrame.dataset.ownerLayoutScope==="chrome"?"chrome":"page";
       const node=getCanvasNodes(sourceContent,scope==="chrome"?"chrome":sourcePage).find(n=>n.id===hitFrame.dataset.ownerLayoutId);
@@ -548,7 +582,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     choose(target.dataset.ownerEdit!, target, !workspaceMode&&!text);
     // First click selects the box and exposes resize controls. Click again (or
     // press Enter) to type, so small/pasted text never traps the box controls.
-    if(text&&(("key" in event&&event.key==="Enter")||alreadySelected)){setInlineTarget(target.dataset.ownerEdit!);setInlineSelection(null);}
+    if((text||target.dataset.ownerEdit==="canvas:layout.commissions.statusValue")&&(("key" in event&&event.key==="Enter")||alreadySelected)){setInlineTarget(target.dataset.ownerEdit!);setInlineSelection(null);}
   }
   function canvasNav(event: DragEvent<HTMLDivElement>) { const node = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>("[data-owner-nav-page]") : null; return node && canvasRef.current?.contains(node) ? node : null; }
   function beginBlockDrag(event: DragEvent<HTMLDivElement>) {
@@ -558,9 +592,10 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     event.preventDefault();
   }
 
-  function overBlock(event:DragEvent<HTMLDivElement>){if(browsing||uploadBusy||saveBusy)return;if(draggingItem.current){event.preventDefault();event.dataTransfer.dropEffect="copy";return;}if(!draggingNav.current)return;const node=canvasNav(event);if(!node)return;event.preventDefault();event.dataTransfer.dropEffect="move";canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item=>delete item.dataset.ownerDrop);node.dataset.ownerDrop="true";}
+  function overBlock(event:DragEvent<HTMLDivElement>){if(browsing||uploadBusy||saveBusy)return;if(draggingItem.current||dragAsset.current){event.preventDefault();event.dataTransfer.dropEffect="copy";return;}if(!draggingNav.current)return;const node=canvasNav(event);if(!node)return;event.preventDefault();event.dataTransfer.dropEffect="move";canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-drop]").forEach(item=>delete item.dataset.ownerDrop);node.dataset.ownerDrop="true";}
   function endBlockDrag(){if(draggingNav.current)dragClickGuard.current=true;canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-dragging],[data-owner-drop]").forEach(item=>{delete item.dataset.ownerDragging;delete item.dataset.ownerDrop;});draggingNav.current=null;}
   function dropBlock(event:DragEvent<HTMLDivElement>){
+    if(dragAsset.current){const asset=dragAsset.current;dragAsset.current=null;event.preventDefault();event.stopPropagation();void insertAsset(asset,{x:event.clientX,y:event.clientY});return;}
     const item = draggingItem.current;
     if (item) {
       event.preventDefault();
@@ -589,7 +624,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       const items=raw?JSON.parse(raw):[];
       setBuilderAssets(Array.isArray(items)?items:[]);
     }catch{setBuilderAssets([]);setClipboardNotice("Saved assets could not be loaded in this browser.");}
-    setPendingAsset(clip);setAssetName("");setOpenAssetLibraryKey(assetLibraryKey);
+    setEditingAsset(null);setVariantRoot(null);setPendingAsset(clip);setAssetName("");setOpenAssetLibraryKey(assetLibraryKey);
   }
   function saveAssetSelection(){
     const ids=assetIds?.length?assetIds:selectedLayout?.scope==="page"?[selectedLayout.id]:[];
@@ -599,17 +634,32 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   }
   function storeAssets(items:typeof builderAssets){
     if(!assetLibraryKey||!assetLibraryOpen)return false;
-    try{window.localStorage.setItem(assetLibraryKey,JSON.stringify(items));setBuilderAssets(items);return true;}
+    try{const current=JSON.parse(window.localStorage.getItem(assetLibraryKey)??"[]");
+      if(JSON.stringify(current)!==JSON.stringify(builderAssets)){setClipboardNotice("Assets changed in another tab. Reopen Assets to load the latest version.");return false;}
+      window.localStorage.setItem(assetLibraryKey,JSON.stringify(items));setBuilderAssets(items);return true;}
     catch{setClipboardNotice("There is not enough space to save this asset in this browser.");return false;}
   }
-  function saveAsset(){
-    if(!pendingAsset||!assetName.trim())return;
-    const {sourceBinding: _sourceBinding,...clip}=pendingAsset;void _sourceBinding;
-    if(storeAssets([...builderAssets,{id:newOwnerId(),name:assetName.trim(),clip}])){
-      setPendingAsset(null);setAssetName("");setAssetSelection(null);setClipboardNotice("Selection saved to Assets in this browser.");
-    }
+  async function saveAsset(){
+    if(!pendingAsset||!assetName.trim()||saveBusy||uploadBusy||clipboardBusy.current)return;
+    const clip={...(editingAsset?.clip??pendingAsset)};delete (clip as Partial<FrameClipboard>).sourceBinding;
+    const id=newOwnerId();
+    const asset={id,name:assetName.trim(),clip};
+    clipboardBusy.current=true;
+    try{
+      if(variantRoot&&clip.assets.length){
+        const {verifyFrameClipboardAssets}=await import("./frame-clipboard-assets");
+        const check=await verifyFrameClipboardAssets(clip.assets,new AbortController().signal);
+        check.assertCurrent();
+      }
+      if(!deleteMounted.current||deleteContext.current.source!==sourceContent||deleteContext.current.saveBusy||deleteContext.current.uploadBusy||clipboardScope.current!==clipboardScopeKey)return;
+      const revised=variantRoot?replaceAssetCopies(sourceContent,asset,newOwnerId,new Set(clip.assets),{pageId:sourcePage.id,id:variantRoot}):null;
+      if(storeAssets([...builderAssets,asset])){
+        if(revised)onContentEdit(draft=>{if(JSON.stringify(draft)===JSON.stringify(sourceContent))Object.assign(draft,revised);});
+        setVariantRoot(null);setEditingAsset(null);setPendingAsset(null);setAssetName("");setAssetSelection(null);setClipboardNotice("Selection saved to Assets in this browser.");
+      }
+    }catch(error){setClipboardNotice(error instanceof Error?error.message:"Could not save this variant.");}finally{clipboardBusy.current=false;}
   }
-  async function insertAsset(asset:typeof builderAssets[number]){
+  async function insertAsset(asset:BuilderAsset,point:{x:number;y:number}|null=null){
     if(!assetLibraryOpen||clipboardBusy.current||browsing||saveBusy||uploadBusy)return;
     const clip={...asset.clip,sourceBinding:JSON.stringify(sourceContent)};
     const abort=new AbortController();clipboardAbort.current=abort;clipboardBusy.current=true;
@@ -624,15 +674,67 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       const latest=deleteContext.current;
       if(!deleteMounted.current||clipboardScope.current!==clipboardScopeKey||latest.source!==sourceContent||
         latest.pageId!==sourcePage.id||latest.mobile!==useMobile||latest.browsing||latest.saveBusy||latest.uploadBusy)return;
-      const result=pasteFrameClipboard(sourceContent,sourcePage.id,clip,{newId:newOwnerId,verifiedAssets:new Set(clip.assets),preserveRelativePlacement:true});
-      let changed=false;
-      onContentEdit(draft=>{if(JSON.stringify(draft)!==clip.sourceBinding)return;Object.assign(draft,result.content);changed=true;});
-      if(!changed)throw Error("The draft changed while adding this asset. Try again.");
-      setOpenAssetLibraryKey(null);setAssetSelection(null);setSelected(result.rootId);setSelectedLayout({scope:"page",id:result.rootId});
-      setSelectedOccurrence(0);setInlineTarget(null);requestAnimationFrame(()=>canvasRef.current?.focus({preventScroll:true}));setClipboardNotice("Asset added at the page origin. Undo removes it.");
+      const result=placeAsset(sourceContent,sourcePage.id,asset,newOwnerId,new Set(clip.assets));
+      setOpenAssetLibraryKey(null);setAssetSelection(null);setInspectorOpen(false);
+      setAssetPreview({draft:result.content,source:sourceContent,pageId:sourcePage.id,mobile:useMobile,root:result.rootId,point});
     }catch(error){if(deleteMounted.current&&!abort.signal.aborted)setClipboardNotice(error instanceof Error?error.message:"This asset could not be added safely.");}
     finally{clipboardBusy.current=false;if(clipboardAbort.current===abort)clipboardAbort.current=null;}
   }
+  const linkedRoot=selectedLayout?.scope==="page"?assetRoot(sourceContent,sourcePage,useMobile,selectedLayout.id):undefined;
+  function editPlacedAsset(){
+    if(!linkedRoot||!assetLibraryKey)return;
+    try{
+      const saved:BuilderAsset[]=JSON.parse(localStorage.getItem(assetLibraryKey)??"[]"),asset=saved.find(a=>a.id===linkedAssetId(linkedRoot.id));
+      const clip=captureFrameClipboard(sourceContent,sourcePage.id,"block:"+linkedRoot.id);
+      openAssets(clip);setVariantRoot(linkedRoot.id);setAssetName((asset?.name??"Asset")+" variant");
+      if(asset)setEditingAsset({...asset,clip});
+    }catch(error){setClipboardNotice(error instanceof Error?error.message:"Could not open this asset.");}
+  }
+  function assetButtonDesign(asset:BuilderAsset,index:number):ButtonAppearance{
+    const block=asset.clip.blocks[index];if(block?.type!=="link")return {preset:"solid"};
+    const design=block.buttonAppearance??asset.clip.buttonDesigns.find(d=>d.id===block.buttonDesignId);
+    if(!design)return {preset:"solid"};
+    const {preset,imported,artwork,hover,focus}=design;
+    return {preset,...(imported?{imported}:{}),...(artwork?{artwork}:{}),...(hover?{hover}:{}),...(focus?{focus}:{})};
+  }
+  function changeAssetButton(asset:BuilderAsset,index:number,design:ButtonAppearance){
+    const copy=structuredClone(asset),block=copy.clip.blocks[index];if(block?.type!=="link")return;
+    block.buttonAppearance=design;delete block.buttonDesignId;
+    copy.clip.buttonDesigns=copy.clip.buttonDesigns.filter(d=>copy.clip.blocks.some(b=>b.type==="link"&&b.buttonDesignId===d.id));
+    copy.clip.assets=updatedAssetSources(copy.clip);setEditingAsset(copy);
+  }
+  async function overwriteAsset(asset:BuilderAsset){
+    if(saveBusy||uploadBusy||clipboardBusy.current)return;clipboardBusy.current=true;
+    try{
+      const clip={...asset.clip};delete (clip as Partial<FrameClipboard>).sourceBinding;
+      const next={...asset,clip},verified=new Set(clip.assets);
+      if(verified.size){const {verifyFrameClipboardAssets}=await import("./frame-clipboard-assets");const check=await verifyFrameClipboardAssets(clip.assets,new AbortController().signal);check.assertCurrent();}
+      if(!deleteMounted.current||deleteContext.current.source!==sourceContent||deleteContext.current.saveBusy||deleteContext.current.uploadBusy||clipboardScope.current!==clipboardScopeKey)return;
+      // Validate even a template with no linked instances before replacing it.
+      const scratch=createDefaultOwnerContent();if(sourceContent.fonts)scratch.fonts=structuredClone(sourceContent.fonts);
+      placeAsset(scratch,scratch.pages[0].id,next,newOwnerId,verified);
+      const change=replaceAssetCopies(sourceContent,next,newOwnerId,verified);
+      onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(sourceContent))return;if(storeAssets(builderAssets.map(a=>a.id===next.id?next:a))){Object.assign(draft,change);setEditingAsset(null);setPendingAsset(null);setClipboardNotice("Saved asset and updated its linked copies in this draft.");}});
+    }catch(error){setClipboardNotice(error instanceof Error?error.message:"Could not save this asset.");}
+    finally{clipboardBusy.current=false;}
+  }
+  /* eslint-disable react-hooks/set-state-in-effect -- Measure the inserted group before committing it. */
+  useLayoutEffect(()=>{
+    const preview=assetPreview;if(!preview)return;
+    if(preview.source!==sourceContent||preview.pageId!==sourcePage.id||preview.mobile!==useMobile||saveBusy||uploadBusy||browsing){setAssetPreview(null);return;}
+    if(!preview.point)return;
+    const frame=layoutFrame("page",preview.root),dest=layoutDestination("page",null),snapshot=frame&&captureCanvasFrame(frame);
+    if(!snapshot||!dest){setAssetPreview(null);setClipboardNotice("Could not measure that location. Try placing the asset again.");return;}
+    snapshot.screenMatrix.e=preview.point.x;snapshot.screenMatrix.f=preview.point.y;
+    const placement=placeCapturedCanvasFrame(snapshot,dest),draft=structuredClone(preview.draft),page=draft.pages.find(p=>p.id===sourcePage.id)!;
+    if(placement){updateCanvasPlacement(draft,page,preview.root,useMobile,placement);
+      if(shoveEnabled.current)rememberShifts(page,useMobile,preview.root,shoveAt(draft,page,useMobile,preview.root,0,snapshot));
+      onContentEdit(current=>{if(JSON.stringify(current)===JSON.stringify(sourceContent))Object.assign(current,draft);});
+      setSelected(preview.root);setSelectedLayout({id:preview.root,scope:"page"});setSelectedOccurrence(0);setInlineTarget(null);
+    }
+    setAssetPreview(null);
+  },[assetPreview,sourceContent,sourcePage.id,useMobile,browsing,saveBusy,uploadBusy,onContentEdit]);
+  /* eslint-enable react-hooks/set-state-in-effect */
   function copyBox(){
     const current=deleteContext.current;if(!clipboardScopeKey||clipboardScope.current!==clipboardScopeKey||!sharedFrameClipboard||!deleteMounted.current||current.source!==sourceContent||current.pageId!==sourcePage.id||current.selection?.id!==selectedLayout?.id||current.selection?.scope!==selectedLayout?.scope||current.browsing||current.saveBusy||current.uploadBusy||!selectedLayout||selectedLayout.scope!=="page"){setClipboardNotice("Select a page box to copy. Header and footer units are not copied here.");return;}
     try{clipboardAbort.current?.abort();frameClipboard.current={scopeKey:clipboardScopeKey,value:captureFrameClipboard(sourceContent,sourcePage.id,selectedLayout.id)};setHasFrameClipboard(true);setClipboardNotice("Box copied for this builder session. Paste box on another page creates independent contents at the new page origin; nothing is published.");}catch(error){setClipboardNotice(error instanceof Error?error.message:"This box cannot be copied safely.");}
@@ -648,6 +750,22 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   }
   function layoutFrame(scope:"page"|"chrome",id:string){return Array.from(canvasRef.current?.querySelectorAll<HTMLElement>("[data-owner-layout-id]")??[]).find(node=>node.dataset.ownerLayoutId===id&&node.dataset.ownerLayoutScope===scope)??null;}
   function layoutDestination(scope:"page"|"chrome",parentId:string|null,canvas=canvasRef.current){return Array.from(canvas?.querySelectorAll<HTMLElement>("[data-owner-placement-content]")??[]).find(node=>node.dataset.ownerPlacementContent===(parentId??"__root")&&node.dataset.ownerLayoutScope===scope)??null;}
+  const shoveReceipts=useRef(new Map<string,ShoveShift[]>());
+  function receiptKey(page:OwnerPage,mobile:boolean,id:string){return "tmc-shove:"+JSON.stringify([assetLibraryKey??clipboardScopeKey,page.id,mobile,id]);}
+  function shiftsFor(page:OwnerPage,mobile:boolean,id:string):ShoveShift[]{
+    const key=receiptKey(page,mobile,id);
+    try{return shoveReceipts.current.get(key)??JSON.parse(localStorage.getItem(key)??"[]");}catch{return [];}
+  }
+  function rememberShifts(page:OwnerPage,mobile:boolean,id:string,shifts:ShoveShift[]){
+    if(!shifts.length)return;
+    const key=receiptKey(page,mobile,id),merged=mergeShifts(shiftsFor(page,mobile,id),shifts);
+    shoveReceipts.current.set(key,merged);try{localStorage.setItem(key,JSON.stringify(merged));}catch{/* Keep the in-memory receipt during this session. */}
+  }
+  function shoveAt(candidate:OwnerContent,page:OwnerPage,mobile:boolean,id:string,direction:1|-1|0,snapshot?:CapturedCanvasFrame|null){
+    const shifts=shovePlacedSiblings(candidate,page,mobile,id,direction);
+    if(!shifts.length&&canvasRef.current&&snapshot)shifts.push(...shoveNativeRow(canvasRef.current,candidate,page.id,mobile,id,snapshot,direction));
+    return shifts;
+  }
   function startShove(){
     shoveGesture.current=null;
     if(!shove||!selectedLayout||uploadBusy||saveBusy||browsing)return;
@@ -655,10 +773,11 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     if(!frame||!canvas){setShoveNotice("Shove cannot measure this box. Nothing will be moved.");return;}
     const result=captureCanvasShove(canvas,{source:sourceContent,pageId:sourcePage.id,mobile:useMobile,id:selectedLayout.id,scope:selectedLayout.scope,sessionKey:clipboardScopeKey},frame);
     shoveGesture.current={result,source:sourceContent,pageId:sourcePage.id,mobile:useMobile,session:clipboardScopeKey,...selectedLayout};
-    setShoveNotice(result.ok?"Shove: drag into a gap to make room below.":result.notice);
+    setShoveNotice(selectedPlacement?"Drag to move neighboring boxes.":result.ok?"Drag into a gap to make room below.":"Drag to move this box.");
   }
   function previewShove(snapshot?:CapturedCanvasFrame){
     const gesture=shoveGesture.current;if(!shove||!gesture||!snapshot)return;
+    if(selectedPlacement){setShoveNotice("Release to move overlapping boxes in the opposite direction.");return;}
     if(!gesture.result.ok){setShoveNotice(gesture.result.notice);return;}
     const result=planCanvasShove(gesture.result.value,snapshot);
     setShoveNotice(result.ok?"Shove: release to place this box and make room below.":result.notice);
@@ -668,11 +787,19 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     const gesture=shoveGesture.current;shoveGesture.current=null;
     const current=deleteContext.current;
     if(!gesture||!deleteMounted.current||current.source!==gesture.source||current.pageId!==gesture.pageId||current.mobile!==gesture.mobile||clipboardScope.current!==gesture.session||current.selection?.id!==gesture.id||current.selection?.scope!==gesture.scope||current.uploadBusy||current.saveBusy||current.browsing){setShoveNotice("The page, selection or layout changed. Shove moved nothing; try again.");return true;}
-    if(!gesture.result.ok){setShoveNotice(gesture.result.notice);return true;}
+    if(selectedPlacement&&next.placement&&gesture.scope==="page"){
+      const candidate=structuredClone(gesture.source),target=candidate.pages.find(p=>p.id===gesture.pageId);
+      if(!target||!updateCanvasPlacement(candidate,target,gesture.id,useMobile,next.placement))return true;
+      const direction=next.placement.matrix.f>=selectedPlacement.matrix.f?-1:1;
+      const shifts=shoveAt(candidate,target,useMobile,gesture.id,direction,snapshot);
+      onContentEdit(draft=>{if(JSON.stringify(draft)===JSON.stringify(gesture.source)){rememberShifts(target,useMobile,gesture.id,shifts);Object.assign(draft,candidate);}});
+      setShoveNotice(shifts.length?`Moved ${shifts.length} neighboring boxes ${direction===1?"down":"up"}.`:"Box moved.");return true;
+    }
+    if(!gesture.result.ok){setShoveNotice("Box moved in its layout.");return false;}
     const frame=layoutFrame(gesture.scope,gesture.id),canvas=canvasRef.current;
     if(!canvas||!frame||!canvasShoveCaptureCurrent(canvas,gesture.result.value,frame)){setShoveNotice("The page layout changed during this move. Try again.");return true;}
     const result=planCanvasShove(gesture.result.value,snapshot);
-    if(!result.ok){setShoveNotice(result.notice);return true;}
+    if(!result.ok){setShoveNotice("Box moved in its layout.");return false;}
     const candidate=structuredClone(gesture.source);
     if(selectedPlacement){
       const scope=gesture.scope==="chrome"?"chrome":candidate.pages.find(p=>p.id===gesture.pageId);
@@ -687,6 +814,8 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       },gesture.mobile);
     }
     if(!applyCanvasShove(candidate,gesture.result.value,result.value)){setShoveNotice("Shove could not keep this layout safe. Nothing changed.");return true;}
+    const anchor=gesture.result.value.anchors.find(a=>a.id===result.value.anchorId);
+    if(anchor&&result.value.deltaPx>0)rememberShifts(candidate.pages.find(p=>p.id===gesture.pageId)!,gesture.mobile,gesture.id,[{id:anchor.id,parentId:null,before:anchor.marginTop,after:result.value.marginTopPx,margin:true}]);
     let changed=false;
     onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(gesture.source))return;Object.assign(draft,candidate);changed=true;});
     setShoveNotice(changed?"Shove placed the box and made room below. Undo restores the whole move.":"The draft changed. Shove moved nothing; try again.");
@@ -777,30 +906,79 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
   },[placementIntent,sourceContent,sourcePage.id,useMobile,uploadBusy,saveBusy,browsing,onContentEdit]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  const frameOffset=selectedPlacement?.contentOffset??boxAppearance?.box?.contentOffset;
+  const displacedParts=selectedLayout&&block&&["text","section","commission-status"].includes(block.type)
+    ?getCanvasNodes(sourceContent,selectedLayoutScope).filter(node=>{
+      if(node.defaultParentId!==selectedLayout.id||!node.id.startsWith("canvas:layout.block:"))return false;
+      const entry=selectedLayoutMap[node.id],style=content.contentOverrides?.styles?.[node.styleTarget.slice(7)];
+      return entry&&!entry.removed&&(entry.parentId!==selectedLayout.id||!!entry.placement||!!style?.box);
+    }):[];
+  const hasOwnOffset=!!(frameOffset?.xPx||frameOffset?.yPx||boxAppearance?.box?.contentOffset?.xPx||boxAppearance?.box?.contentOffset?.yPx);
+  const hasFrameOffset=hasOwnOffset||displacedParts.length>0;
+  function reconnectContents(){
+    if(uploadBusy||saveBusy||browsing||!selectedLayout)return;
+    onContentEdit(draft=>{
+      if(JSON.stringify(draft)!==JSON.stringify(sourceContent))return;
+      const next=structuredClone(draft),scope=selectedLayout.scope==="chrome"?"chrome":next.pages.find(p=>p.id===sourcePage.id);
+      if(!scope)return;
+      for(const part of displacedParts){
+        const entry=selectedLayoutMap[part.id];
+        if(entry.parentId!==selectedLayout.id&&!assignCanvasParent(next,scope,part.id,selectedLayout.id,useMobile))return;
+        if(entry.placement&&!updateCanvasPlacement(next,scope,part.id,useMobile,undefined))return;
+      }
+      if(selectedPlacement?.contentOffset){
+        const placement={...selectedPlacement};delete placement.contentOffset;
+        if(!updateCanvasPlacement(next,scope,selectedLayout.id,useMobile,placement))return;
+      }
+      editContentForLayout(next,view=>{
+        for(const part of displacedParts){const style=view.contentOverrides?.styles?.[part.styleTarget.slice(7)];if(style)delete style.box;}
+        const target=block?(selectedLayout.scope==="chrome"?view.footerBlocks:view.pages.find(p=>p.id===sourcePage.id)?.blocks)?.find(b=>b.id===block.id)?.appearance:
+          selected==="page-title"&&sourcePage.kind==="custom"?view.pages.find(p=>p.id===sourcePage.id)?.titleAppearance:view.contentOverrides?.styles?.[boxStyleKey??(selected==="page-title"?`${sourcePage.builtinKey}.title`:"")];
+        if(target?.box)delete target.box.contentOffset;
+      },useMobile);
+      Object.assign(draft,next);
+    });
+  }
   function requestDelete(withContents=false){
+    const selectedRect=selectedLayout&&layoutFrame(selectedLayout.scope,selectedLayout.id)?.getBoundingClientRect();
+    const separated=selectedRect&&selectedLayout&&displacedParts.some(part=>{
+      const rect=layoutFrame(selectedLayout.scope,part.id)?.getBoundingClientRect();
+      return rect&&(rect.right<=selectedRect.left||rect.left>=selectedRect.right||rect.bottom<=selectedRect.top||rect.top>=selectedRect.bottom);
+    });
+    if(hasOwnOffset||separated){
+      setClipboardNotice(`This frame has displaced contents (${selectedBoxName??"selected item"}). Choose Reconnect contents to bring them back into the frame before deleting it.`);
+      return;
+    }
     if(repairButton){setAnnouncement("Connect this existing button to its box before removing it.");return;}
     if(uploadBusy||saveBusy||browsing||!selectedLayout)return;
     const selection={...selectedLayout},source=sourceContent,modelScope=selection.scope==="chrome"?"chrome":sourcePage;
-    const node=getCanvasNodes(source,modelScope).find(node=>node.id===selection.id);if(!node?.movable)return;
+    const nodes=getCanvasNodes(source,modelScope),clicked=nodes.find(n=>n.id===selection.id);
+    const blocks=modelScope==="chrome"?source.footerBlocks??[]:modelScope.blocks;
+    const layout=resolveCanvasLayout(source,modelScope,useMobile);
+    const partOwner=blocks.find(b=>`block:${b.id}`===clicked?.defaultParentId);
+    if(partOwner?.type==="text"&&!partOwner.heading.trim()&&(!partOwner.body.trim()||partOwner.body==="Your text goes here.")&&layout[selection.id]?.parentId===clicked?.defaultParentId)selection.id=`block:${partOwner.id}`;
+    const node=nodes.find(n=>n.id===selection.id);if(!node?.movable)return;
     withContents=withContents||deleteItemWithContents(modelScope==="chrome"?source.footerBlocks??[]:modelScope.blocks,selection.id);
     const authored=(modelScope==="chrome"?source.footerBlocks??[]:modelScope.blocks).find(item=>`block:${item.id}`===selection.id);
-    const layout=resolveCanvasLayout(source,modelScope,useMobile);
-    const emptyBox=!!authored&&(authored.type==="section"&&!authored.heading.trim()||authored.type==="canvas-space"||authored.type==="spacer")&&
-      !Object.values(layout).some(entry=>!entry.removed&&entry.parentId===selection.id);
-    const remove=()=>{
+    const emptyBox=!!authored&&(authored.type==="section"&&(!authored.heading.trim()||authored.heading==="New section")||authored.type==="text"&&!authored.heading.trim()&&(!authored.body.trim()||authored.body==="Your text goes here.")||authored.type==="heading"&&(!authored.text.trim()||authored.text==="Your section heading")||authored.type==="canvas-space"||authored.type==="spacer")&&
+      !Object.entries(layout).some(([id,entry])=>!entry.removed&&entry.parentId===selection.id&&!id.startsWith(`canvas:layout.block:${selection.scope==="chrome"?"shared-footer":sourcePage.id}:${authored.id}:`));
+    const shifts=selection.scope==="page"?shiftsFor(sourcePage,useMobile,selection.id):[];
+    const remove=(restore=false)=>{
       const current=deleteContext.current;
-      if(!deleteMounted.current||current.source!==source||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.browsing||current.uploadBusy||current.saveBusy||current.selection?.id!==selection.id||current.selection?.scope!==selection.scope)return;
-      if(withContents){let changed=false;onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(source))return;const scope=selection.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===sourcePage.id);if(scope)changed=removeCanvasNode(draft,scope,selection.id,useMobile,true);});if(changed){setSelected(null);setSelectedLayout(null);setInlineTarget(null);setInspectorOpen(false);setAnnouncement("Item removed from this layout. Undo restores it.");}else setAnnouncement("The item could not be removed safely. Nothing changed.");return;}
+      if(!deleteMounted.current||current.source!==source||current.pageId!==sourcePage.id||current.mobile!==useMobile||current.browsing||current.uploadBusy||current.saveBusy||current.selection?.id!==selectedLayout.id||current.selection?.scope!==selection.scope)return;
+      if(withContents){let changed=false;onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(source))return;const scope=selection.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===sourcePage.id);if(scope){changed=removeCanvasNode(draft,scope,selection.id,useMobile,true);if(changed&&restore&&scope!=="chrome")restoreShifts(draft,scope,useMobile,shifts);}});if(changed){setSelected(null);setSelectedLayout(null);setInlineTarget(null);setInspectorOpen(false);setAnnouncement("Item removed from this layout. Undo restores it.");}else setAnnouncement("The item could not be removed safely. Nothing changed.");return;}
       const map=resolveCanvasLayout(source,modelScope,useMobile),captures:Record<string,CapturedCanvasFrame>={};
       for(const [id,entry]of Object.entries(map)){if(entry.removed||entry.parentId!==selection.id)continue;const descriptor=getCanvasNodes(source,modelScope).find(node=>node.id===id),frame=layoutFrame(selection.scope,id);
         if(!descriptor?.movable||!frame){setAnnouncement("These contents must stay together as a functional unit. Move them out first, or explicitly remove the box and its contents. Nothing changed.");return;}
         const key=boxStyleKeyForTarget(descriptor.styleTarget),appearance=descriptor.styleTarget.startsWith("block:")?page.blocks.find(b=>`block:${b.id}`===descriptor.styleTarget)?.appearance:descriptor.styleTarget==="page-title"?page.titleAppearance:key?content.contentOverrides?.styles?.[key]:undefined;
         const captured=captureCanvasFrame(frame,entry.placement?undefined:appearance?.box);if(!captured){setAnnouncement("The contents cannot be measured safely right now. Nothing was removed.");return;}if(entry.placement?.contentOffset)captured.contentOffset={...entry.placement.contentOffset};if(entry.placement?.aspectLocked!==undefined)captured.aspectLocked=entry.placement.aspectLocked;captures[id]=captured;
       }
-      setDeleteIntent({scope:selection.scope,id:selection.id,parentId:map[selection.id].parentId,pageId:sourcePage.id,mobile:useMobile,source,captures});
+      setDeleteIntent({restoreShifts:restore?shifts:undefined,scope:selection.scope,id:selection.id,parentId:map[selection.id].parentId,pageId:sourcePage.id,mobile:useMobile,source,captures});
     };
-    if(emptyBox){withContents=true;remove();return;}
-    onRemove(withContents?"Remove this box and its contents from the canvas?":"Remove this box from the canvas?",
+    if(emptyBox)withContents=true;
+    if(shifts.length){setShoveRemoval({remove});return;}
+    if(emptyBox){remove();return;}
+    onRemove(withContents?`Remove “${selectedBoxName??node.label}” and its contents from the canvas?`:`Remove “${selectedBoxName??node.label}” from the canvas?`,
       withContents?"This removes this box and its nested contents. Undo restores it.":"The contents stay in place. Undo restores the box.",remove);
   }
   /* eslint-disable react-hooks/set-state-in-effect -- Finite child rebasing is committed atomically after measuring a temporary destination. */
@@ -808,7 +986,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     if(uploadBusy||saveBusy||browsing||intent.source!==sourceContent||intent.pageId!==sourcePage.id||intent.mobile!==useMobile){setDeleteIntent(null);setAnnouncement("The layout changed before removal. Nothing was removed.");return;}
     const destination=layoutDestination(intent.scope,intent.parentId),placements:Record<string,CanvasPlacement>={};
     for(const [id,captured]of Object.entries(intent.captures)){const placement=destination?placeCapturedCanvasFrame(captured,destination):null;if(!placement){setDeleteIntent(null);setAnnouncement("The contents cannot keep their positions safely. Nothing was removed.");return;}placements[id]=placement;}
-    let changed=false;onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(intent.source))return;const scope=intent.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===intent.pageId);if(scope)changed=removeCanvasNode(draft,scope,intent.id,intent.mobile,false,placements);});setDeleteIntent(null);
+    let changed=false;onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(intent.source))return;const scope=intent.scope==="chrome"?"chrome":draft.pages.find(p=>p.id===intent.pageId);if(scope){changed=removeCanvasNode(draft,scope,intent.id,intent.mobile,false,placements);if(changed&&scope!=="chrome"&&intent.restoreShifts)restoreShifts(draft,scope,intent.mobile,intent.restoreShifts);}});setDeleteIntent(null);
     if(changed){setSelected(null);setSelectedLayout(null);setInspectorOpen(false);setAnnouncement("Box removed; its contents kept their positions. Undo restores it.");}else setAnnouncement("Removal could not be applied safely. Nothing changed.");
   },[deleteIntent,sourceContent,sourcePage.id,useMobile,uploadBusy,saveBusy,browsing,onContentEdit]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -847,7 +1025,8 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     if(intent.source!==sourceContent||intent.pageId!==sourcePage.id||intent.mobile!==useMobile||browsing||uploadBusy||saveBusy){setAddingItem(null);return;}
     const frame=layoutFrame("page",`block:${intent.block.id}`),destination=layoutDestination("page",null,canvasRef.current);
     const captured=frame?captureNewItemFrame(frame,intent.block,statusSizingRef.current):null;
-    if(captured){captured.screenMatrix.e=intent.point.x;captured.screenMatrix.f=intent.point.y;captured.aspectLocked=false;}
+    if(captured){const bounds=destination?.getBoundingClientRect(),textItem=intent.block.type==="text"||intent.block.type==="heading";
+      captured.screenMatrix.e=textItem&&bounds&&bounds.width>0?Math.max(bounds.left,Math.min(intent.point.x,bounds.right-captured.widthPx*captured.screenMatrix.a)):intent.point.x;captured.screenMatrix.f=intent.point.y;captured.aspectLocked=false;}
     const placement=captured&&destination?placeCapturedCanvasFrame(captured,destination):null;
     let changed=false;
     if(placement)onContentEdit(draft=>{
@@ -856,6 +1035,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       const candidate=structuredClone(draft),page=candidate.pages.find(p=>p.id===intent.pageId)!;
       page.blocks.push(structuredClone(intent.block));
       if(!assignCanvasParent(candidate,page,`block:${intent.block.id}`,null,intent.mobile,placement))return;
+      if(shoveEnabled.current)rememberShifts(page,intent.mobile,`block:${intent.block.id}`,shoveAt(candidate,page,intent.mobile,`block:${intent.block.id}`,0,captured));
       Object.assign(draft,candidate);changed=true;
     });
     setAddingItem(null);
@@ -975,7 +1155,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       return;
     }
     const id=newOwnerId("block");let changed=false;
-    onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(drag.source))return;const page=draft.pages.find(p=>p.id===drag.pageId);if(!page||page.blocks.length>=100)return;page.blocks.push({id,type:"canvas-space",widthPx:placement.widthPx,heightPx:placement.heightPx});changed=assignCanvasParent(draft,page,`block:${id}`,null,drag.mobile,placement);if(!changed)page.blocks=page.blocks.filter(b=>b.id!==id);});
+    onContentEdit(draft=>{if(JSON.stringify(draft)!==JSON.stringify(drag.source))return;const page=draft.pages.find(p=>p.id===drag.pageId);if(!page||page.blocks.length>=100)return;page.blocks.push({id,type:"canvas-space",widthPx:placement.widthPx,heightPx:placement.heightPx});changed=assignCanvasParent(draft,page,`block:${id}`,null,drag.mobile,placement);if(changed&&shoveEnabled.current)rememberShifts(page,drag.mobile,`block:${id}`,shovePlacedSiblings(draft,page,drag.mobile,`block:${id}`,0));if(!changed)page.blocks=page.blocks.filter(b=>b.id!==id);});
     setDrawingSpace(false);if(changed){canvasRef.current?.focus({preventScroll:true});setSelected(`block:${id}`);setSelectedLayout({scope:"page",id:`block:${id}`});setSelectedOccurrence(0);setInspectorOpen(true);setAnnouncement("Canvas Space added. Resize any edge or corner; Undo removes it.");}
   }
   function selectLayer(scope:"page"|"chrome",id:string){
@@ -1105,7 +1285,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
 
 
   if (imageBlock || imageBoxEditable) controls = <ImagePickerFramingContext.Provider value={<><div className={styles.modeSwitch} aria-label="Image editing target"><button type="button" aria-pressed={imageEditMode === "photo"} onClick={() => setImageEditMode("photo")}>Photo framing</button><button type="button" aria-pressed={imageEditMode === "box"} onClick={() => setImageEditMode("box")}>Whole content box</button></div>{imageEditMode === "box" && <p className={ui.help}>Move, resize or tilt the whole content box. Photo framing changes only the image size and crop.</p>}</>}>{controls}</ImagePickerFramingContext.Provider>;
-  if(selectedText && !selected?.startsWith("template-link:") && block?.type!=="link"){const field=selectedText;controls=<>{field.inputKind==="money"?<><p>Edit the amount directly on the canvas. Prices are shared across your draft.</p><div className={styles.moneyActions}><button type="button" data-owner-button data-owner-text-tools className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>{if(!uploadBusy&&!saveBusy){setInlineTarget(selected);setTextFocusRequest(value=>value+1);}}}>Edit amount</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>{if(!uploadBusy&&!saveBusy)setPricesOpen(true);}}>Prices &amp; options</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={openPriceColors}>Edit all Price Colors</button></div></>:field.links?<OwnerLinkedTextField revision={sourceContent} disabled={uploadBusy||saveBusy} label={selected==="page-title"?"Page title":"Text"} multiline={selected!=="page-title"&&selected!=="core-text:home.title"} value={field.value} selectionHint={inlineSelectionScope.current===textContextKey?inlineSelection??undefined:undefined} contextKey={textContextKey} linkRequest={linkRequest?.contextKey===textContextKey?linkRequest:undefined} onChange={value=>commitInlineText(field.value,value)}/>:<><Field label={selected==="page-title"?"Page title":"Text"} multiline={selected!=="page-title"&&selected!=="core-text:home.title"} value={field.value} onChange={value=>commitInlineText(field.value,value)}/><small>{selectedHyperlink?.kind==="destination"?"Use Hyperlink to edit this item’s destination.":"Edit this item’s text here."}</small></>}</>;}
+  if(selectedText && !selected?.startsWith("template-link:") && block?.type!=="link"){const field=selectedText;controls=<>{field.inputKind==="money"?<><p>Edit the amount directly on the canvas. Prices are shared across your draft.</p><div className={styles.moneyActions}><button type="button" data-owner-button data-owner-text-tools className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>{if(!uploadBusy&&!saveBusy){setInlineTarget(selected);setTextFocusRequest(value=>value+1);}}}>Edit amount</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>{if(!uploadBusy&&!saveBusy)setPricesOpen(true);}}>Prices &amp; options</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={openPriceColors}>Edit all Price Colors</button></div></>:field.links?<OwnerLinkedTextField revision={sourceContent} disabled={uploadBusy||saveBusy} label={selected==="page-title"?"Page title":"Text"} multiline={selected!=="page-title"&&selected!=="core-text:home.title"} value={field.value} selectionHint={inlineSelectionScope.current===textContextKey?inlineSelection??undefined:undefined} contextKey={textContextKey}  onChange={value=>commitInlineText(field.value,value)}/>:<><Field label={selected==="page-title"?"Page title":"Text"} multiline={selected!=="page-title"&&selected!=="core-text:home.title"} value={field.value} onChange={value=>commitInlineText(field.value,value)}/><small>{selectedHyperlink?.kind==="destination"?"Use Hyperlink to edit this item’s destination.":"Edit this item’s text here."}</small></>}</>;}
   if(block?.type==="commission-status"&&block.textOnly){
     const key=`layout.block:${footerBlock?"shared-footer":page.id}:${block.id}:status-value`;
     const own=content.contentOverrides?.styles?.[key]?.textColor;
@@ -1185,7 +1365,7 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     }
   }
   if(selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable)controls=<>{controls}<button type="button" className={ui.secondary} disabled={uploadBusy||saveBusy} onClick={()=>requestDelete(true)}>Remove box and contents…</button></>;
-  const renderedDraft = itemPreview ?? (footerTransfer?.phase === "measure" ? footerTransfer.preview : sourceContent);
+  const renderedDraft = assetPreview?.draft ?? itemPreview ?? (footerTransfer?.phase === "measure" ? footerTransfer.preview : sourceContent);
   const renderedContent = useMemo(() => mainCommissionStatus && renderedDraft.site.commissionStatus !== mainCommissionStatus
     ? { ...renderedDraft, site: { ...renderedDraft.site, commissionStatus: mainCommissionStatus } }
     : renderedDraft, [renderedDraft, mainCommissionStatus]);
@@ -1196,7 +1376,8 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       </aside>;
   return <section ref={builderRef} className={`${styles.builder} ${workspaceMode?styles.workspaceBuilder:""}`} aria-label="Visual website builder" data-builder-device={device} data-builder-mode={browsing ? "view" : "edit"}>
     <div className={styles.toolbar}>
-      <div className={styles.pagePicker}><OwnerSelect label={browsing ? "Viewing page" : "Editing page"} value={page.id} options={activePages.map(item => ({ value: item.id, label: item.title }))} onChange={id => { const target = activePages.find(item => item.id === id); if (target && !uploadBusy) { closePanel(); onPageChange(target); } }} /></div>
+      <div className={styles.pagePicker}><OwnerSelect label={browsing ? "Viewing page" : "Editing page"} value={page.id} options={activePages.map(item => ({ value: item.id, label: editorPageName(item) }))} onChange={id => { const target = activePages.find(item => item.id === id); if (target && !uploadBusy) { closePanel(); onPageChange(target); } }} />{!browsing&&<button type="button" disabled={saveBusy||uploadBusy} onClick={()=>setRenamePage({id:page.id,name:editorPageName(sourcePage)})}>Rename page in editor</button>}
+      {renamePage?.id===page.id&&!browsing&&<form onSubmit={event=>{event.preventDefault();const name=renamePage.name.trim();if(!name||saveBusy||uploadBusy)return;onContentEdit(draft=>{const target=draft.pages.find(p=>p.id===sourcePage.id);if(target)renameCanvasNode(draft,target,pageNameNode(target),false,name);});setRenamePage(null);}}><Field label="Page name in editor" value={renamePage.name} onChange={name=>setRenamePage({id:page.id,name:name.slice(0,80)})}/><button type="submit" disabled={!renamePage.name.trim()||saveBusy||uploadBusy}>Save name</button><button type="button" onClick={()=>setRenamePage(null)}>Cancel</button></form>}</div>
       <div className={styles.viewToolsGroup}><div className={styles.viewTools}><div className={styles.editModeSwitch} aria-label="Builder mode">{browsing ? <button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy} onClick={() => changeMode(false)}>Edit website</button> : <button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy} onClick={() => changeMode(true)}>Exit edit mode</button>}</div>{onRequestDiscard&&<button data-owner-button type="button" className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={()=>{if(!uploadBusy&&!saveBusy)onRequestDiscard();}}>Discard Edits</button>}<div className={styles.deviceSwitch} aria-label="Preview width"><button type="button" aria-label="Desktop view" title="Desktop view" aria-pressed={device === "desktop"} disabled={uploadBusy} onClick={() => {if(uploadBusy)return;endBlockDrag();setSelected(null);setDevice("desktop");}}><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="13" rx="2" /><path d="M12 16v5m-4 0h8" /></svg></button><button type="button" aria-label="Mobile view" title="Mobile view" aria-pressed={device === "mobile"} disabled={uploadBusy} onClick={() => {if(uploadBusy)return;endBlockDrag();setSelected(null);setDevice("mobile");}}><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="6" y="2" width="12" height="20" rx="2" /><path d="M10 5h4m-3 14h2" /></svg></button></div></div>
       {!browsing&&<div className={styles.quickTools}><button type="button" data-owner-button className={`${buttons.button} ${buttons.primary} ${buttons.compact}`} aria-pressed={selected === "design"} {...panelOpener("design")} onClick={event => choose("design", event?.currentTarget, true)}>Design</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} aria-pressed={selected === "site"} {...panelOpener("site")} onClick={event => choose("site", event?.currentTarget, true)}>Header & footer</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} aria-pressed={selected === "page"} {...panelOpener("page")} onClick={event => choose("page", event?.currentTarget, true)}>Page settings</button>{sourcePage.builtinKey==="prices"&&<button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary} ${buttons.compact}`} disabled={uploadBusy||saveBusy} onClick={openPriceColors}>Edit all Price Colors</button>}</div>}
       {!browsing&&<div className={styles.sectionHistoryActions}>{(onUndo || onRedo) && <div className={styles.historyActions} aria-label="Draft history">
@@ -1243,6 +1424,12 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
       {styleRange&&!typingCaret&&toolbarComputed?.fontSize&&(selected==="page-title"||selected==="core-text:home.title"||block?.type==="heading")&&
         <OwnerTitleSizeHandle key={textContextKey} size={toolbarComputed.fontSize} onSize={fontSize=>{if(!uploadBusy&&!saveBusy)formatSelectedText({fontSize});}}/>}
       {device==="mobile"&&<button type="button" disabled={uploadBusy||saveBusy} onClick={reflowMobilePage} title="Restore responsive flow for this page in the mobile layout. Undo restores the previous positions.">Reflow mobile page</button>}
+      {selected&&(selectedPlacement||supportsBoxTarget(selected,boxPage))&&!titleFlowGeometryLocked&&<button type="button" disabled={uploadBusy||saveBusy} aria-pressed={selectedPlacement?!!selectedPlacement.aspectLocked:boxAppearance?.box?.aspectLocked??initialBoxLocked} onClick={()=>{
+        if(selectedPlacement)changePlacement({...selectedPlacement,aspectLocked:!selectedPlacement.aspectLocked});
+        else if(boxAppearance?.box)changeBoxAppearance({...boxAppearance,box:{...boxAppearance.box,aspectLocked:!boxAppearance.box.aspectLocked}});
+        else setInitialBoxLocked(!initialBoxLocked);
+      }}>Lock ratio</button>}
+      {hasFrameOffset&&!repairButton&&<button type="button" disabled={uploadBusy||saveBusy} onClick={reconnectContents}>Reconnect contents</button>}
       {repairButton&&<button type="button" disabled={uploadBusy||saveBusy} onClick={repairButton}>Align button</button>}
       {assetLibraryKey&&<button type="button" disabled={uploadBusy||saveBusy} onClick={()=>openAssets()}>Assets</button>}
       <div className={styles.sectionMenu} onKeyDown={event => {
@@ -1259,8 +1446,9 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
         {sectionPanel}
       </div>
       </>}
-      </OwnerTextFormattingBar>}
     <div className={styles.layoutIndicator} role="status"><strong>{useMobile?"Editing independent mobile layout":device==="mobile"?"Mobile preview · editing shared layout":"Editing desktop layout"}</strong>{device==="desktop"&&previewViewportWidth&&<span> · Website viewport {previewViewportWidth}px at 100%. Scroll sideways to see the whole page. Other browser widths can reflow.</span>}</div>
+      </OwnerTextFormattingBar>}
+
     </div>
 
     {textWidthWarning&&<p className={styles.help} role="status" data-owner-text-width-warning>{textWidthWarning}</p>}
@@ -1271,22 +1459,31 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
     <div className={`${styles.stage} ${workspaceMode?styles.workspaceStage:""}`} data-device={device}>
       <div className={styles.previewViewport} data-preview-device={device} role="region" aria-label={device==="desktop"?"Full-width website preview; scroll horizontally to see the whole page":"Mobile website preview"} tabIndex={device==="desktop"?0:undefined}>
       <div ref={canvasRef} style={device==="desktop"&&previewViewportWidth?{width:previewViewportWidth,maxWidth:"none",boxSizing:"content-box"}:undefined} tabIndex={-1} className={`${styles.canvas} ${!browsing ? styles.editing : ""}`} onContextMenu={event=>{if(browsing||uploadBusy||saveBusy)return;if(event.target instanceof HTMLElement&&event.target.closest("input,textarea,select,[contenteditable]"))return;event.preventDefault();let editTarget:string|undefined;if(event.target instanceof HTMLElement){const nearest=event.target.closest<HTMLElement>("[data-owner-edit]");const target=nearest&&canvasRef.current?resolveCanvasClickTarget(sourceContent,sourcePage,canvasRef.current,nearest):nearest;editTarget=target?.dataset.ownerEdit;if(editTarget)choose(editTarget,target??undefined,false);}setContextMenu({x:event.clientX,y:event.clientY,target:editTarget});}} onPointerDownCapture={() => { dragClickGuard.current = false; }} onClickCapture={capture} onKeyDownCapture={capture} onDragStartCapture={beginBlockDrag} onDragOver={overBlock} onDrop={dropBlock} onDragEnd={endBlockDrag}>
-        <SiteContentFrame forceCanvasSlots={flowDetach?{scope:"page",id:"__root"}:footerTransfer?.phase==="measure"?{scope:"chrome",id:"canvas:layout.site.footer"}:drawingSpace&&!cuttingSpace||addingItem?{scope:"page",id:"__root"}:deleteIntent?{scope:deleteIntent.scope,id:deleteIntent.parentId??"__root",omitNodeId:deleteIntent.id}:placementIntent?{scope:placementIntent.scope,id:placementIntent.parentId??"__root",omitNodeId:placementIntent.id}:undefined} content={renderedContent} page={itemPreview?.pages.find(p=>p.id===sourcePage.id)??(footerTransfer?.phase==="measure"?footerTransfer.preview.pages.find(p=>p.id===sourcePage.id)??sourcePage:sourcePage)} layoutViewport={device} mode="editor" editable={!browsing} onEditCommissionForm={workspaceMode ? undefined : onEditCommissionForm} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
+        <SiteContentFrame forceCanvasSlots={flowDetach?{scope:"page",id:"__root"}:footerTransfer?.phase==="measure"?{scope:"chrome",id:"canvas:layout.site.footer"}:drawingSpace&&!cuttingSpace||addingItem||assetPreview?{scope:"page",id:"__root"}:deleteIntent?{scope:deleteIntent.scope,id:deleteIntent.parentId??"__root",omitNodeId:deleteIntent.id}:placementIntent?{scope:placementIntent.scope,id:placementIntent.parentId??"__root",omitNodeId:placementIntent.id}:undefined} content={renderedContent} page={assetPreview?.draft.pages.find(p=>p.id===sourcePage.id)??itemPreview?.pages.find(p=>p.id===sourcePage.id)??(footerTransfer?.phase==="measure"?footerTransfer.preview.pages.find(p=>p.id===sourcePage.id)??sourcePage:sourcePage)} layoutViewport={device} mode="editor" editable={!browsing} onEditCommissionForm={workspaceMode ? undefined : onEditCommissionForm} onNavigate={target => { if (!uploadBusy) { closePanel(); onPageChange(target); } }} />
         {!browsing&&inlineTarget&&inlineTarget===selected&&selectedText&&<OwnerCanvasTextEditor key={`${sourcePage.id}:${inlineTarget}:${selectedLayout?.scope??"page"}:${selectedLayout?.id??selectedOccurrence}:${useMobile}:${clipboardScopeKey??"owner-mounted"}`} canvasRef={canvasRef} target={inlineTarget} identity={selectedLayout??undefined} value={selectedText.value} inputKind={selectedText.inputKind} horizontalGrowth={horizontalText} runs={inlineRuns} focusRequest={textFocusRequest} onUndo={()=>{clearPendingTyping();onUndo?.();}} onRedo={()=>{clearPendingTyping();onRedo?.();}} links={selectedText.links} disabled={uploadBusy||saveBusy} onCommit={commitInlineText} onCancel={()=>{clearPendingTyping();setInlineTarget(null);}} onSelection={receiveInlineSelection} onHyperlink={requestInlineHyperlink}/> }
         {!browsing && selected && (imageStyleKey || imageBlock) && (imageStyleKey === "site.logo" || imageEditMode === "photo") && <OwnerCanvasImageTools key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={selectedImageAppearance} disabled={uploadBusy||saveBusy} onReplace={imageStyleKey==="site.logo"?()=>setInspectorOpen(true):undefined} onChange={changeImageAppearance} />}
+        {assetPreview&&!assetPreview.point&&!browsing&&<div className={styles.itemPlacement} style={interactionArea} data-owner-canvas-controls role="region" aria-label="Place saved asset" onClick={event=>{event.stopPropagation();setAssetPreview({...assetPreview,point:{x:event.clientX,y:event.clientY}});}}><span className={styles.spacePrompt}>Click to place the asset <button type="button" onClick={event=>{event.stopPropagation();setAssetPreview(null);}}>Cancel</button></span></div>}
         {addingItem&&!browsing&&<div className={styles.itemPlacement} style={interactionArea} data-owner-canvas-controls role="region" aria-label="Click to place the new item; scroll to choose a location, or Escape to cancel" onClick={event=>{if(event.button!==0||addingItem.point||uploadBusy||saveBusy)return;event.preventDefault();event.stopPropagation();setAddingItem({...addingItem,point:{x:event.clientX,y:event.clientY}});}}><span className={styles.spacePrompt}>Click to place {blockLabels[addingItem.block.type]} · Scroll to choose a location · Escape cancels</span></div>}
         {drawingSpace&&!browsing&&<div className={styles.spaceDrawing} style={interactionArea} data-owner-canvas-controls data-owner-space-drawing tabIndex={0} role="region" aria-label={cuttingSpace?"Draw over blank space to remove it":"Draw Canvas Space in any direction; Escape cancels"} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();spaceDrag.current=null;setSpacePreview(null);setDrawingSpace(false);}}} onPointerDown={event=>{if(event.button!==0||uploadBusy||saveBusy)return;const map=spaceGestureMap();if(!map)return;event.preventDefault();event.stopPropagation();spaceDrag.current={pointer:event.pointerId,start:{x:event.clientX,y:event.clientY},map,source:sourceContent,pageId:sourcePage.id,mobile:useMobile};event.currentTarget.setPointerCapture?.(event.pointerId);}} onPointerMove={event=>{const drag=spaceDrag.current;if(!drag||drag.pointer!==event.pointerId)return;const rect=event.currentTarget.getBoundingClientRect();setSpacePreview({left:Math.min(drag.start.x,event.clientX)-rect.left,top:Math.min(drag.start.y,event.clientY)-rect.top,width:Math.abs(event.clientX-drag.start.x),height:Math.abs(event.clientY-drag.start.y)});}} onPointerUp={event=>finishSpace(event)} onPointerCancel={event=>finishSpace(event,true)} onLostPointerCapture={event=>{if(spaceDrag.current)finishSpace(event,true);}}>{spacePreview&&<div className={styles.spacePreview} style={spacePreview}/>}<span className={styles.spacePrompt}>{cuttingSpace?"Draw over the gap · Escape cancels":"Drag to draw Canvas Space · Escape cancels"}</span></div>}
-        {!browsing && !titleFlowGeometryLocked && !(inlineTarget===selected&&selectedText) && selected && (boxStyleKey || selected === "page-title" || boxEditableBlock) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box") && !repairButton && <OwnerCanvasBoxTools showResizeHandles={showResizeHandles} onCopyBox={clipboardScopeKey&&sharedFrameClipboard?copyBox:undefined} onPasteBox={hasFrameClipboard&&frameClipboard.current?.scopeKey===clipboardScopeKey?()=>void pasteBox():undefined} onCanvasMoveStart={shove?startShove:undefined} onCanvasMovePreview={(point,snapshot)=>{previewShove(snapshot);if(!footerBlock&&block&&["text","heading","link"].includes(block.type)){const frame=footerFrame();if(frame){if(overFooter(point))frame.dataset.ownerFooterDrop="true";else delete frame.dataset.ownerFooterDrop;}}}} onCanvasMoveCancel={()=>{clearFooterHighlight();shoveGesture.current=null;}} onCanvasMoveCommit={shove||(!footerBlock&&block&&["text","heading","link"].includes(block.type))?(capture,point,next)=>{clearFooterHighlight();if(!footerBlock&&block&&["text","heading","link"].includes(block.type)&&overFooter(point)){shoveGesture.current=null;return requestFooterTransfer(capture);}return commitShove(capture,next);}:undefined} layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={block?.type==="link"||selectBoxContents} onSelectBoxContents={block?.type==="link"?undefined:selected=>setContentsSelection(selected?null:contentsSelectionKey)} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} onEditContent={() => {if(selectedLayout?.id===`canvas:layout.page:${page.id}:intro`||selectedLayout?.id==="canvas:layout.home.intro"){selectTitle();return;}setInspectorOpen(true);if(selectedText)setInlineTarget(selected);}} onDelete={selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable?()=>requestDelete():undefined} onSelectParent={selectedLayout&&selectedLayoutMap[selectedLayout.id]?.parentId?selectParent:undefined} reparentId={undefined} sectionOrder={layoutOrder} />}
+        {!browsing && !titleFlowGeometryLocked && !(inlineTarget===selected&&selectedText) && selected && (boxStyleKey || selected === "page-title" || boxEditableBlock) && (!(imageBlock || imageBoxEditable) || imageEditMode === "box") && !repairButton && <OwnerCanvasBoxTools constrainTextWidth={block?.type==="text"||block?.type==="heading"||horizontalText} showResizeHandles={showResizeHandles} onCopyBox={clipboardScopeKey&&sharedFrameClipboard?copyBox:undefined} onPasteBox={hasFrameClipboard&&frameClipboard.current?.scopeKey===clipboardScopeKey?()=>void pasteBox():undefined} onCanvasMoveStart={shove?startShove:undefined} onCanvasMovePreview={(point,snapshot)=>{previewShove(snapshot);if(!footerBlock&&block&&["text","heading","link"].includes(block.type)){const frame=footerFrame();if(frame){if(overFooter(point))frame.dataset.ownerFooterDrop="true";else delete frame.dataset.ownerFooterDrop;}}}} onCanvasMoveCancel={()=>{clearFooterHighlight();shoveGesture.current=null;}} onCanvasMoveCommit={shove||(!footerBlock&&block&&["text","heading","link"].includes(block.type))?(capture,point,next)=>{clearFooterHighlight();if(!footerBlock&&block&&["text","heading","link"].includes(block.type)&&overFooter(point)){shoveGesture.current=null;return requestFooterTransfer(capture);}return commitShove(capture,next);}:undefined} layoutIdentity={selectedLayout??undefined} {...placementProps} selectBoxContents={block?.type==="link"||selectBoxContents} onSelectBoxContents={block?.type==="link"?undefined:selected=>setContentsSelection(selected?null:contentsSelectionKey)} key={`${page.id}:${selected}:${selectedOccurrence}`} canvasRef={canvasRef} renderVersion={content} target={selected} occurrence={selectedOccurrence} value={boxAppearance} disabled={uploadBusy||saveBusy} initialAspectLocked={initialBoxLocked} onInitialAspectLockChange={setInitialBoxLocked} onChange={changeBoxAppearance} onEditContent={() => {if(selectedLayout?.id===`canvas:layout.page:${page.id}:intro`||selectedLayout?.id==="canvas:layout.home.intro"){selectTitle();return;}if(selectedText){setInspectorOpen(false);setInlineTarget(selected);}else setInspectorOpen(true);}} onDelete={selectedLayout&&getCanvasNodes(sourceContent,selectedLayoutScope).find(n=>n.id===selectedLayout.id)?.movable?()=>requestDelete():undefined} onSelectParent={selectedLayout&&selectedLayoutMap[selectedLayout.id]?.parentId?selectParent:undefined} reparentId={undefined} sectionOrder={layoutOrder} />}
       </div>
       </div>
       {!workspaceMode && selected && controls && sectionPanel}
     </div>
-    {assetLibraryOpen&&!browsing&&<Dialog title="Assets" onClose={()=>{setOpenAssetLibraryKey(null);setPendingAsset(null);}} actions={<button type="button" onClick={()=>{setOpenAssetLibraryKey(null);setPendingAsset(null);}}>Done</button>}>
-      <p>Saved layouts are available in this browser. On the canvas, use Ctrl+A or Cmd+A to select all added items, or Shift-click to choose a group.</p>
-      {pendingAsset&&<form onSubmit={event=>{event.preventDefault();saveAsset();}}><Field label="Asset name" value={assetName} onChange={value=>setAssetName(value.slice(0,80))} required/><button type="submit" disabled={!assetName.trim()}>Save asset</button></form>}
-      {builderAssets.map(asset=><div className={styles.savedAsset} key={asset.id}><span>{asset.name}</span><button type="button" disabled={uploadBusy||saveBusy} onClick={()=>void insertAsset(asset)}>Add to page</button><button type="button" aria-label={`Remove asset ${asset.name}`} onClick={()=>storeAssets(builderAssets.filter(item=>item.id!==asset.id))}>Remove</button></div>)}
+    {assetLibraryOpen&&!browsing&&<div role="dialog" aria-label="Assets" className={styles.assetShelf} onKeyDown={event=>{if(event.key==="Escape"){event.stopPropagation();setOpenAssetLibraryKey(null);}}}><strong>Assets</strong> <button type="button" onClick={()=>setOpenAssetLibraryKey(null)}>Done</button>
+      <p>Drag Add to page onto the canvas, or click it and choose a spot. Assets are saved in this browser. On the canvas, use Ctrl+A or Cmd+A to select all added items, or Shift-click to choose a group.</p>
+      {pendingAsset&&<form onSubmit={event=>{event.preventDefault();saveAsset();}}><Field label="Asset name" value={assetName} onChange={value=>setAssetName(value.slice(0,80))} required/><button type="submit" disabled={!assetName.trim()}>{variantRoot?"Save as variant":"Save asset"}</button></form>}
+      {editingAsset&&<div><Field label="Saved asset name" value={editingAsset.name} onChange={name=>setEditingAsset({...editingAsset,name:name.slice(0,80)})}/>
+        {editingAsset.clip.blocks.map((b,index)=>Object.entries(b).filter(([key,value])=>typeof value==="string"&&["label","heading","text","body","caption","note","actionLabel","alt","href"].includes(key)).map(([key,value])=><Field key={b.id+key} label={b.type+" "+key} value={String(value)} onChange={value=>setEditingAsset(changeAssetField(editingAsset,index,key,value))}/>))}
+        {editingAsset.clip.blocks.map((b,index)=>{if(b.type!=="link")return null;const design=assetButtonDesign(editingAsset,index);
+          return <fieldset key={b.id}><legend>{b.label||"Button"}</legend><OwnerSelect label="Button style" value={design.preset} options={BUTTON_PRESETS.map(value=>({label:value,value}))} onChange={value=>{const preset=BUTTON_PRESETS.find(p=>p===value);if(preset)changeAssetButton(editingAsset,index,{...design,preset});}}/>
+            <OwnerHexInput label="Button background" value={design.imported?.backgroundColor??"#800014"} onChange={backgroundColor=>changeAssetButton(editingAsset,index,{...design,imported:{...design.imported,backgroundColor}})}/>
+            <OwnerHexInput label="Button text color" value={design.imported?.color??"#ffffff"} onChange={color=>changeAssetButton(editingAsset,index,{...design,imported:{...design.imported,color}})}/></fieldset>;})}
+        {!pendingAsset&&<button type="button" onClick={()=>{setPendingAsset({...editingAsset.clip,sourceBinding:JSON.stringify(sourceContent)});setAssetName(editingAsset.name+" variant");}}>Save as variant…</button>}
+        <button type="button" disabled={!editingAsset.name.trim()||saveBusy||uploadBusy} onClick={()=>void overwriteAsset(editingAsset)}>Save and update linked copies</button></div>}
+      {builderAssets.map(asset=><div className={styles.savedAsset} key={asset.id}><span>{asset.name}</span><button type="button" onClick={()=>{setEditingAsset(structuredClone(asset));setPendingAsset(null);}}>Edit asset</button><button type="button" draggable={!saveBusy&&!uploadBusy} onDragStart={event=>{dragAsset.current=asset;event.dataTransfer.effectAllowed="copy";event.dataTransfer.setData("text/plain",asset.name);}} onDragEnd={()=>{dragAsset.current=null;}} disabled={uploadBusy||saveBusy} onClick={()=>void insertAsset(asset)}>Add to page</button><button type="button" aria-label={`Remove asset ${asset.name}`} onClick={()=>storeAssets(builderAssets.filter(item=>item.id!==asset.id))}>Remove</button></div>)}
       {clipboardNotice&&<p role="status">{clipboardNotice}</p>}
-    </Dialog>}
+    </div>}
     {itemPicker&&!browsing&&<div ref={pickerRef} role="dialog" aria-label="Add item" tabIndex={-1}
       className={styles.itemPicker} style={{"--picker-x":`${itemPicker.x}px`,"--picker-y":`${itemPicker.y}px`} as CSSProperties}
       onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setItemPicker(null);}}}>
@@ -1302,10 +1499,20 @@ export function OwnerVisualBuilder({ frameClipboard:sharedFrameClipboard,clipboa
           }} onDragEnd={()=>{draggingItem.current=null;}} onClick={()=>beginItem(type)}>{label}</button>
       )}</div>
     </div>}
-    {contextMenu&&!browsing&&<div ref={contextMenuRef} role="menu" aria-label="Builder actions" className={styles.canvasContextMenu} style={{left:Math.max(8,Math.min(contextMenu.x,typeof window!=="undefined"?window.innerWidth-180:contextMenu.x)),top:Math.max(8,Math.min(contextMenu.y,typeof window!=="undefined"?window.innerHeight-290:contextMenu.y))}} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setContextMenu(null);canvasRef.current?.focus();}else if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();const items=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")),at=items.indexOf(document.activeElement as HTMLButtonElement),next=event.key==="Home"?0:event.key==="End"?items.length-1:(at+(event.key==="ArrowDown"?1:-1)+items.length)%items.length;items[next]?.focus();}}}>{assetLibraryKey&&(!!assetIds?.length||selectedLayout?.scope==="page"&&(selectedLayout.id.startsWith("block:")||selectedLayout.id==="canvas:layout.commissions.status"))&&<button role="menuitem" type="button" onClick={saveAssetSelection}>Save as asset{assetIds?.length?` (${assetIds.length})`:""}</button>}{contextMenu.target&&<button role="menuitem" type="button" onClick={()=>{setContextMenu(null);setInspectorOpen(true);requestAnimationFrame(()=>panelRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Close section editor"]')?.focus({preventScroll:true}));}}>Edit Section</button>}<button role="menuitem" type="button" disabled={!clipboardScopeKey||!sharedFrameClipboard||!selectedLayout||saveBusy||uploadBusy} onClick={()=>{setContextMenu(null);copyBox();}}>Copy box</button><button role="menuitem" type="button" disabled={!clipboardScopeKey||frameClipboard.current?.scopeKey!==clipboardScopeKey||!hasFrameClipboard||saveBusy||uploadBusy} onClick={()=>{setContextMenu(null);void pasteBox();}}>Paste box</button><button role="menuitem" type="button" disabled={!onSave||saveBusy||uploadBusy} onClick={()=>{if(saveBusy||uploadBusy)return;setContextMenu(null);onSave?.();}}>Save</button><button role="menuitem" type="button" onClick={()=>{openItems(contextMenu.x,contextMenu.y);}}>Add Item</button>{workspaceMode&&<button role="menuitem" type="button" onClick={startSpaceCut}>Remove space</button>}<button role="menuitem" type="button" onClick={()=>{setContextMenu(null);openNewPage();}}>New Page</button></div>}
+    {shoveRemoval&&<Dialog title="Remove item and restore spacing?" onClose={()=>setShoveRemoval(null)} actions={<><button type="button" onClick={()=>setShoveRemoval(null)}>Cancel</button><button type="button" onClick={()=>{shoveRemoval.remove(false);setShoveRemoval(null);}}>Remove and keep spacing</button><button type="button" onClick={()=>{shoveRemoval.remove(true);setShoveRemoval(null);}}>Remove and restore spacing</button></>}><p>Restore the neighboring boxes to their positions before Shove. Boxes moved since then keep their newer positions.</p></Dialog>}
+    {contextMenu&&!browsing&&<div ref={contextMenuRef} role="menu" aria-label="Builder actions" className={styles.canvasContextMenu} style={{left:Math.max(8,Math.min(contextMenu.x,typeof window!=="undefined"?window.innerWidth-180:contextMenu.x)),top:Math.max(8,Math.min(contextMenu.y,typeof window!=="undefined"?window.innerHeight-290:contextMenu.y))}} onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setContextMenu(null);canvasRef.current?.focus();}else if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();const items=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")),at=items.indexOf(document.activeElement as HTMLButtonElement),next=event.key==="Home"?0:event.key==="End"?items.length-1:(at+(event.key==="ArrowDown"?1:-1)+items.length)%items.length;items[next]?.focus();}}}>{linkedRoot&&<button type="button" role="menuitem" onClick={editPlacedAsset}>Edit linked asset or save variant</button>}{assetLibraryKey&&(!!assetIds?.length||selectedLayout?.scope==="page"&&(selectedLayout.id.startsWith("block:")||["canvas:layout.commissions.status","template-text:commissions.statusLabel","canvas:layout.commissions.statusValue"].includes(selectedLayout.id)))&&<button role="menuitem" type="button" onClick={saveAssetSelection}>Save as asset{assetIds?.length?` (${assetIds.length})`:""}</button>}{contextMenu.target&&<button role="menuitem" type="button" onClick={()=>{setContextMenu(null);setInspectorOpen(true);requestAnimationFrame(()=>panelRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Close section editor"]')?.focus({preventScroll:true}));}}>Edit Section</button>}<button role="menuitem" type="button" disabled={!clipboardScopeKey||!sharedFrameClipboard||!selectedLayout||saveBusy||uploadBusy} onClick={()=>{setContextMenu(null);copyBox();}}>Copy box</button><button role="menuitem" type="button" disabled={!clipboardScopeKey||frameClipboard.current?.scopeKey!==clipboardScopeKey||!hasFrameClipboard||saveBusy||uploadBusy} onClick={()=>{setContextMenu(null);void pasteBox();}}>Paste box</button><button role="menuitem" type="button" disabled={!onSave||saveBusy||uploadBusy} onClick={()=>{if(saveBusy||uploadBusy)return;setContextMenu(null);onSave?.();}}>Save</button><button role="menuitem" type="button" onClick={()=>{openItems(contextMenu.x,contextMenu.y);}}>Add Item</button>{workspaceMode&&<button role="menuitem" type="button" onClick={startSpaceCut}>Remove space</button>}<button role="menuitem" type="button" onClick={()=>{setContextMenu(null);openNewPage();}}>New Page</button></div>}
     {footerTransfer?.phase==="confirm"&&<Dialog title="Move this item to the shared footer?" dismissDisabled={uploadBusy||saveBusy} onClose={()=>{if(!uploadBusy&&!saveBusy)setFooterTransfer(null);}} actions={<><button type="button" onClick={()=>setFooterTransfer(null)} disabled={uploadBusy||saveBusy}>Keep on this page</button><button type="button" disabled={uploadBusy||saveBusy} onClick={()=>{if(!footerTransferCurrent(footerTransfer)){setFooterTransfer(null);setAnnouncement("The page or view changed. Nothing was moved.");return;}setFooterTransfer({...footerTransfer,phase:"measure"});}}>Move to shared footer</button></>}><p>This item will appear in the footer on every page, in both layouts—even if its current page is hidden. It becomes sitewide when you explicitly publish Website structure &amp; design.</p><p>The active layout keeps its measured position. The other layout keeps its own existing placement or uses footer flow; review it separately. This is one draft edit that Undo can restore. Nothing is published automatically.</p></Dialog>}
     {priceColors&&<Dialog title="Edit all Price Colors" dismissDisabled={uploadBusy||saveBusy} onClose={closePriceColors} actions={<><button type="button" data-owner-button className={`${buttons.button} ${buttons.secondary}`} disabled={uploadBusy||saveBusy} onClick={closePriceColors}>Cancel</button><button type="button" data-owner-button className={`${buttons.button} ${buttons.primary}`} disabled={!priceColorsCurrent()||!/^#[0-9a-f]{6}$/i.test(priceColors.color)} onClick={commitPriceColors}>Apply all price colors</button></>}><p>Changes all displayed price amounts, including currency symbols and separators, for {priceColors.mobile?"the independent mobile layout":"the desktop/shared layout"}. Values stay unchanged. This is one draft edit you can Undo; nothing is published.</p><label>Price color <input type="color" aria-label="All price color" disabled={!priceColorsCurrent()} value={/^#[0-9a-f]{6}$/i.test(priceColors.color)?priceColors.color:"#315b50"} onChange={event=>setPriceColors({...priceColors,color:event.target.value})}/></label><Field label="Price color hex" readOnly={!priceColorsCurrent()} value={priceColors.color} onChange={color=>{if(priceColorsCurrent())setPriceColors({...priceColors,color});}}/>{!priceColorsCurrent()&&<p role="status">The draft or view changed. Close this dialog and reopen it before applying.</p>}</Dialog>}
     {pricesOpen&&<Dialog title="Prices & options" wide maximizable dismissDisabled={uploadBusy||saveBusy} onClose={()=>{if(!uploadBusy&&!saveBusy)setPricesOpen(false);}} actions={<button type="button" disabled={uploadBusy||saveBusy} onClick={()=>setPricesOpen(false)}>Done</button>}><OwnerPricesManager content={content} onEdit={onEdit} onRemove={onRemove} disabled={uploadBusy||saveBusy}/></Dialog>}
+    {!browsing&&linkRequest&&linkRequest.contextKey===textContextKey&&selectedText&&<OwnerHyperlinkDialog key={linkRequest.requestId}
+      href={inlineLinkAtSelection(linkRequest.value,linkRequest)?.href??""}
+      targetId={textContextKey} revision={sourceContent} selectionText={inlinePlainText(linkRequest.value).slice(linkRequest.start,linkRequest.end)}
+      disabled={uploadBusy||saveBusy} onClose={()=>setLinkRequest(null)} onApply={href=>{
+        const label=inlinePlainText(linkRequest.value).slice(linkRequest.start,linkRequest.end);
+        const value=href===null?removeInlineHyperlink(linkRequest.value,linkRequest):applyInlineHyperlink(linkRequest.value,linkRequest,label,href,"selection");
+        if(value===null||!commitInlineText(linkRequest.value,value))return false;
+        setLinkRequest(null);return true;
+      }}/>}
     {!browsing&&destinationLink&&<OwnerHyperlinkDialog key={`${destinationLink.pageId}:${destinationLink.target}:${destinationLink.identity?.id??""}`} href={destinationLink.destination.href} targetId={`pdf:${textContextKey}`} revision={sourceContent} allowDocument={destinationLink.destination.source!=="social"} canRemove={destinationLink.destination.source!=="block"} removeLabel={destinationLink.destination.source==="template"||destinationLink.destination.defaultHref?"Restore original link":"Remove link"} disabled={uploadBusy||saveBusy} onApply={href=>commitDestinationLink(href)} onClose={()=>{if(!uploadBusy&&!saveBusy)closeDestinationLink();}}/>}
     {!browsing&&shoveNotice&&<p role="status" aria-live="polite">{shoveNotice}</p>}
     <p className={styles.srOnly} role="status" aria-live="polite">{announcement}</p>

@@ -12,8 +12,27 @@ function fail(message:string):never{throw Error(message);}
 function descendants(map:CanvasNodeMap,id:string){const found=new Set([id]);let more=true;while(more){more=false;for(const[key,entry]of Object.entries(map))if(entry.parentId&&found.has(entry.parentId)&&!found.has(key)){found.add(key);more=true;}}return found;}
 function blockOwner(node:string,pageId:string):string|null{if(node.startsWith('block:'))return node.slice(6);const prefix=`canvas:layout.block:${pageId}:`;if(node.startsWith(prefix))return node.slice(prefix.length).split(':')[0];return null;}
 function assetSources(value:unknown,output=new Set<string>()):Set<string>{if(typeof value==='string'){for(const match of value.matchAll(/\/api\/(?:cloud-)?(?:media|fonts|documents)\/[a-f0-9-]{36}/g))output.add(match[0]);return output;}if(Array.isArray(value)){value.forEach(item=>assetSources(item,output));return output;}if(value&&typeof value==='object')for(const[key,item]of Object.entries(value)){if((key==='src'||key==='href')&&typeof item==='string'&&(/^(?:data:|blob:|\/api\/(?:cloud-)?(?:media|fonts|documents)\/)/.test(item)))output.add(item);else assetSources(item,output);}return output;}
+export function updatedAssetSources(clip:Omit<FrameClipboard,"sourceBinding">){
+ const sources=assetSources([clip.blocks,clip.styles,clip.inlineStyles,clip.elementLinks,clip.buttonDesigns]);
+ for(const src of clip.assets)if(/^\/api\/(?:cloud-)?fonts\//.test(src))sources.add(src);
+ return [...sources];
+}
 export function captureFrameClipboard(content:OwnerContent,pageId:string,rootId:string,additionalRoots:readonly string[]=[]):FrameClipboard{
  assertOwnerContent(content);const page=content.pages.find(p=>p.id===pageId&&!p.trashedAt);if(!page)fail('This source page is no longer available.');
+ if(rootId==='template-text:commissions.statusLabel'||rootId==='canvas:layout.commissions.statusValue'){
+  if(additionalRoots.length)fail('Copy this commission field on its own.');
+  const draft=structuredClone(content),target=draft.pages.find(item=>item.id===pageId)!;
+  if(!getCanvasNodes(content,page).some(node=>node.id===rootId))fail('This commission field is unavailable.');
+  let id='commission-field',suffix=0;while(target.blocks.some(item=>item.id===id))id=`commission-field-${++suffix}`;
+  const unit=createCommissionStatusBlock(content,id),label=rootId==='template-text:commissions.statusLabel';
+  const block:PageBlock=label?{id,type:'heading',level:3,text:unit.label}:{...unit,textOnly:true};
+  const style=content.contentOverrides?.styles?.[label?'commissions.statusLabel':'layout.commissions.statusValue'];
+  if(style)block.appearance=structuredClone(style);
+  target.blocks.push(block);
+  const rich=content.contentOverrides?.inlineStyles?.['template:commissions.statusLabel'];
+  if(label&&rich&&draft.contentOverrides?.inlineStyles)draft.contentOverrides.inlineStyles[`block:${pageId}:${id}:text`]=structuredClone(rich);
+  const clip=captureFrameClipboard(draft,pageId,`block:${id}`);clip.sourceBinding=binding(content);return clip;
+ }
  if(rootId==='canvas:layout.commissions.status')return captureCommissionClipboard(content,pageId);
  if([rootId,...additionalRoots].some(id=>!id.startsWith('block:')))fail('This built-in functional unit cannot be copied as a custom box. Nothing was changed.');
  const desktop=resolveCanvasLayout(content,page,false),mobile=resolveCanvasLayout(content,page,true);if(!desktop[rootId]||desktop[rootId].removed&&mobile[rootId]?.removed)fail('Select an available box before copying.');
@@ -35,24 +54,30 @@ export function captureFrameClipboard(content:OwnerContent,pageId:string,rootId:
 }
 export function frameClipboardIsCurrent(content:OwnerContent,clipboard:FrameClipboard){return binding(content)===clipboard.sourceBinding;}
 /** Builds and validates a new draft without mutating caller input. Caller commits once for Undo. */
-export function pasteFrameClipboard(content:OwnerContent,pageId:string,clipboard:FrameClipboard,options:{newId:()=>string;verifiedAssets:ReadonlySet<string>; preserveRelativePlacement?:boolean}):{content:OwnerContent;clipboard:FrameClipboard;rootId:string}{
+export function pasteFrameClipboard(content:OwnerContent,pageId:string,clipboard:FrameClipboard,options:{newId:()=>string;verifiedAssets:ReadonlySet<string>; preserveRelativePlacement?:boolean;reuseDesigns?:ReadonlySet<string>}):{content:OwnerContent;clipboard:FrameClipboard;rootId:string}{
  if(!frameClipboardIsCurrent(content,clipboard))fail('The draft changed after Copy box. Copy the box again before pasting.');
  if(clipboard.assets.some(src=>!options.verifiedAssets.has(src)))fail('A required photo, font or document has not been verified as available. Nothing was pasted.');
  const draft=structuredClone(content),page=draft.pages.find(p=>p.id===pageId&&!p.trashedAt);if(!page)fail('Choose an available destination page.');
  const occupied=new Set<string>();const collectIds=(value:unknown)=>{if(Array.isArray(value))value.forEach(collectIds);else if(value&&typeof value==='object')for(const[key,item]of Object.entries(value)){if(key==='id'&&typeof item==='string')occupied.add(item);else collectIds(item);}};collectIds(draft);const fresh=()=>{const id=options.newId();if(!/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(id)||occupied.has(id))fail('A fresh box identity could not be created. Nothing was pasted.');occupied.add(id);return id;};
  const ids=new Map(clipboard.blocks.map(block=>[block.id,fresh()]));const faqIds=new Map<string,string>();for(const block of clipboard.blocks)if(block.type==='faq')for(const item of block.items)faqIds.set(`${block.id}:${item.id}`,fresh());
- const designs=new Map(clipboard.buttonDesigns.map(design=>[design.id,fresh()]));
+ const designs=new Map(clipboard.buttonDesigns.map(design=>{
+  const match=content.buttonDesigns?.find(existing=>options.reuseDesigns?.has(existing.id)&&JSON.stringify({...existing,id:""})===JSON.stringify({...design,id:""}));
+  return [design.id,match?.id??fresh()];
+ }));
  const mapNode=(id:string):string=>{if(id.startsWith('block:'))return ids.has(id.slice(6))?`block:${ids.get(id.slice(6))}`:id;const prefix=`canvas:layout.block:${clipboard.pageId}:`;if(!id.startsWith(prefix))return id;const[old,...parts]=id.slice(prefix.length).split(':');if(!ids.has(old))return id;let suffix=parts.join(':');for(const[key,value]of faqIds)if(key.startsWith(`${old}:`)){const original=key.slice(old.length+1);if(suffix===`faq-${original}-question`)suffix=`faq-${value}-question`;else if(suffix===`faq-${original}-answer`)suffix=`faq-${value}-answer`;}return `canvas:layout.block:${pageId}:${ids.get(old)}${suffix?`:${suffix}`:''}`;};
  const mapStyle=(key:string)=>mapNode(`canvas:${key}`).slice(7);
  const mapRich=(key:string)=>{if(key.startsWith('author:block:'))return 'author:'+mapStyle('layout.'+key.slice(7)).slice(7);const parts=key.split(':');return `block:${pageId}:${ids.get(parts[2])}:${parts.slice(3).join(':')}`;};
  const layout={desktop:resolveCanvasLayout(draft,page,false),mobile:resolveCanvasLayout(draft,page,true),mobileInitialized:true};page.canvasLayout=layout;
  for(const block of clipboard.blocks){const copy=structuredClone(block);copy.id=ids.get(block.id)!;delete copy.parentId;delete copy.mobileParentId;delete copy.mobileOrder;if(copy.type==='faq')copy.items=copy.items.map(item=>({...item,id:faqIds.get(`${block.id}:${item.id}`)!}));if(copy.type==='link'&&copy.buttonDesignId)copy.buttonDesignId=designs.get(copy.buttonDesignId)!;page.blocks.push(copy);}
- for(const mode of ['desktop','mobile'] as const){const target=mode==='desktop'?layout.desktop:layout.mobile!;const map=clipboard[mode];const roots=Object.values(map).filter(entry=>!entry.removed&&(!entry.parentId||!Object.hasOwn(map,entry.parentId))&&entry.placement);
+ const liveIds=new Set(getCanvasNodes(draft,page).map(node=>node.id));
+ for(const mode of ['desktop','mobile'] as const){const target=mode==='desktop'?layout.desktop:layout.mobile!;
+ for(const key of Object.keys(target))if(!liveIds.has(key))delete target[key];
+ const map=clipboard[mode];const roots=Object.values(map).filter(entry=>!entry.removed&&(!entry.parentId||!Object.hasOwn(map,entry.parentId))&&entry.placement);
  const origin={x:roots.length?Math.min(...roots.map(entry=>entry.placement!.matrix.e)):0,y:roots.length?Math.min(...roots.map(entry=>entry.placement!.matrix.f)):0};
- let order=Math.max(-1,...Object.values(target).filter(entry=>entry.parentId===null).map(entry=>entry.order))+1;for(const[id,entry]of Object.entries(map)){const copy=structuredClone(entry);if(copy.parentId&&Object.hasOwn(map,copy.parentId))copy.parentId=mapNode(copy.parentId);else{copy.parentId=null;copy.order=order++;if(copy.placement)copy.placement.matrix={...copy.placement.matrix,e:options.preserveRelativePlacement?copy.placement.matrix.e-origin.x:0,f:options.preserveRelativePlacement?copy.placement.matrix.f-origin.y:0};}target[mapNode(id)]=copy;}}
+ let order=Math.max(-1,...Object.values(target).filter(entry=>entry.parentId===null).map(entry=>entry.order))+1;for(const[id,entry]of Object.entries(map)){const copy=structuredClone(entry);if(copy.parentId&&Object.hasOwn(map,copy.parentId))copy.parentId=mapNode(copy.parentId);else{copy.parentId=null;copy.order=order++;if(copy.placement)copy.placement.matrix={...copy.placement.matrix,e:options.preserveRelativePlacement?copy.placement.matrix.e-origin.x:0,f:options.preserveRelativePlacement?copy.placement.matrix.f-origin.y:0};}const mapped=mapNode(id);if(liveIds.has(mapped))target[mapped]=copy;}}
  draft.contentOverrides??={};draft.contentOverrides.styles??={};draft.contentOverrides.inlineStyles??={};for(const[key,value]of Object.entries(clipboard.styles))draft.contentOverrides.styles[mapStyle(key)]=structuredClone(value);for(const[key,value]of Object.entries(clipboard.inlineStyles))draft.contentOverrides.inlineStyles[mapRich(key)]=structuredClone(value);
  if(clipboard.elementLinks){draft.contentOverrides.elementLinks??={};for(const[key,value]of Object.entries(clipboard.elementLinks))draft.contentOverrides.elementLinks[mapStyle(key)]=value;}
- if(clipboard.buttonDesigns.length){draft.buttonDesigns??=[];for(const design of clipboard.buttonDesigns)draft.buttonDesigns.push({...structuredClone(design),id:designs.get(design.id)!});}
+ if(clipboard.buttonDesigns.length){draft.buttonDesigns??=[];for(const design of clipboard.buttonDesigns){const id=designs.get(design.id)!;if(!draft.buttonDesigns.some(existing=>existing.id===id))draft.buttonDesigns.push({...structuredClone(design),id});}}
  assertOwnerContent(draft);return {content:draft,clipboard:{...structuredClone(clipboard),sourceBinding:binding(draft)},rootId:mapNode(clipboard.rootId)};
 }
 
